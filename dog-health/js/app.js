@@ -125,7 +125,7 @@ function renderHome(dog) {
   const records = Store.getRecords(dog.id);
   const last = records[records.length - 1];
   const prev = records[records.length - 2];
-  const pct = last && breed ? obesityPercent(last.weight, breed) : null;
+  const pct = last && breed ? obesityPercent(last, breed) : null;
   const grade = obesityGrade(pct);
   const bcs = estimateBCS(pct);
   const wDelta = last && prev ? delta(last.weight, prev.weight) : null;
@@ -150,7 +150,7 @@ function renderHome(dog) {
       ${statCard("몸통 둘레", last && last.chest ? fmt(last.chest) + " cm" : "-", breed ? `표준 ${breed.chest[0]}~${breed.chest[1]}` : "", "#0ea5b7")}
     </div>
 
-    ${breed ? obesityPanel(pct, grade, bcs, breed) : ""}
+    ${breed ? obesityPanel(pct, grade, bcs, breed, last) : ""}
     ${breed ? tipsPanel(breed) : ""}
   `;
   bindDogStrip(screen);
@@ -164,9 +164,15 @@ function statCard(label, value, sub, color) {
   </div>`;
 }
 
-function obesityPanel(pct, grade, bcs, breed) {
-  const advice = weightAdvice(pct, breed);
+function obesityPanel(pct, grade, bcs, breed, record) {
+  const frame = record ? frameLabel(record, breed) : null;
+  const iw = record ? idealWeight(record, breed) : breedIdealWeight(breed);
+  const advice = weightAdvice(pct, breed, iw);
   const gaugePos = pct == null ? 50 : Math.max(0, Math.min(100, ((pct - 70) / 80) * 100));
+  // 체격 배지: 체고가 있으면 프레임 분류, 없으면 입력 유도
+  const frameChip = frame
+    ? `<span class="badge" style="background:#8b5cf61a;color:#8b5cf6">🦴 ${frame}</span>`
+    : `<span class="badge" style="background:${grade.color === "#94a3b8" ? "#94a3b820" : "#94a3b820"};color:#94a3b8">체고 입력 시 체격 반영</span>`;
   return `<section class="card">
     <div class="card-head"><h3>⚖️ 비만도 평가</h3>
       <span class="badge-lg" style="background:${grade.color}1a;color:${grade.color}">${grade.label}${pct != null ? " · " + fmt(pct, 0) + "%" : ""}</span>
@@ -178,9 +184,10 @@ function obesityPanel(pct, grade, bcs, breed) {
       </div>
       <div class="gauge-scale"><span>저체중</span><span>정상</span><span>과체중</span><span>비만</span></div>
     </div>
+    <div style="margin:-4px 0 12px">${frameChip}</div>
     <div class="obesity-meta">
-      <div><span class="muted small">이상 체중</span><b>${fmt(breedIdealWeight(breed))} kg</b></div>
-      <div><span class="muted small">표준 범위</span><b>${breed.weight[0]}~${breed.weight[1]} kg</b></div>
+      <div><span class="muted small">체격 기준 이상 체중</span><b>${fmt(iw)} kg</b></div>
+      <div><span class="muted small">견종 표준 범위</span><b>${breed.weight[0]}~${breed.weight[1]} kg</b></div>
       <div><span class="muted small">추정 BCS</span><b>${bcs != null ? bcs + " / 9" : "-"}</b></div>
     </div>
     <p class="advice">${advice}</p>
@@ -227,13 +234,18 @@ function drawTrend(metric, breed, records) {
   const note = $("#chartNote");
   let points, opts;
   if (metric === "weight") {
+    // 체격 보정 이상 체중 기준선 — 가장 최근에 체고가 기록된 값 기준
+    const framed = [...records].reverse().find((r) => r.height != null);
+    const idealRef = breed ? idealWeight(framed || {}, breed) : null;
     points = records.map((r) => ({ x: r.date, y: r.weight }));
-    opts = { unit: "kg", color: "#6366f1", band: breed ? breed.weight : null, ideal: breed ? breedIdealWeight(breed) : null };
-    note.textContent = breed ? `연두색 밴드 = 표준 체중(${breed.weight[0]}~${breed.weight[1]}kg), 점선 = 이상 체중.` : "";
+    opts = { unit: "kg", color: "#6366f1", band: breed ? breed.weight : null, ideal: idealRef };
+    note.textContent = breed
+      ? `연두색 밴드 = 견종 표준 체중(${breed.weight[0]}~${breed.weight[1]}kg), 점선 = 체격 보정 이상 체중${framed ? "" : " (체고 미입력 → 표준 중앙값)"}.`
+      : "";
   } else if (metric === "obesity") {
-    points = records.map((r) => ({ x: r.date, y: breed ? obesityPercent(r.weight, breed) : null }));
+    points = records.map((r) => ({ x: r.date, y: breed ? obesityPercent(r, breed) : null }));
     opts = { unit: "%", color: "#ef4444", ideal: 100, band: [85, 115] };
-    note.textContent = "100% = 이상 체중. 밴드(85~115%) 안이면 정상이에요.";
+    note.textContent = "체격 보정 비만도. 100% = 체격에 맞는 이상 체중, 밴드(85~115%) 안이면 정상이에요.";
   } else if (metric === "height") {
     points = records.map((r) => ({ x: r.date, y: r.height }));
     opts = { unit: "cm", color: "#8b5cf6", band: breed ? breed.height : null };
@@ -259,7 +271,7 @@ function renderRecords(dog) {
     const items = [...records].reverse().map((r, idx, arr) => {
       const prevRec = arr[idx + 1];
       const wD = prevRec ? delta(r.weight, prevRec.weight) : null;
-      const pct = breed ? obesityPercent(r.weight, breed) : null;
+      const pct = breed ? obesityPercent(r, breed) : null;
       const grade = obesityGrade(pct);
       const metrics = [
         r.height ? `체고 ${fmt(r.height)}` : null,
@@ -318,7 +330,7 @@ function renderMore() {
     <div class="section-title" style="margin-top:22px">앱 정보</div>
     <div class="card" style="font-size:0.85rem">
       <b>멍멍 건강수첩</b> <span class="muted">v1.0</span>
-      <p class="muted" style="margin-top:8px">견종별 표준값 기준으로 체중·체고·몸통 둘레와 비만도를 기록·관리하는 앱입니다. 표준값은 참고용이며, 정확한 진단은 수의사와 상담하세요.</p>
+      <p class="muted" style="margin-top:8px">견종별 표준값에 더해 <b>체고(체격)</b>까지 반영해 비만도를 평가하는 앱입니다. 같은 견종이라도 골격이 큰 아이는 이상 체중을 높게, 작은 아이는 낮게 잡아 더 공정하게 판단합니다. 표준값은 참고용이며, 정확한 진단은 수의사와 상담하세요.</p>
       <p class="muted small" style="margin-top:8px">모든 데이터는 이 기기에만 저장됩니다.</p>
     </div>
   `;
