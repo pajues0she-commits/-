@@ -1,13 +1,34 @@
-// 앱 메인 로직 — 화면 렌더링 & 이벤트 처리
+// 모바일 앱 메인 로직 — 화면 전환 & 렌더링
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
+const UI = {
+  screen: "home",
+  trendMetric: "weight",
+};
+
 function fmt(n, digits = 1) {
   return n == null || isNaN(n) ? "-" : Number(n).toFixed(digits);
 }
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+function dogEmoji(breed) {
+  if (!breed) return "🐶";
+  if (breed.size === "대형") return "🐕";
+  if (breed.size === "중형") return "🐕‍🦺";
+  return "🐩";
+}
+function toast(msg) {
+  const t = $("#toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.remove("show"), 1800);
+}
 
-// ---------- 견종 select 채우기 ----------
+// ---------- 견종 select 옵션 ----------
 function populateBreedOptions(select, selectedId) {
   select.innerHTML = "";
   const groups = { 소형: [], 중형: [], 대형: [] };
@@ -26,343 +47,334 @@ function populateBreedOptions(select, selectedId) {
   });
 }
 
-// ---------- 강아지 목록(사이드바) ----------
-function renderDogList() {
-  const wrap = $("#dogList");
-  wrap.innerHTML = "";
+// ================= 화면 라우팅 =================
+function navigate(screen) {
+  UI.screen = screen;
+  $$(".tabbar-item").forEach((t) => t.classList.toggle("active", t.dataset.screen === screen));
+  renderScreen();
+}
+
+function renderScreen() {
+  const dog = Store.getActiveDog();
+  const screen = $("#screen");
+  const fab = $("#fab");
+  const title = $("#appbarTitle");
+
+  // 강아지가 없으면 무조건 온보딩
+  if (!dog && UI.screen !== "more") {
+    title.textContent = "멍멍 건강수첩";
+    fab.hidden = true;
+    screen.innerHTML = onboardingHTML();
+    $("#onboardAdd")?.addEventListener("click", () => openDogSheet());
+    return;
+  }
+
+  if (UI.screen === "home") {
+    title.textContent = "멍멍 건강수첩";
+    fab.hidden = false;
+    renderHome(dog);
+  } else if (UI.screen === "trends") {
+    title.textContent = "트렌드";
+    fab.hidden = false;
+    renderTrends(dog);
+  } else if (UI.screen === "records") {
+    title.textContent = "기록";
+    fab.hidden = false;
+    renderRecords(dog);
+  } else if (UI.screen === "more") {
+    title.textContent = "더보기";
+    fab.hidden = true;
+    renderMore();
+  }
+  screen.scrollTop = 0;
+}
+
+function onboardingHTML() {
+  return `
+    <div class="empty-state">
+      <div class="empty-emoji">🐾</div>
+      <h2>반려견을 등록해 주세요</h2>
+      <p>체중·체고·몸통 둘레를 기록하면<br>견종별 비만도와 건강 추이를 볼 수 있어요.</p>
+      <button class="btn btn-primary" id="onboardAdd">＋ 강아지 추가하기</button>
+    </div>`;
+}
+
+// ---------- 강아지 셀렉터 스트립 ----------
+function dogStripHTML() {
   const dogs = Store.getDogs();
   const active = Store.getActiveDog();
-  if (dogs.length === 0) {
-    wrap.innerHTML = '<p class="muted small">등록된 강아지가 없어요.</p>';
-    return;
-  }
-  dogs.forEach((dog) => {
-    const breed = getBreed(dog.breedId);
-    const records = Store.getRecords(dog.id);
-    const last = records[records.length - 1];
-    const pct = last && breed ? obesityPercent(last.weight, breed) : null;
-    const grade = obesityGrade(pct);
-
-    const item = document.createElement("button");
-    item.className = "dog-item" + (active && dog.id === active.id ? " active" : "");
-    item.innerHTML = `
-      <span class="dog-emoji">${dogEmoji(breed)}</span>
-      <span class="dog-item-info">
-        <span class="dog-item-name">${escapeHtml(dog.name)}</span>
-        <span class="dog-item-breed">${breed ? breed.name : "미지정"}</span>
-      </span>
-      <span class="badge" style="background:${grade.color}20;color:${grade.color}">${grade.label}</span>
-    `;
-    item.addEventListener("click", () => {
-      Store.setActiveDog(dog.id);
-      render();
-    });
-    wrap.appendChild(item);
-  });
+  const chips = dogs.map((d) => {
+    const breed = getBreed(d.breedId);
+    return `<button class="dog-chip ${active && d.id === active.id ? "active" : ""}" data-dog="${d.id}">
+      <span class="chip-emoji">${dogEmoji(breed)}</span>${escapeHtml(d.name)}</button>`;
+  }).join("");
+  return `<div class="dog-strip">${chips}
+    <button class="dog-chip add" data-add-dog>＋ 추가</button></div>`;
+}
+function bindDogStrip(root) {
+  $$("[data-dog]", root).forEach((b) => b.addEventListener("click", () => {
+    Store.setActiveDog(b.dataset.dog);
+    renderScreen();
+  }));
+  $("[data-add-dog]", root)?.addEventListener("click", () => openDogSheet());
 }
 
-function dogEmoji(breed) {
-  if (!breed) return "🐶";
-  if (breed.size === "대형") return "🐕";
-  if (breed.size === "중형") return "🐕‍🦺";
-  return "🐩";
-}
-
-// ---------- 메인 대시보드 ----------
-function renderDashboard() {
-  const main = $("#dashboard");
-  const dog = Store.getActiveDog();
-
-  if (!dog) {
-    main.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-emoji">🐾</div>
-        <h2>반려견을 등록해 주세요</h2>
-        <p class="muted">왼쪽의 <b>+ 강아지 추가</b> 버튼으로 시작하세요.<br>
-        체중·체고·몸통 둘레를 기록하면 견종별 비만도와 건강 추이를 볼 수 있어요.</p>
-        <button class="btn btn-primary" id="emptyAddBtn">+ 강아지 추가</button>
-      </div>`;
-    $("#emptyAddBtn")?.addEventListener("click", openDogModal);
-    return;
-  }
-
+// ================= 홈 화면 =================
+function renderHome(dog) {
   const breed = getBreed(dog.breedId);
   const records = Store.getRecords(dog.id);
   const last = records[records.length - 1];
   const prev = records[records.length - 2];
-
   const pct = last && breed ? obesityPercent(last.weight, breed) : null;
   const grade = obesityGrade(pct);
   const bcs = estimateBCS(pct);
   const wDelta = last && prev ? delta(last.weight, prev.weight) : null;
 
-  main.innerHTML = `
-    <header class="dash-header">
-      <div>
-        <h1>${escapeHtml(dog.name)} <span class="dash-emoji">${dogEmoji(breed)}</span></h1>
-        <p class="muted">${breed ? breed.name : "견종 미지정"} · ${breed ? breed.size + "견" : ""}
-          ${dog.sex ? " · " + (dog.sex === "M" ? "수컷" : "암컷") : ""}
-          ${dog.neutered ? " · 중성화" : ""}
-          ${dog.birth ? " · " + (ageFromBirth(dog.birth) || "") : ""}</p>
+  const screen = $("#screen");
+  screen.innerHTML = `
+    ${dogStripHTML()}
+    <div class="profile-hero">
+      <div class="profile-avatar">${dogEmoji(breed)}</div>
+      <div class="profile-info">
+        <h2>${escapeHtml(dog.name)}</h2>
+        <p>${breed ? breed.name + " · " + breed.size + "견" : "견종 미지정"}${dog.sex ? " · " + (dog.sex === "M" ? "♂" : "♀") : ""}${dog.birth ? " · " + (ageFromBirth(dog.birth) || "") : ""}</p>
       </div>
-      <div class="dash-actions">
-        <button class="btn" id="editDogBtn">프로필 수정</button>
-        <button class="btn btn-primary" id="addRecordBtn">＋ 수치 기록</button>
-      </div>
-    </header>
+    </div>
 
-    <section class="stat-grid">
+    <div class="stat-grid">
       ${statCard("비만도", pct != null ? fmt(pct, 0) + "%" : "-", grade.label, grade.color)}
       ${statCard("체중", last ? fmt(last.weight) + " kg" : "-",
-        wDelta != null ? (wDelta >= 0 ? "▲ " : "▼ ") + fmt(Math.abs(wDelta), 2) + "kg" : "기록 필요",
+        wDelta != null ? (wDelta >= 0 ? "▲ " : "▼ ") + fmt(Math.abs(wDelta), 2) + "kg" : "기록을 추가하세요",
         wDelta != null ? (wDelta > 0 ? "#f59e0b" : wDelta < 0 ? "#38bdf8" : "#94a3b8") : "#94a3b8")}
-      ${statCard("체고", last && last.height ? fmt(last.height) + " cm" : "-",
-        breed ? `표준 ${breed.height[0]}~${breed.height[1]}cm` : "", "#8b5cf6")}
-      ${statCard("몸통 둘레", last && last.chest ? fmt(last.chest) + " cm" : "-",
-        breed ? `표준 ${breed.chest[0]}~${breed.chest[1]}cm` : "", "#0ea5b7")}
-    </section>
+      ${statCard("체고", last && last.height ? fmt(last.height) + " cm" : "-", breed ? `표준 ${breed.height[0]}~${breed.height[1]}` : "", "#8b5cf6")}
+      ${statCard("몸통 둘레", last && last.chest ? fmt(last.chest) + " cm" : "-", breed ? `표준 ${breed.chest[0]}~${breed.chest[1]}` : "", "#0ea5b7")}
+    </div>
 
     ${breed ? obesityPanel(pct, grade, bcs, breed) : ""}
-
-    <section class="card">
-      <div class="card-head">
-        <h3>📈 트렌드</h3>
-        <div class="tabs" id="trendTabs">
-          <button class="tab active" data-metric="weight">체중</button>
-          <button class="tab" data-metric="obesity">비만도</button>
-          <button class="tab" data-metric="height">체고</button>
-          <button class="tab" data-metric="chest">몸통 둘레</button>
-        </div>
-      </div>
-      <div id="chartArea" class="chart-area-wrap"></div>
-      <p class="chart-note muted small" id="chartNote"></p>
-    </section>
-
     ${breed ? tipsPanel(breed) : ""}
-
-    <section class="card">
-      <div class="card-head">
-        <h3>📋 기록 내역</h3>
-        <span class="muted small">${records.length}건</span>
-      </div>
-      <div id="recordTable"></div>
-    </section>
   `;
-
-  $("#editDogBtn").addEventListener("click", () => openDogModal(dog));
-  $("#addRecordBtn").addEventListener("click", () => openRecordModal());
-
-  // 트렌드 탭
-  let currentMetric = "weight";
-  const drawChart = () => renderTrend(currentMetric, dog, breed, records);
-  $$("#trendTabs .tab").forEach((tab) => {
-    tab.addEventListener("click", () => {
-      $$("#trendTabs .tab").forEach((t) => t.classList.remove("active"));
-      tab.classList.add("active");
-      currentMetric = tab.dataset.metric;
-      drawChart();
-    });
-  });
-  drawChart();
-
-  renderRecordTable(records, breed);
+  bindDogStrip(screen);
 }
 
 function statCard(label, value, sub, color) {
-  return `
-    <div class="stat-card">
-      <div class="stat-label">${label}</div>
-      <div class="stat-value">${value}</div>
-      <div class="stat-sub" style="color:${color || "#94a3b8"}">${sub || ""}</div>
-    </div>`;
+  return `<div class="stat-card">
+    <div class="stat-label">${label}</div>
+    <div class="stat-value">${value}</div>
+    <div class="stat-sub" style="color:${color || "#94a3b8"}">${sub || ""}</div>
+  </div>`;
 }
 
 function obesityPanel(pct, grade, bcs, breed) {
   const advice = weightAdvice(pct, breed);
-  // 게이지 위치: 70%~150% 구간을 0~100 막대에 매핑
   const gaugePos = pct == null ? 50 : Math.max(0, Math.min(100, ((pct - 70) / 80) * 100));
-  return `
-    <section class="card obesity-panel">
-      <div class="card-head"><h3>⚖️ 비만도 평가</h3>
-        <span class="badge-lg" style="background:${grade.color}1a;color:${grade.color}">${grade.label}${pct != null ? " · " + fmt(pct, 0) + "%" : ""}</span>
+  return `<section class="card">
+    <div class="card-head"><h3>⚖️ 비만도 평가</h3>
+      <span class="badge-lg" style="background:${grade.color}1a;color:${grade.color}">${grade.label}${pct != null ? " · " + fmt(pct, 0) + "%" : ""}</span>
+    </div>
+    <div class="gauge">
+      <div class="gauge-track">
+        <span class="gauge-seg"></span><span class="gauge-seg"></span><span class="gauge-seg"></span><span class="gauge-seg"></span>
+        ${pct != null ? `<span class="gauge-marker" style="left:${gaugePos}%"></span>` : ""}
       </div>
-      <div class="gauge">
-        <div class="gauge-track">
-          <span class="gauge-seg" style="background:#38bdf8"></span>
-          <span class="gauge-seg" style="background:#22c55e"></span>
-          <span class="gauge-seg" style="background:#f59e0b"></span>
-          <span class="gauge-seg" style="background:#ef4444"></span>
-          ${pct != null ? `<span class="gauge-marker" style="left:${gaugePos}%"></span>` : ""}
-        </div>
-        <div class="gauge-scale">
-          <span>저체중</span><span>정상</span><span>과체중</span><span>비만</span>
-        </div>
-      </div>
-      <div class="obesity-meta">
-        <div><span class="muted small">이상 체중</span><b>${fmt(breedIdealWeight(breed))} kg</b></div>
-        <div><span class="muted small">표준 범위</span><b>${breed.weight[0]}~${breed.weight[1]} kg</b></div>
-        <div><span class="muted small">추정 BCS</span><b>${bcs != null ? bcs + " / 9" : "-"}</b></div>
-      </div>
-      <p class="advice">${advice}</p>
-    </section>`;
+      <div class="gauge-scale"><span>저체중</span><span>정상</span><span>과체중</span><span>비만</span></div>
+    </div>
+    <div class="obesity-meta">
+      <div><span class="muted small">이상 체중</span><b>${fmt(breedIdealWeight(breed))} kg</b></div>
+      <div><span class="muted small">표준 범위</span><b>${breed.weight[0]}~${breed.weight[1]} kg</b></div>
+      <div><span class="muted small">추정 BCS</span><b>${bcs != null ? bcs + " / 9" : "-"}</b></div>
+    </div>
+    <p class="advice">${advice}</p>
+  </section>`;
 }
 
 function tipsPanel(breed) {
-  return `
-    <section class="card">
-      <div class="card-head"><h3>💡 ${escapeHtml(breed.name)} 주요 관리 포인트</h3></div>
-      <ul class="tips-list">
-        ${breed.tips.map((t) => `<li>${escapeHtml(t)}</li>`).join("")}
-      </ul>
-    </section>`;
+  return `<section class="card">
+    <div class="card-head"><h3>💡 ${escapeHtml(breed.name)} 관리 포인트</h3></div>
+    <ul class="tips-list">${breed.tips.map((t) => `<li>${escapeHtml(t)}</li>`).join("")}</ul>
+  </section>`;
 }
 
-// ---------- 트렌드 차트 ----------
-function renderTrend(metric, dog, breed, records) {
+// ================= 트렌드 화면 =================
+function renderTrends(dog) {
+  const breed = getBreed(dog.breedId);
+  const records = Store.getRecords(dog.id);
+  const screen = $("#screen");
+  screen.innerHTML = `
+    ${dogStripHTML()}
+    <div class="tabs" id="trendTabs">
+      <button class="tab ${UI.trendMetric === "weight" ? "active" : ""}" data-metric="weight">체중</button>
+      <button class="tab ${UI.trendMetric === "obesity" ? "active" : ""}" data-metric="obesity">비만도</button>
+      <button class="tab ${UI.trendMetric === "height" ? "active" : ""}" data-metric="height">체고</button>
+      <button class="tab ${UI.trendMetric === "chest" ? "active" : ""}" data-metric="chest">몸통</button>
+    </div>
+    <section class="card">
+      <div id="chartArea" class="chart-area-wrap"></div>
+      <p class="chart-note muted small" id="chartNote"></p>
+    </section>
+  `;
+  bindDogStrip(screen);
+  const draw = () => drawTrend(UI.trendMetric, breed, records);
+  $$("#trendTabs .tab").forEach((tab) => tab.addEventListener("click", () => {
+    UI.trendMetric = tab.dataset.metric;
+    $$("#trendTabs .tab").forEach((t) => t.classList.toggle("active", t === tab));
+    draw();
+  }));
+  draw();
+}
+
+function drawTrend(metric, breed, records) {
   const area = $("#chartArea");
   const note = $("#chartNote");
   let points, opts;
-
   if (metric === "weight") {
     points = records.map((r) => ({ x: r.date, y: r.weight }));
-    opts = {
-      unit: "kg",
-      color: "#6366f1",
-      band: breed ? breed.weight : null,
-      ideal: breed ? breedIdealWeight(breed) : null,
-    };
-    note.textContent = breed
-      ? `연두색 밴드 = 견종 표준 체중 범위(${breed.weight[0]}~${breed.weight[1]}kg), 점선 = 이상 체중.`
-      : "";
+    opts = { unit: "kg", color: "#6366f1", band: breed ? breed.weight : null, ideal: breed ? breedIdealWeight(breed) : null };
+    note.textContent = breed ? `연두색 밴드 = 표준 체중(${breed.weight[0]}~${breed.weight[1]}kg), 점선 = 이상 체중.` : "";
   } else if (metric === "obesity") {
-    points = records.map((r) => ({
-      x: r.date,
-      y: breed ? obesityPercent(r.weight, breed) : null,
-    }));
+    points = records.map((r) => ({ x: r.date, y: breed ? obesityPercent(r.weight, breed) : null }));
     opts = { unit: "%", color: "#ef4444", ideal: 100, band: [85, 115] };
-    note.textContent = "100% = 이상 체중. 밴드(85~115%) 안이면 정상 범위예요.";
+    note.textContent = "100% = 이상 체중. 밴드(85~115%) 안이면 정상이에요.";
   } else if (metric === "height") {
     points = records.map((r) => ({ x: r.date, y: r.height }));
     opts = { unit: "cm", color: "#8b5cf6", band: breed ? breed.height : null };
-    note.textContent = breed ? `밴드 = 견종 표준 체고(${breed.height[0]}~${breed.height[1]}cm).` : "";
+    note.textContent = breed ? `밴드 = 표준 체고(${breed.height[0]}~${breed.height[1]}cm).` : "";
   } else {
     points = records.map((r) => ({ x: r.date, y: r.chest }));
     opts = { unit: "cm", color: "#0ea5b7", band: breed ? breed.chest : null };
-    note.textContent = breed ? `밴드 = 견종 표준 몸통 둘레(${breed.chest[0]}~${breed.chest[1]}cm).` : "";
+    note.textContent = breed ? `밴드 = 표준 몸통 둘레(${breed.chest[0]}~${breed.chest[1]}cm).` : "";
   }
-
   renderLineChart(area, points, opts);
 }
 
-// ---------- 기록 테이블 ----------
-function renderRecordTable(records, breed) {
-  const wrap = $("#recordTable");
+// ================= 기록 화면 =================
+function renderRecords(dog) {
+  const breed = getBreed(dog.breedId);
+  const records = Store.getRecords(dog.id);
+  const screen = $("#screen");
+  let listHTML;
   if (records.length === 0) {
-    wrap.innerHTML = '<p class="muted small">아직 기록이 없어요. 수치를 기록해 보세요.</p>';
-    return;
+    listHTML = `<div class="empty-state"><div class="empty-emoji">📋</div>
+      <h2>기록이 없어요</h2><p>아래 ＋ 버튼으로 첫 수치를 기록해 보세요.</p></div>`;
+  } else {
+    const items = [...records].reverse().map((r, idx, arr) => {
+      const prevRec = arr[idx + 1];
+      const wD = prevRec ? delta(r.weight, prevRec.weight) : null;
+      const pct = breed ? obesityPercent(r.weight, breed) : null;
+      const grade = obesityGrade(pct);
+      const metrics = [
+        r.height ? `체고 ${fmt(r.height)}` : null,
+        r.chest ? `몸통 ${fmt(r.chest)}` : null,
+        r.neck ? `목 ${fmt(r.neck)}` : null,
+      ].filter(Boolean).join(" · ");
+      return `<button class="record-card" data-rec="${r.id}">
+        <div class="record-main">
+          <div class="record-date">${r.date}</div>
+          <div class="record-weight">${fmt(r.weight)}kg${wD != null ? `<span class="mini ${wD > 0 ? "up" : wD < 0 ? "down" : ""}">${wD > 0 ? "▲" : wD < 0 ? "▼" : ""}${fmt(Math.abs(wD), 2)}</span>` : ""}</div>
+          ${metrics ? `<div class="record-metrics">${metrics} cm</div>` : ""}
+          ${r.note ? `<div class="record-note">📝 ${escapeHtml(r.note)}</div>` : ""}
+        </div>
+        ${pct != null ? `<span class="badge" style="background:${grade.color}20;color:${grade.color}">${fmt(pct, 0)}%</span>` : ""}
+      </button>`;
+    }).join("");
+    listHTML = `<div class="record-list">${items}</div>`;
   }
-  const rows = [...records].reverse().map((r, idx, arr) => {
-    // reverse된 배열에서 다음 인덱스가 이전 기록
-    const prevRec = arr[idx + 1];
-    const wD = prevRec ? delta(r.weight, prevRec.weight) : null;
-    const pct = breed ? obesityPercent(r.weight, breed) : null;
-    const grade = obesityGrade(pct);
-    return `
-      <tr>
-        <td>${r.date}</td>
-        <td>${fmt(r.weight)}${wD != null ? ` <span class="mini ${wD > 0 ? "up" : wD < 0 ? "down" : ""}">${wD > 0 ? "▲" : wD < 0 ? "▼" : ""}${fmt(Math.abs(wD), 2)}</span>` : ""}</td>
-        <td>${r.height ? fmt(r.height) : "-"}</td>
-        <td>${r.chest ? fmt(r.chest) : "-"}</td>
-        <td>${r.neck ? fmt(r.neck) : "-"}</td>
-        <td>${pct != null ? `<span class="badge" style="background:${grade.color}20;color:${grade.color}">${fmt(pct, 0)}%</span>` : "-"}</td>
-        <td class="note-cell">${r.note ? escapeHtml(r.note) : ""}</td>
-        <td class="row-actions">
-          <button class="icon-btn" data-edit="${r.id}" title="수정">✏️</button>
-          <button class="icon-btn" data-del="${r.id}" title="삭제">🗑️</button>
-        </td>
-      </tr>`;
-  }).join("");
-
-  wrap.innerHTML = `
-    <div class="table-scroll">
-      <table class="rec-table">
-        <thead><tr>
-          <th>날짜</th><th>체중(kg)</th><th>체고(cm)</th><th>몸통(cm)</th><th>목(cm)</th><th>비만도</th><th>메모</th><th></th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>`;
-
-  $$("[data-edit]", wrap).forEach((b) =>
-    b.addEventListener("click", () => {
-      const rec = Store.db.records.find((x) => x.id === b.dataset.edit);
-      openRecordModal(rec);
-    })
-  );
-  $$("[data-del]", wrap).forEach((b) =>
-    b.addEventListener("click", () => {
-      if (confirm("이 기록을 삭제할까요?")) {
-        Store.deleteRecord(b.dataset.del);
-        render();
-      }
-    })
-  );
+  screen.innerHTML = `${dogStripHTML()}
+    <div class="section-title">${escapeHtml(dog.name)}의 기록 (${records.length}건)</div>
+    ${listHTML}`;
+  bindDogStrip(screen);
+  $$("[data-rec]", screen).forEach((b) => b.addEventListener("click", () => {
+    const rec = Store.db.records.find((x) => x.id === b.dataset.rec);
+    openRecordSheet(rec);
+  }));
 }
 
-// ---------- 강아지 추가/수정 모달 ----------
-function openDogModal(dog = null) {
-  const editing = !!dog;
-  const modal = $("#modal");
-  modal.innerHTML = `
-    <div class="modal-box">
-      <div class="modal-head">
-        <h3>${editing ? "프로필 수정" : "강아지 추가"}</h3>
-        <button class="icon-btn" id="closeModal">✕</button>
-      </div>
-      <form id="dogForm" class="form">
-        <label>이름<input name="name" required maxlength="20" value="${editing ? escapeAttr(dog.name) : ""}" placeholder="예: 초코"></label>
-        <label>견종<select name="breedId" id="breedSelect"></select></label>
-        <div class="form-row">
-          <label>성별
-            <select name="sex">
-              <option value="">선택 안함</option>
-              <option value="M" ${editing && dog.sex === "M" ? "selected" : ""}>수컷</option>
-              <option value="F" ${editing && dog.sex === "F" ? "selected" : ""}>암컷</option>
-            </select>
-          </label>
-          <label class="check-inline">중성화
-            <input type="checkbox" name="neutered" ${editing && dog.neutered ? "checked" : ""}>
-          </label>
-        </div>
-        <label>생년월일<input type="date" name="birth" value="${editing && dog.birth ? dog.birth : ""}"></label>
-        <div class="modal-actions">
-          ${editing ? '<button type="button" class="btn btn-danger" id="deleteDogBtn">삭제</button>' : "<span></span>"}
-          <div>
-            <button type="button" class="btn" id="cancelModal">취소</button>
-            <button type="submit" class="btn btn-primary">${editing ? "저장" : "추가"}</button>
-          </div>
-        </div>
-      </form>
-    </div>`;
-  modal.classList.add("open");
-  populateBreedOptions($("#breedSelect"), editing ? dog.breedId : BREEDS[0].id);
+// ================= 더보기 화면 =================
+function renderMore() {
+  const dogs = Store.getDogs();
+  const screen = $("#screen");
+  const dogItems = dogs.length
+    ? dogs.map((d) => {
+        const breed = getBreed(d.breedId);
+        return `<button class="manage-item" data-manage="${d.id}">
+          <span class="m-emoji">${dogEmoji(breed)}</span>
+          <span class="m-info"><span class="m-name">${escapeHtml(d.name)}</span><br>
+          <span class="m-breed">${breed ? breed.name : "미지정"}${d.birth ? " · " + (ageFromBirth(d.birth) || "") : ""}</span></span>
+          <span class="m-arrow">✏️</span>
+        </button>`;
+      }).join("")
+    : '<p class="muted small" style="padding:4px 2px">등록된 강아지가 없어요.</p>';
 
-  const close = () => modal.classList.remove("open");
-  $("#closeModal").onclick = close;
-  $("#cancelModal").onclick = close;
-  modal.onclick = (e) => { if (e.target === modal) close(); };
+  screen.innerHTML = `
+    <div class="section-title">우리 아이들</div>
+    <div class="dog-manage-list">${dogItems}
+      <button class="btn btn-ghost" id="addDogMore" style="margin-top:4px">＋ 강아지 추가</button>
+    </div>
+
+    <div class="section-title" style="margin-top:22px">데이터</div>
+    <button class="settings-row" id="exportBtn"><span><span class="s-icon">⬇️</span>데이터 백업 (JSON)</span><span class="s-arrow">›</span></button>
+    <button class="settings-row" id="importBtn"><span><span class="s-icon">⬆️</span>데이터 복원</span><span class="s-arrow">›</span></button>
+    <input type="file" id="importFile" accept="application/json" hidden>
+
+    <div class="section-title" style="margin-top:22px">앱 정보</div>
+    <div class="card" style="font-size:0.85rem">
+      <b>멍멍 건강수첩</b> <span class="muted">v1.0</span>
+      <p class="muted" style="margin-top:8px">견종별 표준값 기준으로 체중·체고·몸통 둘레와 비만도를 기록·관리하는 앱입니다. 표준값은 참고용이며, 정확한 진단은 수의사와 상담하세요.</p>
+      <p class="muted small" style="margin-top:8px">모든 데이터는 이 기기에만 저장됩니다.</p>
+    </div>
+  `;
+  $$("[data-manage]", screen).forEach((b) => b.addEventListener("click", () => {
+    openDogSheet(Store.getDog(b.dataset.manage));
+  }));
+  $("#addDogMore").addEventListener("click", () => openDogSheet());
+  setupDataButtons();
+}
+
+// ================= 바텀시트: 강아지 추가/수정 =================
+function openSheet(html) {
+  const box = $("#sheetBox");
+  box.innerHTML = `<div class="sheet-handle"></div>${html}`;
+  $("#sheet").classList.add("open");
+  document.body.style.overflow = "hidden";
+}
+function closeSheet() {
+  $("#sheet").classList.remove("open");
+  document.body.style.overflow = "";
+}
+
+function openDogSheet(dog = null) {
+  const editing = !!dog;
+  openSheet(`
+    <div class="sheet-head"><h3>${editing ? "프로필 수정" : "강아지 추가"}</h3>
+      <button class="sheet-close" data-close>✕</button></div>
+    <form id="dogForm" class="form">
+      <label>이름<input name="name" required maxlength="20" value="${editing ? escapeHtml(dog.name) : ""}" placeholder="예: 초코"></label>
+      <label>견종<select name="breedId" id="breedSelect"></select></label>
+      <div class="form-row">
+        <label>성별<select name="sex">
+          <option value="">선택 안함</option>
+          <option value="M" ${editing && dog.sex === "M" ? "selected" : ""}>수컷</option>
+          <option value="F" ${editing && dog.sex === "F" ? "selected" : ""}>암컷</option>
+        </select></label>
+        <label>생년월일<input type="date" name="birth" value="${editing && dog.birth ? dog.birth : ""}"></label>
+      </div>
+      <label class="check-inline"><input type="checkbox" name="neutered" ${editing && dog.neutered ? "checked" : ""}>중성화 완료</label>
+      <button type="submit" class="btn btn-primary">${editing ? "저장" : "추가하기"}</button>
+      ${editing ? '<button type="button" class="btn btn-danger" id="deleteDogBtn">이 강아지 삭제</button>' : ""}
+    </form>`);
+  populateBreedOptions($("#breedSelect"), editing ? dog.breedId : BREEDS[0].id);
+  bindSheetClose();
 
   if (editing) {
-    $("#deleteDogBtn").onclick = () => {
+    $("#deleteDogBtn").addEventListener("click", () => {
       if (confirm(`${dog.name}의 프로필과 모든 기록을 삭제할까요?`)) {
         Store.deleteDog(dog.id);
-        close();
-        render();
+        closeSheet();
+        toast("삭제했어요");
+        renderScreen();
       }
-    };
+    });
   }
-
-  $("#dogForm").onsubmit = (e) => {
+  $("#dogForm").addEventListener("submit", (e) => {
     e.preventDefault();
     const f = e.target;
     const data = {
@@ -373,80 +385,76 @@ function openDogModal(dog = null) {
       birth: f.birth.value,
     };
     if (!data.name) return;
-    if (editing) Store.updateDog(dog.id, data);
-    else Store.addDog(data);
-    close();
-    render();
-  };
+    if (editing) { Store.updateDog(dog.id, data); toast("저장했어요"); }
+    else { Store.addDog(data); toast("등록했어요 🐶"); if (UI.screen === "more") navigate("home"); }
+    closeSheet();
+    renderScreen();
+  });
 }
 
-// ---------- 수치 기록 모달 ----------
-function openRecordModal(rec = null) {
+// ================= 바텀시트: 수치 기록 =================
+function openRecordSheet(rec = null) {
   const dog = Store.getActiveDog();
-  if (!dog) return;
+  if (!dog) { toast("먼저 강아지를 등록하세요"); return; }
   const editing = !!rec;
-  const today = new Date().toISOString().slice(0, 10);
-  const modal = $("#modal");
-  modal.innerHTML = `
-    <div class="modal-box">
-      <div class="modal-head">
-        <h3>${editing ? "기록 수정" : "수치 기록"} · ${escapeHtml(dog.name)}</h3>
-        <button class="icon-btn" id="closeModal">✕</button>
+  const today = todayStr();
+  openSheet(`
+    <div class="sheet-head"><h3>${editing ? "기록 수정" : "수치 기록"}</h3>
+      <button class="sheet-close" data-close>✕</button></div>
+    <form id="recForm" class="form">
+      <label>측정 날짜<input type="date" name="date" required value="${editing ? rec.date : today}"></label>
+      <div class="form-row">
+        <label>체중 (kg) *<input type="number" inputmode="decimal" name="weight" step="0.01" min="0" required value="${editing ? rec.weight : ""}" placeholder="4.2"></label>
+        <label>체고 (cm)<input type="number" inputmode="decimal" name="height" step="0.1" min="0" value="${editing && rec.height ? rec.height : ""}" placeholder="어깨높이"></label>
       </div>
-      <form id="recForm" class="form">
-        <label>측정 날짜<input type="date" name="date" required value="${editing ? rec.date : today}"></label>
-        <div class="form-row">
-          <label>체중 (kg) *<input type="number" name="weight" step="0.01" min="0" required value="${editing ? rec.weight : ""}" placeholder="예: 4.2"></label>
-          <label>체고 (cm)<input type="number" name="height" step="0.1" min="0" value="${editing && rec.height ? rec.height : ""}" placeholder="어깨 높이"></label>
-        </div>
-        <div class="form-row">
-          <label>몸통 둘레 (cm)<input type="number" name="chest" step="0.1" min="0" value="${editing && rec.chest ? rec.chest : ""}" placeholder="가슴 둘레"></label>
-          <label>목 둘레 (cm)<input type="number" name="neck" step="0.1" min="0" value="${editing && rec.neck ? rec.neck : ""}" placeholder="선택"></label>
-        </div>
-        <label>메모<input name="note" maxlength="60" value="${editing && rec.note ? escapeAttr(rec.note) : ""}" placeholder="예: 병원 검진, 사료 변경 등"></label>
-        <div class="modal-actions">
-          ${editing ? '<button type="button" class="btn btn-danger" id="deleteRecBtn">삭제</button>' : "<span></span>"}
-          <div>
-            <button type="button" class="btn" id="cancelModal">취소</button>
-            <button type="submit" class="btn btn-primary">${editing ? "저장" : "기록"}</button>
-          </div>
-        </div>
-      </form>
-    </div>`;
-  modal.classList.add("open");
-  const close = () => modal.classList.remove("open");
-  $("#closeModal").onclick = close;
-  $("#cancelModal").onclick = close;
-  modal.onclick = (e) => { if (e.target === modal) close(); };
+      <div class="form-row">
+        <label>몸통 둘레 (cm)<input type="number" inputmode="decimal" name="chest" step="0.1" min="0" value="${editing && rec.chest ? rec.chest : ""}" placeholder="가슴둘레"></label>
+        <label>목 둘레 (cm)<input type="number" inputmode="decimal" name="neck" step="0.1" min="0" value="${editing && rec.neck ? rec.neck : ""}" placeholder="선택"></label>
+      </div>
+      <label>메모<input name="note" maxlength="60" value="${editing && rec.note ? escapeHtml(rec.note) : ""}" placeholder="예: 병원 검진, 사료 변경"></label>
+      <button type="submit" class="btn btn-primary">${editing ? "저장" : "기록하기"}</button>
+      ${editing ? '<button type="button" class="btn btn-danger" id="deleteRecBtn">이 기록 삭제</button>' : ""}
+    </form>`);
+  bindSheetClose();
 
   if (editing) {
-    $("#deleteRecBtn").onclick = () => {
-      if (confirm("이 기록을 삭제할까요?")) { Store.deleteRecord(rec.id); close(); render(); }
-    };
+    $("#deleteRecBtn").addEventListener("click", () => {
+      if (confirm("이 기록을 삭제할까요?")) {
+        Store.deleteRecord(rec.id);
+        closeSheet();
+        toast("삭제했어요");
+        renderScreen();
+      }
+    });
   }
-
-  $("#recForm").onsubmit = (e) => {
+  $("#recForm").addEventListener("submit", (e) => {
     e.preventDefault();
     const f = e.target;
     const num = (v) => (v === "" ? null : parseFloat(v));
     const data = {
-      dogId: dog.id,
-      date: f.date.value,
-      weight: num(f.weight.value),
-      height: num(f.height.value),
-      chest: num(f.chest.value),
-      neck: num(f.neck.value),
-      note: f.note.value.trim(),
+      dogId: dog.id, date: f.date.value,
+      weight: num(f.weight.value), height: num(f.height.value),
+      chest: num(f.chest.value), neck: num(f.neck.value), note: f.note.value.trim(),
     };
     if (data.weight == null) return;
-    if (editing) Store.updateRecord(rec.id, data);
-    else Store.addRecord(data);
-    close();
-    render();
-  };
+    if (editing) { Store.updateRecord(rec.id, data); toast("저장했어요"); }
+    else { Store.addRecord(data); toast("기록 완료 ✅"); }
+    closeSheet();
+    renderScreen();
+  });
 }
 
-// ---------- 데이터 내보내기/가져오기 ----------
+function bindSheetClose() {
+  $("[data-close]")?.addEventListener("click", closeSheet);
+}
+
+function todayStr() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+// ================= 데이터 백업/복원 =================
 function setupDataButtons() {
   $("#exportBtn").addEventListener("click", () => {
     const blob = new Blob([Store.exportJSON()], { type: "application/json" });
@@ -455,6 +463,7 @@ function setupDataButtons() {
     a.download = "dog-health-backup.json";
     a.click();
     URL.revokeObjectURL(a.href);
+    toast("백업 파일을 내보냈어요");
   });
   $("#importBtn").addEventListener("click", () => $("#importFile").click());
   $("#importFile").addEventListener("change", (e) => {
@@ -464,8 +473,8 @@ function setupDataButtons() {
     reader.onload = () => {
       try {
         Store.importJSON(reader.result);
-        render();
-        alert("데이터를 불러왔어요.");
+        toast("복원했어요");
+        navigate("home");
       } catch (err) {
         alert("불러오기 실패: " + err.message);
       }
@@ -475,26 +484,25 @@ function setupDataButtons() {
   });
 }
 
-// ---------- 유틸 ----------
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-}
-function escapeAttr(s) { return escapeHtml(s); }
-
-// ---------- 전체 렌더 ----------
-function render() {
-  renderDogList();
-  renderDashboard();
-}
-
+// ================= 초기화 =================
 document.addEventListener("DOMContentLoaded", () => {
-  $("#addDogBtn").addEventListener("click", () => openDogModal());
-  setupDataButtons();
-  render();
-  // 리사이즈 시 차트 다시 그리기
+  $$(".tabbar-item").forEach((t) => t.addEventListener("click", () => navigate(t.dataset.screen)));
+  $("#fab").addEventListener("click", () => openRecordSheet());
+  $("#sheet").addEventListener("click", (e) => { if (e.target.id === "sheet") closeSheet(); });
+
+  navigate("home");
+
+  // 리사이즈 시 트렌드 차트 다시 그리기
   let rt;
   window.addEventListener("resize", () => {
     clearTimeout(rt);
-    rt = setTimeout(() => { if (Store.getActiveDog()) renderDashboard(); }, 200);
+    rt = setTimeout(() => { if (UI.screen === "trends" && Store.getActiveDog()) renderScreen(); }, 200);
   });
+
+  // 서비스워커 등록 (오프라인 지원)
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("sw.js").catch(() => {});
+    });
+  }
 });

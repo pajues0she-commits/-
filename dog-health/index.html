@@ -2,44 +2,58 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
   <meta name="theme-color" content="#6366f1">
-  <title>멍멍 건강수첩 · 견종별 강아지 건강관리</title>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="멍멍 건강수첩">
+  <title>멍멍 건강수첩</title>
+  <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="css/styles.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐶</text></svg>">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
 </head>
 <body>
-  <div class="app">
-    <!-- 사이드바 -->
-    <aside class="sidebar">
-      <div class="brand">
-        <span class="brand-logo">🐶</span>
-        <div>
-          <h1 class="brand-title">멍멍 건강수첩</h1>
-          <p class="brand-sub">견종별 건강관리</p>
-        </div>
+  <div class="phone">
+    <!-- 상단 앱바 -->
+    <header class="appbar" id="appbar">
+      <div class="appbar-title">
+        <span class="appbar-logo">🐶</span>
+        <span id="appbarTitle">멍멍 건강수첩</span>
       </div>
+      <button class="appbar-btn" id="appbarAction" hidden></button>
+    </header>
 
-      <button class="btn btn-primary btn-block" id="addDogBtn">＋ 강아지 추가</button>
+    <!-- 화면 영역 -->
+    <main class="screen" id="screen"></main>
 
-      <div class="sidebar-section">
-        <h2 class="sidebar-label">우리 아이들</h2>
-        <div id="dogList" class="dog-list"></div>
-      </div>
+    <!-- 플로팅 액션 버튼 -->
+    <button class="fab" id="fab" hidden>＋</button>
 
-      <div class="sidebar-footer">
-        <button class="btn btn-ghost btn-sm" id="exportBtn">⬇ 백업</button>
-        <button class="btn btn-ghost btn-sm" id="importBtn">⬆ 복원</button>
-        <input type="file" id="importFile" accept="application/json" hidden>
-      </div>
-    </aside>
-
-    <!-- 메인 -->
-    <main id="dashboard" class="dashboard"></main>
+    <!-- 하단 탭 내비게이션 -->
+    <nav class="tabbar" id="tabbar">
+      <button class="tabbar-item active" data-screen="home">
+        <span class="tabbar-icon">🏠</span><span class="tabbar-label">홈</span>
+      </button>
+      <button class="tabbar-item" data-screen="trends">
+        <span class="tabbar-icon">📈</span><span class="tabbar-label">트렌드</span>
+      </button>
+      <button class="tabbar-item" data-screen="records">
+        <span class="tabbar-icon">📋</span><span class="tabbar-label">기록</span>
+      </button>
+      <button class="tabbar-item" data-screen="more">
+        <span class="tabbar-icon">⚙️</span><span class="tabbar-label">더보기</span>
+      </button>
+    </nav>
   </div>
 
-  <!-- 모달 컨테이너 -->
-  <div id="modal" class="modal"></div>
+  <!-- 바텀시트 모달 -->
+  <div id="sheet" class="sheet-backdrop">
+    <div class="sheet" id="sheetBox"></div>
+  </div>
+
+  <!-- 토스트 -->
+  <div id="toast" class="toast"></div>
 
   <script src="js/breeds.js"></script>
   <script src="js/health.js"></script>
