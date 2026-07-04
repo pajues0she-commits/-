@@ -1,0 +1,17 @@
+{
+  "name": "유해화학물질 취급시설 자체점검",
+  "short_name": "자체점검",
+  "description": "화학물질관리법 시행규칙 별지 제42호서식 자체점검대장을 작성·저장하고 이메일로 전송합니다.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f1f5f9",
+  "theme_color": "#0f766e",
+  "lang": "ko",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

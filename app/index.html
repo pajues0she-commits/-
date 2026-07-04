@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1"
+    />
+    <meta name="theme-color" content="#0f766e" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="자체점검" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" type="image/png" href="icons/icon-192.png" />
+    <link rel="apple-touch-icon" href="icons/icon-192.png" />
+    <link rel="stylesheet" href="styles.css" />
+    <title>유해화학물질 취급시설 자체점검</title>
+  </head>
+  <body>
+    <!-- ===== 상단 앱바 ===== -->
+    <header class="appbar">
+      <div class="appbar__title">
+        <span class="appbar__badge">별지 제42호</span>
+        <span>유해화학물질 취급시설 자체점검</span>
+      </div>
+    </header>
+
+    <!-- ===== 점검 화면 ===== -->
+    <main id="view-edit" class="view view--active">
+      <section class="card">
+        <h2 class="card__title">점검 기본정보</h2>
+        <div class="field-grid">
+          <label class="field">
+            <span>점검연월일</span>
+            <input type="date" id="f-date" />
+          </label>
+          <div class="field field--time">
+            <span>점검시간</span>
+            <div class="time-row">
+              <input type="time" id="f-time-start" />
+              <em>~</em>
+              <input type="time" id="f-time-end" />
+            </div>
+          </div>
+          <label class="field">
+            <span>소속</span>
+            <input type="text" id="f-org" placeholder="예) 안전관리팀" />
+          </label>
+          <label class="field">
+            <span>점검자 성명</span>
+            <input type="text" id="f-inspector" placeholder="이름" />
+          </label>
+        </div>
+
+        <div class="field field--sign">
+          <span>서명</span>
+          <div class="sign-box">
+            <canvas id="sign-canvas" aria-label="서명란"></canvas>
+            <span class="sign-hint" id="sign-hint">여기에 손가락으로 서명하세요</span>
+          </div>
+          <button type="button" class="btn btn--ghost btn--sm" id="btn-sign-clear">
+            서명 지우기
+          </button>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card__head">
+          <h2 class="card__title">점검 항목 (12)</h2>
+          <div class="bulk">
+            <span class="bulk__label">일괄</span>
+            <button type="button" class="chip chip--ok" data-bulk="ok">모두 문제없음</button>
+          </div>
+        </div>
+        <div id="items"></div>
+      </section>
+
+      <section class="card">
+        <h2 class="card__title">비고</h2>
+        <textarea
+          id="f-remark"
+          rows="3"
+          placeholder="자체점검 시 조치완료된 사항 또는 재점검이 필요한 사항을 적습니다."
+        ></textarea>
+        <p class="progress" id="progress-text"></p>
+      </section>
+
+      <div class="action-bar">
+        <button type="button" class="btn btn--primary" id="btn-save">저장</button>
+        <button type="button" class="btn btn--accent" id="btn-email">
+          결과 이메일 전송
+        </button>
+        <button type="button" class="btn btn--ghost" id="btn-preview">
+          양식 미리보기 · 인쇄
+        </button>
+        <button type="button" class="btn btn--ghost btn--danger" id="btn-reset">
+          새 점검
+        </button>
+      </div>
+    </main>
+
+    <!-- ===== 저장내역 화면 ===== -->
+    <main id="view-history" class="view">
+      <section class="card">
+        <div class="card__head">
+          <h2 class="card__title">저장된 점검 내역</h2>
+          <span class="count" id="history-count">0건</span>
+        </div>
+        <ul class="record-list" id="record-list"></ul>
+        <p class="empty" id="history-empty">저장된 점검 결과가 없습니다.</p>
+      </section>
+    </main>
+
+    <!-- ===== 설정 화면 ===== -->
+    <main id="view-settings" class="view">
+      <section class="card">
+        <h2 class="card__title">설정</h2>
+        <label class="field">
+          <span>기본 수신 이메일</span>
+          <input type="email" id="s-email" placeholder="report@example.com" />
+        </label>
+        <label class="field">
+          <span>기본 소속</span>
+          <input type="text" id="s-org" placeholder="예) 안전관리팀" />
+        </label>
+        <label class="field">
+          <span>기본 점검자</span>
+          <input type="text" id="s-inspector" placeholder="이름" />
+        </label>
+        <button type="button" class="btn btn--primary" id="btn-save-settings">
+          설정 저장
+        </button>
+      </section>
+      <section class="card">
+        <h2 class="card__title">데이터</h2>
+        <button type="button" class="btn btn--ghost" id="btn-export-json">
+          전체 내역 백업(JSON)
+        </button>
+        <button type="button" class="btn btn--ghost btn--danger" id="btn-clear-all">
+          전체 내역 삭제
+        </button>
+        <p class="muted small" id="app-version"></p>
+      </section>
+    </main>
+
+    <!-- ===== 하단 네비게이션 ===== -->
+    <nav class="tabbar">
+      <button class="tab tab--active" data-view="edit">
+        <span class="tab__ico">📋</span><span>점검</span>
+      </button>
+      <button class="tab" data-view="history">
+        <span class="tab__ico">🗂️</span><span>내역</span>
+      </button>
+      <button class="tab" data-view="settings">
+        <span class="tab__ico">⚙️</span><span>설정</span>
+      </button>
+    </nav>
+
+    <!-- ===== 양식 미리보기 모달 ===== -->
+    <div class="modal" id="preview-modal" hidden>
+      <div class="modal__bar">
+        <button class="btn btn--ghost btn--sm" id="btn-preview-close">닫기</button>
+        <span>양식 미리보기</span>
+        <button class="btn btn--primary btn--sm" id="btn-print">인쇄</button>
+      </div>
+      <div class="modal__scroll">
+        <div id="preview-holder"></div>
+      </div>
+    </div>
+
+    <!-- ===== 양식(출력/PDF용) 템플릿 — 화면에는 오프스크린 ===== -->
+    <div id="form-stage" aria-hidden="true"></div>
+
+    <!-- ===== 토스트 ===== -->
+    <div class="toast" id="toast" hidden></div>
+
+    <script src="vendor/html2canvas.min.js"></script>
+    <script src="vendor/jspdf.umd.min.js"></script>
+    <script src="data.js"></script>
+    <script src="form.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
