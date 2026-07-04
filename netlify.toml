@@ -1,0 +1,17 @@
+# Netlify 설정 — 이 저장소를 Netlify에 연결하면 dog-health/ 폴더가 자동 배포됩니다.
+# (앱은 dog-health/ 안에 있으므로 publish 디렉터리를 지정)
+
+[build]
+  publish = "dog-health"
+
+# 서비스워커는 항상 최신을 받도록 캐시하지 않습니다 (오프라인 업데이트 반영).
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+# 매니페스트 MIME 타입 보장
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Content-Type = "application/manifest+json"
