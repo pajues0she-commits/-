@@ -154,6 +154,31 @@ textarea { resize: vertical; }
 .modal__scroll { flex: 1; overflow: auto; padding: 16px; -webkit-overflow-scrolling: touch; }
 #preview-holder { transform-origin: top left; }
 
+.modal__spacer { width: 52px; }
+.modal__actions { display: flex; gap: 10px; padding: 12px; padding-bottom: calc(12px + var(--safe-b)); background: #1e293b; }
+.modal__actions .btn { flex: 1; }
+
+/* ===== 전송 미리보기 ===== */
+.send-panel { max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+.send-panel .field > span { color: #cbd5e1; }
+.send-panel input { background: #fff; }
+.send-note { color: #e2e8f0; font-size: 13px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.15); border-radius: 10px; padding: 10px 12px; }
+.send-note b { color: #fff; }
+.send-preview { background: #fff; border-radius: 10px; padding: 6px; overflow: hidden; }
+.send-preview img { width: 100%; display: block; border-radius: 6px; }
+.send-body { color: #e2e8f0; font-size: 13px; }
+.send-body summary { cursor: pointer; padding: 6px 0; font-weight: 600; }
+.send-body pre { white-space: pre-wrap; word-break: break-word; background: rgba(0,0,0,.25); border-radius: 8px; padding: 12px; font-size: 12px; line-height: 1.55; color: #f1f5f9; margin: 6px 0 0; font-family: inherit; }
+
+/* ===== 확인 다이얼로그 ===== */
+.cdialog { position: fixed; inset: 0; z-index: 70; background: rgba(15,23,42,.55); display: flex; align-items: center; justify-content: center; padding: 24px; }
+.cdialog[hidden] { display: none; }
+.cdialog__box { background: #fff; border-radius: 16px; padding: 22px 20px 16px; width: 100%; max-width: 340px; box-shadow: 0 20px 50px rgba(0,0,0,.3); }
+.cdialog__msg { margin: 0 0 18px; font-size: 15px; line-height: 1.55; white-space: pre-wrap; text-align: center; }
+.cdialog__btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.cdialog__btns .btn { padding: 12px; }
+.btn--danger-solid { background: var(--danger); color: #fff; }
+
 /* ===== 토스트 ===== */
 .toast { position: fixed; left: 50%; bottom: calc(78px + var(--safe-b)); transform: translateX(-50%); background: #0f172a; color: #fff; padding: 11px 18px; border-radius: 24px; font-size: 13.5px; font-weight: 600; z-index: 60; max-width: 92vw; text-align: center; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
 .toast[hidden] { display: none; }

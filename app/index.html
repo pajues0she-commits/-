@@ -168,6 +168,54 @@
       </div>
     </div>
 
+    <!-- ===== 이메일 전송 미리보기 모달 ===== -->
+    <div class="modal" id="send-modal" hidden>
+      <div class="modal__bar">
+        <button class="btn btn--ghost btn--sm" id="btn-send-close">닫기</button>
+        <span>결과 이메일 전송</span>
+        <span class="modal__spacer"></span>
+      </div>
+      <div class="modal__scroll">
+        <div class="send-panel">
+          <label class="field">
+            <span>받는 사람 이메일</span>
+            <input type="email" id="send-to" placeholder="report@example.com" />
+          </label>
+          <label class="field">
+            <span>제목</span>
+            <input type="text" id="send-subject" />
+          </label>
+          <div class="send-note" id="send-note">
+            아래는 실제로 전송될 <b>별지 제42호서식 PDF</b> 미리보기입니다.
+          </div>
+          <div class="send-preview"><img id="send-img" alt="전송될 양식 미리보기" /></div>
+          <details class="send-body">
+            <summary>메일 본문 미리보기</summary>
+            <pre id="send-body-text"></pre>
+          </details>
+        </div>
+      </div>
+      <div class="modal__actions">
+        <button type="button" class="btn btn--accent" id="btn-do-send">
+          메일 앱으로 전송
+        </button>
+        <button type="button" class="btn btn--ghost" id="btn-do-download">
+          PDF 내려받기
+        </button>
+      </div>
+    </div>
+
+    <!-- ===== 확인 다이얼로그 (샌드박스에서도 동작) ===== -->
+    <div class="cdialog" id="cdialog" hidden>
+      <div class="cdialog__box">
+        <p class="cdialog__msg" id="cdialog-msg"></p>
+        <div class="cdialog__btns">
+          <button type="button" class="btn btn--ghost" id="cdialog-cancel">취소</button>
+          <button type="button" class="btn btn--primary" id="cdialog-ok">확인</button>
+        </div>
+      </div>
+    </div>
+
     <!-- ===== 양식(출력/PDF용) 템플릿 — 화면에는 오프스크린 ===== -->
     <div id="form-stage" aria-hidden="true"></div>
 

@@ -240,6 +240,34 @@
     }, 500);
   }
 
+  // ---------- 확인 다이얼로그 (샌드박스에서도 동작하는 커스텀 모달) ----------
+  function confirmDialog(msg, opts) {
+    opts = opts || {};
+    return new Promise((resolve) => {
+      const d = $("#cdialog");
+      $("#cdialog-msg").textContent = msg;
+      const ok = $("#cdialog-ok");
+      const cancel = $("#cdialog-cancel");
+      ok.textContent = opts.okText || "확인";
+      cancel.textContent = opts.cancelText || "취소";
+      ok.classList.toggle("btn--danger-solid", !!opts.danger);
+      ok.classList.toggle("btn--primary", !opts.danger);
+      d.hidden = false;
+      const close = (val) => {
+        d.hidden = true;
+        ok.onclick = null;
+        cancel.onclick = null;
+        d.onclick = null;
+        resolve(val);
+      };
+      ok.onclick = () => close(true);
+      cancel.onclick = () => close(false);
+      d.onclick = (e) => {
+        if (e.target === d) close(false);
+      };
+    });
+  }
+
   // ---------- 토스트 ----------
   let toastTimer = null;
   function toast(msg, kind) {
@@ -293,8 +321,7 @@
     return canvas;
   }
 
-  async function buildPdfBlob(record) {
-    const canvas = await renderFormCanvas(record);
+  function pdfFromCanvas(canvas) {
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
     const pw = pdf.internal.pageSize.getWidth(); // 297
@@ -359,7 +386,10 @@
     return lines.join("\n");
   }
 
-  // ---------- 이메일 전송 ----------
+  // ---------- 이메일 전송: 미리보기 모달을 먼저 연다 ----------
+  // (샌드박스/미리보기 환경에서 실제 전송이 막혀도 결과 PDF를 눈으로 확인 가능)
+  let sendCtx = null; // { record, blob, filename, subject, body }
+
   async function emailResult() {
     const err = validate();
     if (err) {
@@ -367,21 +397,58 @@
       return;
     }
     saveCurrent(true);
-    const record = current;
-    const to = store.settings().email || "";
-    const subject = `[자체점검] 유해화학물질 취급시설 자체점검대장 (${record.date || ""})`;
-    const body = emailSummary(record);
+    await openSendModal(current);
+  }
 
-    let btn = $("#btn-email");
+  async function openSendModal(record) {
+    const btn = $("#btn-email");
     const prev = btn.textContent;
     btn.disabled = true;
     btn.textContent = "PDF 생성 중…";
     try {
-      const blob = await buildPdfBlob(record);
+      const canvas = await renderFormCanvas(record);
+      const blob = pdfFromCanvas(canvas);
       const filename = pdfFilename(record);
-      const file = new File([blob], filename, { type: "application/pdf" });
+      const subject = `[자체점검] 유해화학물질 취급시설 자체점검대장 (${record.date || ""})`;
+      const body = emailSummary(record);
+      sendCtx = { record, blob, filename, subject, body };
 
-      // 1순위: 파일 첨부가 가능한 네이티브 공유 (모바일에서 메일 앱 선택 → PDF 첨부)
+      $("#send-img").src = canvas.toDataURL("image/png");
+      $("#send-to").value = store.settings().email || "";
+      $("#send-subject").value = subject;
+      $("#send-body-text").textContent = body;
+      $("#send-modal").hidden = false;
+      document.body.classList.add("modal-open");
+    } catch (e) {
+      console.error(e);
+      toast("PDF 생성 중 오류가 발생했습니다.", "warn");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = prev;
+    }
+  }
+
+  function closeSendModal() {
+    $("#send-modal").hidden = true;
+    document.body.classList.remove("modal-open");
+  }
+
+  // 실제 전송(공유 시트 → mailto 순), 환경상 막히면 안내
+  async function doSend() {
+    if (!sendCtx) return;
+    const to = $("#send-to").value.trim();
+    const subject = $("#send-subject").value.trim() || sendCtx.subject;
+    const body = sendCtx.body;
+    // 입력한 수신 이메일을 기본값으로 저장
+    if (to) {
+      const s = store.settings();
+      s.email = to;
+      store.saveSettings(s);
+    }
+    const file = new File([sendCtx.blob], sendCtx.filename, {
+      type: "application/pdf",
+    });
+    try {
       if (
         navigator.canShare &&
         navigator.canShare({ files: [file] }) &&
@@ -389,41 +456,60 @@
       ) {
         await navigator.share({ files: [file], title: subject, text: body });
         toast("공유 시트에서 메일 앱을 선택하세요.", "ok");
-        btn.disabled = false;
-        btn.textContent = prev;
         return;
       }
-
-      // 2순위: PDF를 내려받은 뒤 mailto로 메일 작성창 열기(수동 첨부)
-      downloadBlob(blob, filename);
+      // 공유 미지원: PDF 내려받기 + 메일 작성창(mailto)
+      const dl = downloadBlob(sendCtx.blob, sendCtx.filename);
       const mailto = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(
         subject
       )}&body=${encodeURIComponent(body + "\n\n(내려받은 PDF 파일을 첨부해 주세요.)")}`;
-      window.location.href = mailto;
-      toast("PDF를 내려받았습니다. 메일에 첨부해 주세요.", "ok");
+      let opened = true;
+      try {
+        window.location.href = mailto;
+      } catch (e) {
+        opened = false;
+      }
+      toast(
+        dl
+          ? "PDF를 내려받았습니다. 메일에 첨부해 주세요."
+          : "이 미리보기 환경에서는 전송·다운로드가 제한됩니다. 배포 후 이용하세요.",
+        dl ? "ok" : "warn"
+      );
     } catch (e) {
-      console.error(e);
-      // 사용자가 공유를 취소한 경우
       if (e && e.name === "AbortError") {
         toast("전송이 취소되었습니다.");
       } else {
-        toast("전송 중 오류가 발생했습니다.", "warn");
+        toast(
+          "이 미리보기 환경에서는 전송이 제한됩니다. PDF 내려받기 또는 배포 후 이용하세요.",
+          "warn"
+        );
       }
-    } finally {
-      btn.disabled = false;
-      btn.textContent = prev;
     }
   }
 
+  // 다운로드 시도. 예외가 없으면 true(브라우저가 처리) — 샌드박스에서 막히면 false.
   function downloadBlob(blob, filename) {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    try {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      return true;
+    } catch (e) {
+      console.error("download blocked", e);
+      return false;
+    }
+  }
+
+  // record → PDF Blob (양식 렌더 후 변환)
+  async function buildPdfBlob(record) {
+    const canvas = await renderFormCanvas(record);
+    return pdfFromCanvas(canvas);
   }
 
   // ---------- 미리보기 · 인쇄 ----------
@@ -491,16 +577,19 @@
   }
 
   async function historyEmail(record) {
-    current = JSON.parse(JSON.stringify(record));
-    await emailResult();
+    // 저장된 내역은 현재 편집중인 점검을 건드리지 않고 바로 전송 미리보기
+    await openSendModal(record);
   }
 
   async function historyPdf(record) {
     toast("PDF 생성 중…");
     try {
       const blob = await buildPdfBlob(record);
-      downloadBlob(blob, pdfFilename(record));
-      toast("PDF를 내려받았습니다.", "ok");
+      const ok = downloadBlob(blob, pdfFilename(record));
+      toast(
+        ok ? "PDF를 내려받았습니다." : "미리보기 환경에서는 다운로드가 제한됩니다.",
+        ok ? "ok" : "warn"
+      );
     } catch (e) {
       toast("PDF 생성 오류", "warn");
     }
@@ -554,15 +643,20 @@
       (id) => $(id).addEventListener("input", saveDraftSoon)
     );
 
-    $("#btn-save").addEventListener("click", () => {
+    $("#btn-save").addEventListener("click", async () => {
       const err = validate();
-      if (err && !confirm(err + "\n그래도 저장하시겠습니까?")) return;
+      if (err && !(await confirmDialog(err + "\n그래도 저장하시겠습니까?"))) return;
       saveCurrent();
     });
     $("#btn-email").addEventListener("click", emailResult);
     $("#btn-preview").addEventListener("click", () => openPreview());
-    $("#btn-reset").addEventListener("click", () => {
-      if (!confirm("현재 입력한 내용을 지우고 새 점검을 시작할까요?")) return;
+    $("#btn-reset").addEventListener("click", async () => {
+      if (
+        !(await confirmDialog("현재 입력한 내용을 지우고 새 점검을 시작할까요?", {
+          okText: "새 점검",
+        }))
+      )
+        return;
       current = newRecord();
       store.clearDraft();
       fillFormFromCurrent();
@@ -572,6 +666,18 @@
     // 미리보기 모달
     $("#btn-preview-close").addEventListener("click", closePreview);
     $("#btn-print").addEventListener("click", printForm);
+
+    // 전송 미리보기 모달
+    $("#btn-send-close").addEventListener("click", closeSendModal);
+    $("#btn-do-send").addEventListener("click", doSend);
+    $("#btn-do-download").addEventListener("click", () => {
+      if (!sendCtx) return;
+      const ok = downloadBlob(sendCtx.blob, sendCtx.filename);
+      toast(
+        ok ? "PDF를 내려받았습니다." : "미리보기 환경에서는 다운로드가 제한됩니다.",
+        ok ? "ok" : "warn"
+      );
+    });
 
     // 탭
     $$(".tab").forEach((t) =>
@@ -590,11 +696,15 @@
       else if (act === "email") historyEmail(rec);
       else if (act === "pdf") historyPdf(rec);
       else if (act === "del") {
-        if (confirm("이 점검 내역을 삭제할까요?")) {
+        confirmDialog("이 점검 내역을 삭제할까요?", {
+          okText: "삭제",
+          danger: true,
+        }).then((yes) => {
+          if (!yes) return;
           store.remove(id);
           renderHistory();
           toast("삭제되었습니다.");
-        }
+        });
       }
     });
 
@@ -613,12 +723,17 @@
       });
       downloadBlob(blob, "자체점검_백업.json");
     });
-    $("#btn-clear-all").addEventListener("click", () => {
-      if (confirm("저장된 모든 점검 내역을 삭제합니다. 계속할까요?")) {
-        store.saveRecords([]);
-        renderHistory();
-        toast("전체 삭제되었습니다.");
-      }
+    $("#btn-clear-all").addEventListener("click", async () => {
+      if (
+        !(await confirmDialog("저장된 모든 점검 내역을 삭제합니다. 계속할까요?", {
+          okText: "전체 삭제",
+          danger: true,
+        }))
+      )
+        return;
+      store.saveRecords([]);
+      renderHistory();
+      toast("전체 삭제되었습니다.");
     });
   }
 
