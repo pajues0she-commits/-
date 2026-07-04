@@ -1,0 +1,7 @@
+node_modules
+frames/f*.jpg
+frames/f*.png
+*.webm
+shot_*.png
+smoke_*.png
+*test.mjs

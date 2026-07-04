@@ -1,0 +1,383 @@
+<meta charset="utf-8">
+<title>수소 실린더 안전 위험성평가 영상</title>
+<style>
+  html,body{margin:0;background:#000;overflow:hidden}
+  #c{display:block;width:100vw;height:auto;max-height:100vh;margin:auto}
+</style>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script>
+/* =========================================================================
+   수소(H2) 고압가스 실린더 안전 위험성평가 — 20초 모션그래픽
+   결정론적 렌더링: window.renderAt(t) 를 프레임마다 호출해 캡처한다.
+   ========================================================================= */
+const W = 1920, H = 1080, FPS = 30, DUR = 20;
+const cv = document.getElementById('c');
+const g = cv.getContext('2d');
+
+const FONT = "'NanumSquare','Noto Sans CJK KR','NanumGothic',sans-serif";
+
+/* ---- 배경 사진 로드 (없으면 유사 배경 합성) ---- */
+let bg = new Image();
+let bgReady = false, bgOk = false;
+bg.onload = () => { bgReady = true; bgOk = true; };
+bg.onerror = () => { bgReady = true; bgOk = false; };
+bg.src = 'assets/photo.jpg';
+
+/* ---- 결정론적 파티클 시드 (로드시 1회 생성) ---- */
+function mulberry(seed){ return function(){ let t = seed += 0x6D2B79F5; t = Math.imul(t ^ t>>>15, t|1); t ^= t + Math.imul(t ^ t>>>7, t|61); return ((t ^ t>>>14)>>>0)/4294967296; }; }
+const rnd = mulberry(20240704);
+const sparks = Array.from({length:70}, () => {
+  const a = rnd()*Math.PI*2, sp = 260 + rnd()*820;
+  return { a, vx: Math.cos(a)*sp, vy: Math.sin(a)*sp - 240, life: .55+rnd()*.7, sz: 3+rnd()*9, hue: rnd() };
+});
+const embers = Array.from({length:46}, () => ({ x: rnd(), vx:(rnd()-.5)*90, vy: -60-rnd()*150, ph: rnd()*6.28, sz: 2+rnd()*5, life:.7+rnd()*1.1 }));
+
+/* ---- 이징 ---- */
+const clamp = (v,a=0,b=1)=>Math.max(a,Math.min(b,v));
+const eOut = t => 1-Math.pow(1-t,3);
+const eIn  = t => t*t*t;
+const eInOut = t => t<.5 ? 4*t*t*t : 1-Math.pow(-2*t+2,3)/2;
+const lerp = (a,b,t)=>a+(b-a)*t;
+
+/* ---- 타임라인 (초) ---- */
+const T = {
+  titleIn:0, titleOut:3.2,
+  s1In:3.8, tip:5.0, boom:6.9, s1Out:9.8,
+  s2In:10.4, secure:11.6, s2Out:16.6,
+  msgIn:16.6, end:20
+};
+
+/* =============================== 배경 =============================== */
+function drawBackground(dim, blur, shakeX=0, shakeY=0){
+  g.save();
+  g.translate(shakeX, shakeY);
+  if(bgOk){
+    // cover
+    const ir = bg.width/bg.height, cr = W/H;
+    let dw,dh; if(ir>cr){ dh=H; dw=H*ir; } else { dw=W; dh=W/ir; }
+    if(blur) g.filter = `blur(${blur}px) brightness(.9)`;
+    g.drawImage(bg,(W-dw)/2-shakeX,(H-dh)/2-shakeY,dw+2*Math.abs(shakeX),dh+2*Math.abs(shakeY));
+    g.filter='none';
+  } else {
+    // 합성 배경 (사진 미제공시): 콘크리트 벽 + 붉은 실린더 라인
+    const wall = g.createLinearGradient(0,0,0,H);
+    wall.addColorStop(0,'#e9e7e2'); wall.addColorStop(.62,'#d7d3cc'); wall.addColorStop(.63,'#5f5a54'); wall.addColorStop(1,'#3f3b37');
+    g.fillStyle=wall; g.fillRect(-40,-40,W+80,H+80);
+    for(let i=0;i<11;i++){ const x=120+i*150; drawCyl(x,760,470,120,0,{chained:i>3,base:'#e8451f'}); }
+  }
+  if(dim>0){ g.fillStyle=`rgba(8,6,10,${dim})`; g.fillRect(-40,-40,W+80,H+80); }
+  g.restore();
+}
+function vignette(a){
+  const r = g.createRadialGradient(W/2,H*.46,H*.3,W/2,H/2,H*1.02);
+  r.addColorStop(0,'rgba(0,0,0,0)'); r.addColorStop(1,`rgba(0,0,0,${a})`);
+  g.fillStyle=r; g.fillRect(0,0,W,H);
+}
+
+/* =============================== 실린더 =============================== */
+// 붉은 수소 실린더 (밑면 x,baseY / 높이 h / 폭 w / 기울기 rad)
+function drawCyl(x, baseY, h, w, ang, opt={}){
+  const base = opt.base || '#e5401c';
+  g.save();
+  g.translate(x, baseY);
+  g.rotate(ang);
+  const r = w/2;
+  // 본체
+  const grd = g.createLinearGradient(-r,0,r,0);
+  grd.addColorStop(0,'#8f1e08'); grd.addColorStop(.28,base); grd.addColorStop(.5,'#ff6a3d'); grd.addColorStop(.72,base); grd.addColorStop(1,'#7a1804');
+  g.fillStyle=grd;
+  g.beginPath();
+  g.moveTo(-r,0); g.lineTo(-r,-h+r);
+  g.quadraticCurveTo(-r,-h, 0,-h); g.quadraticCurveTo(r,-h, r,-h+r);
+  g.lineTo(r,0); g.closePath(); g.fill();
+  // 밸브 캡 (회색)
+  g.fillStyle='#8b8b8b';
+  g.beginPath(); g.moveTo(-r*.42,-h); g.lineTo(-r*.42,-h-h*.14);
+  g.quadraticCurveTo(0,-h-h*.22, r*.42,-h-h*.14); g.lineTo(r*.42,-h); g.closePath(); g.fill();
+  g.fillStyle='#6f6f6f'; g.fillRect(-r*.14,-h-h*.20,r*.28,h*.09);
+  // 수소 라벨 & 화염 마름모
+  g.fillStyle='rgba(255,235,225,.92)';
+  g.font=`700 ${w*.34}px ${FONT}`; g.textAlign='center'; g.textBaseline='middle';
+  g.fillText('수소', 0, -h*.5);
+  g.save(); g.translate(0,-h*.72); g.rotate(Math.PI/4);
+  g.strokeStyle='rgba(255,255,255,.85)'; g.lineWidth=3; g.strokeRect(-w*.13,-w*.13,w*.26,w*.26);
+  g.restore();
+  // 고정 체인
+  if(opt.chained){
+    g.strokeStyle='#c9ccd2'; g.lineWidth=w*.11; g.lineCap='round';
+    g.beginPath(); g.moveTo(-r-8,-h*.5); g.lineTo(r+8,-h*.5); g.stroke();
+    g.strokeStyle='#8a8f98'; g.lineWidth=w*.05;
+    g.beginPath(); g.moveTo(-r-8,-h*.5); g.lineTo(r+8,-h*.5); g.stroke();
+  }
+  g.restore();
+}
+
+/* =============================== 폭발 =============================== */
+function drawBoom(cx, cy, p){ // p: 0..1 진행
+  if(p<=0) return;
+  const R = 120 + eOut(clamp(p*1.15))*720;
+  // 충격파 링
+  const sw = clamp((p-.02)*1.7);
+  if(sw>0 && sw<1){
+    g.save(); g.globalAlpha=(1-sw)*.8; g.strokeStyle='#fff'; g.lineWidth=26*(1-sw)+3;
+    g.beginPath(); g.arc(cx,cy,140+sw*860,0,7); g.stroke(); g.restore();
+  }
+  // 화구
+  const fb = g.createRadialGradient(cx,cy,10,cx,cy,R);
+  fb.addColorStop(0,`rgba(255,255,245,${clamp(1.1-p)})`);
+  fb.addColorStop(.28,`rgba(255,214,120,${clamp(1.05-p*.9)})`);
+  fb.addColorStop(.55,`rgba(255,120,30,${clamp(.95-p*.85)})`);
+  fb.addColorStop(.8,`rgba(150,32,8,${clamp(.7-p*.7)})`);
+  fb.addColorStop(1,'rgba(60,10,4,0)');
+  g.save(); g.globalCompositeOperation='screen';
+  g.fillStyle=fb; g.beginPath(); g.arc(cx,cy,R,0,7); g.fill();
+  g.restore();
+  // 스파크
+  g.save(); g.globalCompositeOperation='screen';
+  for(const s of sparks){
+    const lt = p/ s.life; if(lt>1) continue;
+    const tt = p*1.3;
+    const px = cx + s.vx*tt, py = cy + s.vy*tt + 520*tt*tt;
+    const al = (1-lt); const col = s.hue<.5?`rgba(255,220,140,${al})`:`rgba(255,140,50,${al})`;
+    g.fillStyle=col; g.beginPath(); g.arc(px,py,s.sz*(1-lt*.5),0,7); g.fill();
+  }
+  g.restore();
+  // 연기 상승
+  if(p>.35){
+    const sp=(p-.35)/.65; g.save(); g.globalAlpha=clamp(.5-sp*.5);
+    for(let i=0;i<7;i++){ const a=i/7*6.28; const rr=90+sp*260;
+      const px=cx+Math.cos(a)*rr, py=cy-sp*380+Math.sin(a)*rr*.5;
+      const sm=g.createRadialGradient(px,py,0,px,py,150); sm.addColorStop(0,'rgba(40,34,32,.7)'); sm.addColorStop(1,'rgba(40,34,32,0)');
+      g.fillStyle=sm; g.beginPath(); g.arc(px,py,150,0,7); g.fill(); }
+    g.restore();
+  }
+}
+
+/* =============================== 작업자 =============================== */
+function drawWorker(x, y, s, reach){ // reach 0..1 팔 뻗기
+  g.save(); g.translate(x,y); g.scale(s,s);
+  g.fillStyle='#12305e';
+  // 다리
+  g.fillRect(-34,60,26,120); g.fillRect(10,60,26,120);
+  // 몸통 (안전조끼)
+  g.fillStyle='#123a6b';
+  g.beginPath(); g.moveTo(-46,-64); g.lineTo(46,-64); g.lineTo(56,70); g.lineTo(-56,70); g.closePath(); g.fill();
+  g.fillStyle='#ffd21f'; // 형광 밴드
+  g.fillRect(-52,-4,108,20); g.fillRect(-24,-64,16,134);
+  // 머리 + 안전모
+  g.fillStyle='#e9b28e'; g.beginPath(); g.arc(0,-96,30,0,7); g.fill();
+  g.fillStyle='#f5b90a'; g.beginPath(); g.arc(0,-104,34,Math.PI,0); g.fill(); g.fillRect(-38,-108,76,10);
+  // 팔 (실린더 쪽으로 뻗음)
+  g.strokeStyle='#123a6b'; g.lineWidth=22; g.lineCap='round';
+  const ax = lerp(30,120,eOut(reach)), ay = lerp(-30,-8,reach);
+  g.beginPath(); g.moveTo(30,-40); g.lineTo(ax,ay); g.stroke();
+  g.fillStyle='#e9b28e'; g.beginPath(); g.arc(ax,ay,13,0,7); g.fill();
+  g.restore();
+}
+
+/* =============================== 텍스트 유틸 =============================== */
+function chip(text, x, y, col, a){
+  g.save(); g.globalAlpha=a;
+  g.font=`800 40px ${FONT}`; const w=g.measureText(text).width;
+  g.fillStyle=col; roundRect(x, y, w+56, 66, 33); g.fill();
+  g.fillStyle='#fff'; g.textAlign='left'; g.textBaseline='middle';
+  g.fillText(text, x+28, y+35);
+  g.restore();
+}
+function roundRect(x,y,w,h,r){ g.beginPath(); g.moveTo(x+r,y); g.arcTo(x+w,y,x+w,y+h,r); g.arcTo(x+w,y+h,x,y+h,r); g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath(); }
+function warnTri(cx,cy,s,a){
+  g.save(); g.globalAlpha=a; g.translate(cx,cy);
+  g.fillStyle='#ffcf17'; g.strokeStyle='#1a1a1a'; g.lineWidth=s*.06;
+  g.beginPath(); g.moveTo(0,-s); g.lineTo(s*.92,s*.72); g.lineTo(-s*.92,s*.72); g.closePath(); g.fill(); g.stroke();
+  g.fillStyle='#1a1a1a'; g.fillRect(-s*.09,-s*.42,s*.18,s*.72); g.beginPath(); g.arc(0,s*.5,s*.11,0,7); g.fill();
+  g.restore();
+}
+function checkMark(cx,cy,s,p){
+  g.save(); g.translate(cx,cy); g.strokeStyle='#1fd06a'; g.lineWidth=s*.16; g.lineCap='round'; g.lineJoin='round';
+  g.fillStyle='rgba(31,208,106,.16)'; g.beginPath(); g.arc(0,0,s,0,7); g.fill();
+  g.strokeStyle='#2fe07a'; g.lineWidth=s*.10; g.beginPath(); g.arc(0,0,s,0,7*clamp(p*1.2)); g.stroke();
+  const q=clamp((p-.3)/.7); g.strokeStyle='#2fe07a'; g.lineWidth=s*.16;
+  g.beginPath(); g.moveTo(-s*.42,0);
+  if(q>0){ g.lineTo(lerp(-s*.42,-s*.08,clamp(q*2)), lerp(0,s*.34,clamp(q*2)));
+    if(q>.5) g.lineTo(lerp(-s*.08,s*.46,clamp((q-.5)*2)), lerp(s*.34,-s*.36,clamp((q-.5)*2))); }
+  g.stroke(); g.restore();
+}
+// 자막(하단 스피치)
+function subtitle(lines, a, grow){
+  g.save(); g.globalAlpha=a;
+  const bw=1500, bx=(W-bw)/2, by=H-250, bh=190;
+  g.fillStyle='rgba(10,14,22,.82)'; roundRect(bx,by,bw,bh,26); g.fill();
+  g.fillStyle='#2fe07a'; roundRect(bx,by,12,bh,6); g.fill();
+  g.textAlign='center'; g.textBaseline='middle'; g.fillStyle='#fff';
+  g.font=`800 54px ${FONT}`;
+  lines.forEach((ln,i)=>{ g.globalAlpha=a*clamp(grow-i*.5); g.fillText(ln, W/2, by+66+i*70); });
+  g.restore();
+}
+
+/* =============================== 하단 브랜딩 =============================== */
+function lowerBrand(a){
+  g.save(); g.globalAlpha=a;
+  g.fillStyle='rgba(0,0,0,.35)'; g.fillRect(0,H-58,W,58);
+  g.fillStyle='#ff3b30'; g.fillRect(0,H-58,10,58);
+  g.font=`800 30px ${FONT}`; g.fillStyle='#fff'; g.textAlign='left'; g.textBaseline='middle';
+  g.fillText('위험성평가 · 고압가스(수소) 실린더 안전', 34, H-28);
+  g.restore();
+}
+
+/* =============================== 장면 =============================== */
+function sceneTitle(t){
+  const inn = clamp(t/1.0), out = clamp((t-(T.titleOut-.5))/.5);
+  drawBackground(lerp(.55,.72,clamp(t/3)), 9);
+  vignette(.55);
+  const a = eOut(inn)*(1-out);
+  // 상단 라벨
+  g.save(); g.globalAlpha=a; g.textAlign='center';
+  g.font=`800 46px ${FONT}`; g.fillStyle='#ff5a45';
+  g.fillText('S A F E T Y   R I S K   A S S E S S M E N T', W/2, 300 - (1-eOut(inn))*40);
+  g.restore();
+  // 메인 타이틀
+  warnTri(W/2, 470, 78, a);
+  g.save(); g.globalAlpha=a; g.textAlign='center'; g.textBaseline='middle';
+  g.font=`900 138px ${FONT}`;
+  g.fillStyle='#fff'; g.shadowColor='rgba(0,0,0,.6)'; g.shadowBlur=24;
+  g.fillText('넘어지면, 로켓이 됩니다', W/2, 660);
+  g.shadowBlur=0;
+  g.font=`800 62px ${FONT}`; g.fillStyle='#ffcf17';
+  g.globalAlpha=a*clamp((t-.5)/.8);
+  g.fillText('고압가스 수소(H₂) 실린더 고정 안전', W/2, 770);
+  g.restore();
+  // 밑줄 라인 자라남
+  const lw = eInOut(clamp((t-.4)/1))*620;
+  g.save(); g.globalAlpha=a; g.fillStyle='#ff3b30'; g.fillRect(W/2-lw/2,820,lw,7); g.restore();
+}
+
+function scene1(t){ // t: 로컬(초) 0.. ; boom at (T.boom-T.s1In)
+  const tipStart=T.tip-T.s1In, tipDur=1.9, boomAt=T.boom-T.s1In;
+  const bp = clamp((t-boomAt)/2.2);              // 폭발 진행
+  const shake = bp>0&&bp<.6 ? (1-bp/.6)*26 : 0;
+  const sx=shake?Math.sin(t*90)*shake:0, sy=shake?Math.cos(t*77)*shake:0;
+  drawBackground(.42, 5, sx, sy);
+  // 스포트라이트
+  g.save(); const sp=g.createRadialGradient(760,660,60,760,660,640); sp.addColorStop(0,'rgba(255,60,40,.16)'); sp.addColorStop(1,'rgba(255,60,40,0)'); g.fillStyle=sp; g.fillRect(0,0,W,H); g.restore();
+  vignette(.5);
+  // 넘어지는 실린더
+  const cx=760, baseY=920;
+  let ang=0, ox=0, oy=0;
+  if(t>=tipStart){ const tp=eIn(clamp((t-tipStart)/tipDur)); ang=tp*(Math.PI*0.52); }
+  else { ang=Math.sin(t*7)* .015*clamp(t/ .8); } // 사전 흔들림
+  // 폭발 후 실린더는 화염에 가림
+  if(bp<0.25){ g.save(); g.translate(sx,sy); drawCyl(cx+ox, baseY+oy, 520, 150, ang, {base:'#e8451f'}); g.restore(); }
+  // 밸브 위치(폭발 원점): 회전된 캡 끝
+  const vx = cx + Math.cos(ang-Math.PI/2)*540, vy = baseY + Math.sin(ang-Math.PI/2)*540;
+  drawBoom(vx+sx, vy+sy, bp);
+  // 플래시
+  if(bp>0&&bp<.12){ g.fillStyle=`rgba(255,255,255,${(1-bp/.12)*.9})`; g.fillRect(0,0,W,H); }
+  // 라벨/경고
+  const la=clamp(t/.5)*(1-clamp((t-(T.s1Out-T.s1In-.5))/.5));
+  chip('위험상황  ①  미고정 실린더', 90, 120, '#d61f14', la);
+  if(t>boomAt+.1){ const ba=clamp((t-boomAt-.1)/.3)*(1-clamp((t-boomAt-1.6)/.6));
+    g.save(); g.globalAlpha=ba; g.textAlign='center'; g.font=`900 150px ${FONT}`;
+    g.fillStyle='#ffd21f'; g.strokeStyle='#7a1200'; g.lineWidth=10;
+    const kk=1+(1-clamp((t-boomAt-.1)/.35))*.4; g.save(); g.translate(W/2,430); g.scale(kk,kk);
+    g.strokeText('수소 폭발!',0,0); g.fillText('수소 폭발!',0,0); g.restore(); g.restore(); }
+  if(t<boomAt){ // 경고 아이콘 깜빡
+    const blink=.5+.5*Math.sin(t*10); warnTri(cx, baseY-720, 60, la*blink*.9);
+    chip('고정 안 함 → 전도 위험', W/2-230, 200, 'rgba(180,20,10,.9)', la*.9);
+  }
+  lowerBrand(la*.8);
+}
+
+function scene2(t){ // 고정 조치
+  drawBackground(.4, 4);
+  g.save(); const sp=g.createRadialGradient(820,640,60,820,640,660); sp.addColorStop(0,'rgba(40,200,110,.14)'); sp.addColorStop(1,'rgba(40,200,110,0)'); g.fillStyle=sp; g.fillRect(0,0,W,H); g.restore();
+  vignette(.48);
+  const secureAt=T.secure-T.s2In;
+  const cx=880, baseY=930;
+  const chained = t>secureAt+.2;
+  const reach = clamp((t-.3)/1.2);
+  drawCyl(cx, baseY, 520, 150, 0, {chained, base:'#e8451f'});
+  // 작업자 등장(좌측에서)
+  const wx = lerp(360, 560, eOut(clamp(t/1.0)));
+  drawWorker(wx, 940, 2.35, clamp((t-secureAt+.3)));
+  // 체인 채워짐 강조
+  if(t>secureAt){ const cp=clamp((t-secureAt)/.6);
+    g.save(); g.globalAlpha=(1-cp)* .8; g.strokeStyle='#7dffb0'; g.lineWidth=8;
+    g.strokeRect(cx-90,baseY-520*.5-20,180,40); g.restore(); }
+  // 체크 표시
+  if(t>secureAt+.3) checkMark(cx, baseY-560, 66, clamp((t-secureAt-.3)/.9));
+  const la=clamp(t/.5)*(1-clamp((t-(T.s2Out-T.s2In-.5))/.5));
+  chip('안전조치   체인·스트랩으로 고정', 90, 120, '#12a150', la);
+  if(chained){ const ba=clamp((t-secureAt-.2)/.4);
+    chip('넘어짐 방지 완료', W-560, 200, 'rgba(18,140,70,.92)', ba); }
+  lowerBrand(la*.8);
+}
+
+function sceneMsg(t){ // 자막 메시지 + 엔드카드
+  drawBackground(lerp(.4,.68,clamp(t/1.4)), 6);
+  vignette(.6);
+  const cx=880, baseY=930;
+  // 안전 실린더 유지 + 작업자
+  g.save(); g.globalAlpha=1-clamp((t-2.2)/1.0); drawCyl(cx, baseY, 520, 150, 0, {chained:true, base:'#e8451f'}); drawWorker(560, 940, 2.35, 1); g.restore();
+  // 스피치 자막
+  const a=clamp(t/.5);
+  subtitle(['“고압가스 실린더, 넘어지면 로켓이 됩니다.','안전한 취급을 위해','보관할 때는 반드시 고정 조치를 해주세요.”'], a, clamp((t-.3)/1.6)*3);
+  // 엔드카드
+  if(t>2.4){ const e=clamp((t-2.4)/.8); g.save(); g.globalAlpha=e; g.fillStyle='rgba(6,8,14,.86)'; g.fillRect(0,0,W,H);
+    g.textAlign='center'; g.textBaseline='middle';
+    warnTri(W/2,380,84,e);
+    g.font=`900 100px ${FONT}`; g.fillStyle='#fff'; g.fillText('반드시 고정하세요', W/2, 560);
+    g.font=`800 52px ${FONT}`; g.fillStyle='#ffcf17'; g.fillText('보관 · 이송 시 체인/스트랩 필수', W/2, 660);
+    g.font=`700 36px ${FONT}`; g.fillStyle='#9aa3b2'; g.fillText('위험성평가 · 고압가스 수소(H₂) 실린더 안전', W/2, 760);
+    g.restore(); }
+}
+
+/* =============================== 전환 =============================== */
+function transitions(t){
+  // 타이틀 -> S1 : 붉은 대각 와이프
+  wipe(t, T.titleOut-.3, T.s1In, '#d61f14', 1);
+  // S1 -> S2 : 흰 플래시 + 청록 와이프
+  if(t>T.s1Out-.2 && t<T.s2In){ const p=clamp((t-(T.s1Out-.2))/(T.s2In-(T.s1Out-.2)));
+    if(p<.4){ g.fillStyle=`rgba(255,255,255,${(1-p/.4)*.7})`; g.fillRect(0,0,W,H); } }
+  wipe(t, T.s1Out, T.s2In, '#0f9d58', -1);
+  // S2 -> Msg : 짙은 페이드
+  if(t>T.s2Out-.3 && t<T.msgIn+.1){ const p=clamp((t-(T.s2Out-.3))/((T.msgIn+.1)-(T.s2Out-.3)));
+    const a = p<.5? p*2 : (1-p)*2; g.fillStyle=`rgba(5,7,12,${a})`; g.fillRect(0,0,W,H); }
+}
+function wipe(t, t0, t1, col, dir){
+  if(t<t0||t>t1) return; const p=(t-t0)/(t1-t0);
+  g.save(); g.fillStyle=col;
+  const x = dir>0 ? lerp(-W*1.4,0,eInOut(clamp(p*2))) : lerp(0,W*1.4,eInOut(clamp((p-.5)*2)));
+  // 대각 평행사변형
+  g.beginPath(); g.moveTo(x,0); g.lineTo(x+W,0); g.lineTo(x+W-300,H); g.lineTo(x-300,H); g.closePath();
+  if(p<.5 && dir>0){ g.fill(); }
+  if(dir>0){ // 덮었다가 열림
+    if(p<.5){ g.beginPath(); g.moveTo(lerp(-W-300,0,eInOut(p*2)),0); g.lineTo(9999,0); g.lineTo(9999,H); g.lineTo(lerp(-W-600,-300,eInOut(p*2)),H); g.closePath(); g.fill(); }
+    else { g.beginPath(); g.moveTo(lerp(0,W+300,eInOut((p-.5)*2)),0); g.lineTo(9999,0); g.lineTo(9999,H); g.lineTo(lerp(-300,W,eInOut((p-.5)*2)),H); g.closePath(); g.fill(); }
+  } else {
+    if(p<.5){ g.beginPath(); g.moveTo(lerp(W+300,0,eInOut(p*2)),0); g.lineTo(-9999,0); g.lineTo(-9999,H); g.lineTo(lerp(W,-300,eInOut(p*2)),H); g.closePath(); g.fill(); }
+    else { g.beginPath(); g.moveTo(lerp(0,-W-300,eInOut((p-.5)*2)),0); g.lineTo(-9999,0); g.lineTo(-9999,H); g.lineTo(lerp(-300,-W-600,eInOut((p-.5)*2)),H); g.closePath(); g.fill(); }
+  }
+  g.restore();
+}
+
+/* =============================== 메인 =============================== */
+function drawFrame(t){
+  g.clearRect(0,0,W,H); g.fillStyle='#000'; g.fillRect(0,0,W,H);
+  if(t<T.titleOut) sceneTitle(t);
+  else if(t<T.s2In-.0 && t>=T.s1In) scene1(t-T.s1In);
+  else if(t<T.s1In) sceneTitle(Math.min(t,T.titleOut-.001)); // 전환 여백
+  else if(t<T.msgIn && t>=T.s2In) scene2(t-T.s2In);
+  else if(t>=T.msgIn) sceneMsg(t-T.msgIn);
+  transitions(t);
+  // 진행 바
+  g.fillStyle='rgba(255,255,255,.85)'; g.fillRect(0,H-6,W*clamp(t/DUR),6);
+}
+
+window.renderAt = (t)=>{ drawFrame(t); return true; };
+window.__ready = ()=> bgReady;
+
+/* 미리보기(브라우저에서 열었을 때 자동 재생) */
+let start=null;
+function loop(ts){ if(start==null) start=ts; let t=((ts-start)/1000)%DUR; drawFrame(t); requestAnimationFrame(loop); }
+if(!window.__capture){ if(bgReady) requestAnimationFrame(loop); else bg.addEventListener('load',()=>requestAnimationFrame(loop)), bg.addEventListener('error',()=>requestAnimationFrame(loop)); requestAnimationFrame(loop); }
+</script>
