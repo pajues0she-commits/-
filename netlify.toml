@@ -1,0 +1,7 @@
+# Netlify 배포 설정
+# 이 저장소를 Netlify에 Git 연동하면 cp-report 폴더가 사이트 루트로 게시됩니다.
+# (빌드 과정 없음 — 정적 파일 그대로 서비스)
+
+[build]
+  publish = "cp-report"
+  command = ""
