@@ -470,6 +470,27 @@
     }
   }
 
+  // 기본 메일 앱을 지정 주소로 여는 mailto 실행(페이지 이동 없이 앵커 클릭)
+  function openMailto(href) {
+    try {
+      const a = document.createElement("a");
+      a.href = href;
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      return true;
+    } catch (e) {
+      try {
+        window.location.href = href;
+        return true;
+      } catch (e2) {
+        console.error("mailto blocked", e2);
+        return false;
+      }
+    }
+  }
+
   // ---------- 이메일 본문 요약 ----------
   function emailSummary(record) {
     const map = {};
@@ -563,46 +584,28 @@
       const subject = emailSubject(record);
       const body = emailSummary(record);
 
-      // 1순위: 파일 첨부 가능한 네이티브 공유(모바일: 메일 앱으로 PDF 첨부 전송)
-      const file = new File([blob], filename, { type: "application/pdf" });
-      if (
-        navigator.canShare &&
-        navigator.canShare({ files: [file] }) &&
-        navigator.share
-      ) {
-        try {
-          await navigator.share({
-            files: [file],
-            title: subject,
-            text: `받는 사람: ${to}\n\n${body}`,
-          });
-          toast(`메일 앱으로 전송합니다. (받는 사람: ${to})`, "ok");
-          return;
-        } catch (e) {
-          if (e && e.name === "AbortError") {
-            toast("전송이 취소되었습니다.");
-            return;
-          }
-          // 공유 실패 시 아래 mailto 경로로 진행
-        }
-      }
-
-      // 2순위: 입력한 이메일 주소로 메일 작성창(mailto) 열기 + PDF 내려받기(첨부용)
+      // 입력한 이메일 주소로 메일 작성창(mailto) 열기 — 공유 시트를 띄우지 않고
+      // 사용자가 지정한 주소로 바로 보내는 메일 앱을 연다.
+      // (웹 표준상 mailto 로는 첨부가 불가하므로 PDF는 함께 내려받아 첨부하도록 함)
       const dl = downloadBlob(blob, filename);
-      const mailto = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(
-        subject
-      )}&body=${encodeURIComponent(body + "\n\n(내려받은 PDF 파일을 첨부해 주세요.)")}`;
-      let navigated = true;
-      try {
-        window.location.href = mailto;
-      } catch (e) {
-        navigated = false;
-      }
+      const mailtoBody =
+        body + "\n\n※ 방금 내려받은 PDF 파일(" + filename + ")을 첨부해 주세요.";
+      // 수신 주소는 원문 그대로(검증된 이메일) — 일부 메일 앱은 %40 을 못 읽음
+      const mailto =
+        "mailto:" +
+        to +
+        "?subject=" +
+        encodeURIComponent(subject) +
+        "&body=" +
+        encodeURIComponent(mailtoBody);
+      const opened = openMailto(mailto);
       toast(
-        navigated
-          ? `${to} 주소로 메일 작성창을 열었습니다. 내려받은 PDF를 첨부해 주세요.`
+        opened
+          ? `${to} 주소로 메일 작성창을 열었습니다. 내려받은 PDF를 첨부 후 보내세요.`
+          : dl
+          ? "PDF를 내려받았습니다. 메일에 첨부해 주세요."
           : "이 미리보기 환경에서는 전송이 제한됩니다. 배포(HTTPS) 후 이용하세요.",
-        navigated ? "ok" : "warn"
+        opened || dl ? "ok" : "warn"
       );
     } catch (e) {
       console.error(e);
