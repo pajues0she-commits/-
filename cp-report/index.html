@@ -158,22 +158,23 @@
   @media screen{
     #report.show{
       display:block;position:fixed;inset:0;z-index:100;background:#5b6b7b;
-      overflow:auto;padding:24px 12px 80px;
+      overflow:auto;padding:60px 12px 80px;
     }
     .page{
       background:#fff;width:210mm;min-height:297mm;margin:0 auto 18px;
       box-shadow:0 4px 24px rgba(0,0,0,.35);padding:16mm 15mm;
     }
-    .report-close{
-      position:fixed;top:14px;right:14px;z-index:110;
-      background:#fff;color:var(--brand);border:0;border-radius:9px;
-      padding:10px 16px;font-weight:700;font-size:14px;box-shadow:var(--shadow);
+    .report-actions{
+      position:fixed;top:12px;left:14px;right:14px;z-index:110;
+      display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;
     }
-    .report-print{
-      position:fixed;top:14px;right:118px;z-index:110;
-      background:var(--brand);color:#fff;border:0;border-radius:9px;
-      padding:10px 16px;font-weight:700;font-size:14px;box-shadow:var(--shadow);
+    .ra-btn{
+      border:0;border-radius:9px;padding:10px 15px;font-weight:700;font-size:14px;
+      box-shadow:var(--shadow);
     }
+    .ra-btn.email{background:var(--ok);color:#fff;}
+    .ra-btn.print{background:var(--brand);color:#fff;}
+    .ra-btn.close{background:#fff;color:var(--brand);}
   }
 
   .page{color:#111;font-size:11.5pt;}
@@ -224,7 +225,7 @@
     body{background:#fff;}
     .topbar,.wrap,.toolbar{display:none !important;}
     #report{display:block !important;position:static;background:#fff;padding:0;}
-    #report .report-close,#report .report-print{display:none !important;}
+    #report .report-actions{display:none !important;}
     .page{box-shadow:none;margin:0;width:auto;min-height:auto;
       padding:14mm 14mm;page-break-after:always;}
     .page:last-child{page-break-after:auto;}
@@ -235,7 +236,6 @@
     .grid{grid-template-columns:1fr;}
     .page{width:auto;padding:10mm 8mm;}
     .topbar h1{font-size:15px;}
-    .report-print{right:112px;}
   }
 </style>
 </head>
@@ -297,8 +297,11 @@
 
 <!-- ===== Report overlay ===== -->
 <div id="report">
-  <button class="report-print" id="btnPrint">🖨 인쇄 / PDF 저장</button>
-  <button class="report-close" id="btnClose">닫기 ✕</button>
+  <div class="report-actions">
+    <button class="ra-btn email" id="btnEmail">📧 이메일 전송</button>
+    <button class="ra-btn print" id="btnPrint">🖨 인쇄 / PDF</button>
+    <button class="ra-btn close" id="btnClose">닫기 ✕</button>
+  </div>
   <div id="reportBody"></div>
 </div>
 
@@ -515,14 +518,21 @@ function flash(msg){
 }
 
 /* ---------- Report generation ---------- */
+// 측정 지점을 NO.1~NO.10 → G/S1 → G/S2 순서로 정렬 (미지정 지점은 뒤로)
+function sortedPoints(){
+  const order = new Map(LOC_OPTIONS.map((o,i)=>[o,i]));
+  return points.slice().sort((a,b)=>
+    (order.has(a.name)?order.get(a.name):999) - (order.has(b.name)?order.get(b.name):999));
+}
+
 function buildReport(){
   const h = collect().header;
   const crit = parseFloat(h.crit);
-  const rows = points.map((p,i)=>{
+  const pts = sortedPoints();
+  const rows = pts.map(p=>{
     const vd = verdictFor(p.value);
     const v = parseFloat(p.value);
     return `<tr>
-      <td>${i+1}</td>
       <td class="left">${esc(p.name)||"—"}</td>
       <td>${isNaN(v)?"—":v+" mV"}</td>
       <td>${isNaN(crit)?"—":crit+" mV"}</td>
@@ -531,17 +541,16 @@ function buildReport(){
     </tr>`;
   }).join("");
 
-  const withVal = points.filter(p=>!isNaN(parseFloat(p.value)));
+  const withVal = pts.filter(p=>!isNaN(parseFloat(p.value)));
   const ng = withVal.filter(p=>verdictFor(p.value).cls==="ng");
   let finalCls="na", finalTxt="판정 불가";
   if(withVal.length){ if(ng.length===0){finalCls="ok";finalTxt="합격 (적합)";} else {finalCls="ng";finalTxt="부적합";} }
 
-  const withPhoto = points.filter(p=>p.photo);
-  const photoCells = withPhoto.map((p,i)=>{
-    const idx = points.indexOf(p)+1;
+  const withPhoto = pts.filter(p=>p.photo);
+  const photoCells = withPhoto.map(p=>{
     const v = parseFloat(p.value);
     return `<div class="photo-cell">
-      <div class="cap">지점 ${idx}. ${esc(p.name)||"측정지"}</div>
+      <div class="cap">${esc(p.name)||"측정지"}</div>
       <img src="${p.photo}" alt="측정지">
       <div class="val">평균 측정값: ${isNaN(v)?"—":v+" mV"}</div>
     </div>`;
@@ -563,11 +572,11 @@ function buildReport(){
     <h3 class="sec">측정 결과</h3>
     <table class="data">
       <thead><tr>
-        <th style="width:8%">번호</th><th style="width:30%">측정 지점</th>
-        <th style="width:16%">평균 측정값</th><th style="width:14%">기준값</th>
-        <th style="width:12%">판정</th><th style="width:20%">비고</th>
+        <th style="width:28%">측정 지점</th>
+        <th style="width:20%">평균 측정값</th><th style="width:16%">기준값</th>
+        <th style="width:14%">판정</th><th style="width:22%">비고</th>
       </tr></thead>
-      <tbody>${rows||`<tr><td colspan="6">측정 데이터가 없습니다.</td></tr>`}</tbody>
+      <tbody>${rows||`<tr><td colspan="5">측정 데이터가 없습니다.</td></tr>`}</tbody>
     </table>
 
     <div class="final-box">
@@ -612,7 +621,74 @@ $("#btnReport").addEventListener("click", openReport);
 $("#btnReport2").addEventListener("click", openReport);
 $("#btnClose").addEventListener("click", closeReport);
 $("#btnPrint").addEventListener("click", ()=>window.print());
+$("#btnEmail").addEventListener("click", sendEmail);
 document.addEventListener("keydown", e=>{ if(e.key==="Escape") closeReport(); });
+
+/* ---------- Email ---------- */
+// 사진이 포함된 자체 완결형(오프라인) 보고서 HTML 파일 생성 → 메일 첨부용
+function reportStandaloneHTML(){
+  const css = $$("style").map(s=>s.textContent).join("\n");
+  const body = $("#reportBody").innerHTML;
+  return `<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8">`
+    + `<meta name="viewport" content="width=device-width,initial-scale=1">`
+    + `<title>방식전위 측정 보고서</title><style>${css}</style></head>`
+    + `<body style="background:#fff">${body}</body></html>`;
+}
+function buildEmailText(h){
+  const crit = parseFloat(h.crit);
+  const pts = sortedPoints();
+  const withVal = pts.filter(p=>!isNaN(parseFloat(p.value)));
+  const ng = withVal.filter(p=>verdictFor(p.value).cls==="ng");
+  const lines = pts.map(p=>{
+    const v = parseFloat(p.value);
+    return `- ${p.name||"(미지정)"}: ${isNaN(v)?"—":v+" mV"} → ${verdictFor(p.value).txt}`;
+  });
+  const finalTxt = !withVal.length ? "판정 불가"
+    : ng.length ? `부적합 (총 ${withVal.length}개 중 ${ng.length}개 미달)`
+    : `합격 (총 ${withVal.length}개 전체 만족)`;
+  const subject = `방식전위 측정 보고서${h.date?` (${h.date})`:""}`;
+  const body =
+`방식전위 측정 보고서
+────────────────────
+측정일자: ${h.date||"—"}
+방식 방법: 외부전원법
+판정 기준값: ${isNaN(crit)?"—":crit+" mV"} (이하 합격)
+
+[측정 결과]
+${lines.join("\n")||"— 측정 데이터 없음 —"}
+
+종합 판정: ${finalTxt}${h.opinion?`\n\n[종합 의견]\n${h.opinion}`:""}
+
+※ 측정지 사진이 포함된 보고서 파일을 함께 첨부합니다. (파일을 열면 인쇄/PDF 저장도 가능합니다)`;
+  return {subject, body};
+}
+function downloadFile(name, text, type){
+  const url = URL.createObjectURL(new Blob([text],{type}));
+  const a = document.createElement("a");
+  a.href = url; a.download = name; document.body.appendChild(a); a.click();
+  a.remove(); setTimeout(()=>URL.revokeObjectURL(url), 4000);
+}
+async function sendEmail(){
+  const h = collect().header;
+  const {subject, body} = buildEmailText(h);
+  const fname = `방식전위측정보고서_${h.date||"측정"}.html`;
+  const html = reportStandaloneHTML();
+  // 1) 모바일 등 파일 공유 지원 → 공유시트로 메일 앱에 보고서 첨부 후 전송
+  try{
+    const file = new File([html], fname, {type:"text/html"});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({title:subject, text:body, files:[file]});
+      return;
+    }
+  }catch(err){
+    if(err && err.name==="AbortError") return;   // 사용자가 공유 취소
+    /* 미지원 → 아래 fallback */
+  }
+  // 2) fallback: 보고서 파일 내려받기 + 요약 메일 창 열기(수동 첨부)
+  downloadFile(fname, html, "text/html");
+  flash("보고서 파일을 내려받았어요. 메일 창에 첨부해 보내세요.");
+  location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
 
 /* ---------- init ---------- */
 load();
