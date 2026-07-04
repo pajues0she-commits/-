@@ -82,6 +82,7 @@
     outline:none;border-color:var(--brand-2);box-shadow:0 0 0 3px rgba(46,109,164,.15);
   }
   .hint{font-size:11.5px;color:var(--muted);}
+  .field input.ro{background:#eef2f6;color:var(--muted);cursor:default;}
 
   /* ---------- Measurement points ---------- */
   .pt{
@@ -250,88 +251,32 @@
 
 <div class="wrap">
 
-  <!-- 1. 기본 정보 -->
+  <!-- 1. 판정 기준 -->
   <div class="card">
-    <h2><span class="num">1</span> 현장 · 측정 기본정보</h2>
+    <h2><span class="num">1</span> 판정 기준</h2>
     <div class="grid">
-      <div class="field full">
-        <label>현장명 / 설비명</label>
-        <input id="site" placeholder="예) ○○배관 방식설비 / △△지구 도시가스">
+      <div class="field">
+        <label>방식 방법</label>
+        <input value="외부전원법" readonly class="ro">
       </div>
       <div class="field">
-        <label>관리번호 / 문서번호</label>
-        <input id="docno" placeholder="예) CP-2026-001">
-      </div>
-      <div class="field">
-        <label>측정일자</label>
-        <input id="date" type="date">
-      </div>
-      <div class="field">
-        <label>측정자</label>
-        <input id="tester" placeholder="성명">
-      </div>
-      <div class="field">
-        <label>입회자 / 확인자</label>
-        <input id="witness" placeholder="성명">
-      </div>
-      <div class="field">
-        <label>날씨</label>
-        <input id="weather" placeholder="예) 맑음">
-      </div>
-      <div class="field">
-        <label>기온 (℃)</label>
-        <input id="temp" inputmode="decimal" placeholder="예) 24">
+        <label>판정 기준값 (mV)</label>
+        <input id="crit" inputmode="decimal" value="-850">
+        <span class="hint">기준값보다 더 (−)이면 합격. 통상 −850 mV</span>
       </div>
     </div>
   </div>
 
-  <!-- 2. 측정 조건 -->
+  <!-- 2. 측정 지점 -->
   <div class="card">
-    <h2><span class="num">2</span> 측정 조건 · 판정 기준</h2>
-    <div class="grid">
-      <div class="field">
-        <label>방식 방식(방법)</label>
-        <select id="method">
-          <option>외부전원법</option>
-          <option>희생양극법(유전양극법)</option>
-          <option>배류법</option>
-          <option>기타</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>기준전극</label>
-        <select id="refelec">
-          <option value="CSE">포화황산동전극 (CSE)</option>
-          <option value="SCE">포화칼로멜전극 (SCE)</option>
-          <option value="AgCl">은/염화은전극 (Ag/AgCl)</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>측정 방식</label>
-        <select id="ptype">
-          <option value="ON">ON 전위 (통전)</option>
-          <option value="OFF">순간 OFF 전위 (Instant-off)</option>
-          <option value="NATURAL">자연전위</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>판정 기준값 (V)</label>
-        <input id="crit" inputmode="decimal" value="-0.85">
-        <span class="hint">기준값보다 더 (−)이면 합격. CSE 기준 통상 −0.85V</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- 3. 측정 지점 -->
-  <div class="card">
-    <h2><span class="num">3</span> 측정 지점별 결과</h2>
+    <h2><span class="num">2</span> 측정 지점별 결과</h2>
     <div id="points"></div>
     <button class="add-pt" id="btnAdd">＋ 측정 지점 추가</button>
   </div>
 
   <!-- 4. 종합 -->
   <div class="card">
-    <h2><span class="num">4</span> 종합 판정 · 조치사항</h2>
+    <h2><span class="num">3</span> 종합 판정 · 조치사항</h2>
     <div id="summary" class="summary-verdict na">측정값을 입력하면 종합 판정이 표시됩니다.</div>
     <div class="field full" style="margin-top:12px;">
       <label>종합 의견 / 조치사항</label>
@@ -414,8 +359,8 @@ function renderPoints(){
           <input data-f="name" value="${esc(p.name)}" placeholder="예) T/B No.3, 밸브스테이션">
         </div>
         <div class="field">
-          <label>측정 평균값 (V)</label>
-          <input data-f="value" inputmode="decimal" value="${esc(p.value)}" placeholder="예) -1.05">
+          <label>측정 평균값 (mV)</label>
+          <input data-f="value" inputmode="decimal" value="${esc(p.value)}" placeholder="예) -1050">
         </div>
         <div class="field full">
           <span class="verdict ${vd.cls}" data-role="verdict">${vd.cls==='ok'?'✔':vd.cls==='ng'?'✖':'○'} 판정: ${vd.txt}</span>
@@ -520,7 +465,7 @@ $("#btnReset").addEventListener("click", ()=>{
   location.reload();
 });
 
-const HEADER_FIELDS = ["site","docno","date","tester","witness","weather","temp","method","refelec","ptype","crit","opinion"];
+const HEADER_FIELDS = ["crit","opinion"];
 function collect(){
   const h = {};
   HEADER_FIELDS.forEach(id=> h[id] = $("#"+id).value);
@@ -541,7 +486,6 @@ function load(){
     points = raw.points || [];
     uid = raw.uid || (points.reduce((m,p)=>Math.max(m,p.id),0)+1);
   }
-  if(!$("#date").value) $("#date").value = new Date().toISOString().slice(0,10);
   if(points.length===0){ addPoint(); }
   renderPoints();
 }
@@ -561,9 +505,6 @@ function flash(msg){
 }
 
 /* ---------- Report generation ---------- */
-const REF_LABEL = {CSE:"포화황산동전극 (CSE)",SCE:"포화칼로멜전극 (SCE)",AgCl:"은/염화은전극 (Ag/AgCl)"};
-const PTYPE_LABEL = {ON:"ON 전위(통전)",OFF:"순간 OFF 전위",NATURAL:"자연전위"};
-
 function buildReport(){
   const h = collect().header;
   const crit = parseFloat(h.crit);
@@ -573,8 +514,8 @@ function buildReport(){
     return `<tr>
       <td>${i+1}</td>
       <td class="left">${esc(p.name)||"—"}</td>
-      <td>${isNaN(v)?"—":v.toFixed(3)+" V"}</td>
-      <td>${isNaN(crit)?"—":crit.toFixed(2)+" V"}</td>
+      <td>${isNaN(v)?"—":v+" mV"}</td>
+      <td>${isNaN(crit)?"—":crit+" mV"}</td>
       <td><span class="pill ${vd.cls}">${vd.txt}</span></td>
       <td class="left">${esc(p.note)||""}</td>
     </tr>`;
@@ -592,11 +533,9 @@ function buildReport(){
     return `<div class="photo-cell">
       <div class="cap">지점 ${idx}. ${esc(p.name)||"측정지"}</div>
       <img src="${p.photo}" alt="측정지">
-      <div class="val">평균 측정값: ${isNaN(v)?"—":v.toFixed(3)+" V"}</div>
+      <div class="val">평균 측정값: ${isNaN(v)?"—":v+" mV"}</div>
     </div>`;
   }).join("");
-
-  const dateStr = h.date ? h.date.replace(/-/g,". ")+"." : "—";
 
   const page1 = `
   <div class="page">
@@ -605,12 +544,7 @@ function buildReport(){
     <div class="rpt-rule"></div>
 
     <table class="meta">
-      <tr><th>현장명 / 설비명</th><td colspan="3">${esc(h.site)||"—"}</td></tr>
-      <tr><th>문서번호</th><td>${esc(h.docno)||"—"}</td><th>측정일자</th><td>${dateStr}</td></tr>
-      <tr><th>방식 방법</th><td>${esc(h.method)||"—"}</td><th>기준전극</th><td>${REF_LABEL[h.refelec]||h.refelec||"—"}</td></tr>
-      <tr><th>측정 방식</th><td>${PTYPE_LABEL[h.ptype]||h.ptype||"—"}</td><th>판정 기준값</th><td>${isNaN(crit)?"—":crit.toFixed(2)+" V (이하 합격)"}</td></tr>
-      <tr><th>날씨 / 기온</th><td>${(esc(h.weather)||"—")} / ${h.temp?esc(h.temp)+" ℃":"—"}</td><th>측정자</th><td>${esc(h.tester)||"—"}</td></tr>
-      <tr><th>입회 / 확인자</th><td colspan="3">${esc(h.witness)||"—"}</td></tr>
+      <tr><th>방식 방법</th><td>외부전원법</td><th>판정 기준값</th><td>${isNaN(crit)?"—":crit+" mV (이하 합격)"}</td></tr>
     </table>
 
     <h3 class="sec">측정 결과</h3>
@@ -635,11 +569,11 @@ function buildReport(){
     <div style="border:1px solid #7f93a8;border-radius:6px;padding:10px 12px;min-height:20mm;white-space:pre-wrap;font-size:10.5pt;">${esc(h.opinion)||""}</div>
 
     <div class="sign-row">
-      <div class="s"><div class="line"></div>측정자 ${esc(h.tester)||""} (인)</div>
-      <div class="s"><div class="line"></div>확인자 ${esc(h.witness)||""} (인)</div>
+      <div class="s"><div class="line"></div>측정자 (인)</div>
+      <div class="s"><div class="line"></div>확인자 (인)</div>
     </div>
 
-    <div class="rpt-foot">본 보고서는 방식전위측정 앱으로 작성되었습니다 · 측정 방식: ${PTYPE_LABEL[h.ptype]||""} / 기준전극: ${REF_LABEL[h.refelec]||""}</div>
+    <div class="rpt-foot">본 보고서는 방식전위측정 앱으로 작성되었습니다 · 방식 방법: 외부전원법</div>
   </div>`;
 
   let page2 = "";
@@ -648,7 +582,6 @@ function buildReport(){
     <div class="page">
       <div class="rpt-title" style="font-size:15pt;">첨부 — 측정지 사진</div>
       <div class="rpt-rule"></div>
-      <div style="font-size:10pt;color:#555;margin-bottom:8px;">현장명: ${esc(h.site)||"—"} · 측정일자: ${dateStr}</div>
       <div class="photos-grid">${photoCells}</div>
       <div class="rpt-foot">측정지 원본 사진 (${withPhoto.length}매)</div>
     </div>`;
