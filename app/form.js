@@ -55,7 +55,7 @@ function buildFormElement(record) {
 
   const signCell = r.signature
     ? `<img class="gf-sign-img" src="${r.signature}" alt="서명" />`
-    : `<span class="gf-sign-name">${escapeHtml(r.inspector || "")}</span>`;
+    : "";
 
   const notesHtml = REMARK_NOTES.map(
     (n, i) => `<div class="gf-note">${i + 1}. ${escapeHtml(n)}</div>`
@@ -69,27 +69,31 @@ function buildFormElement(record) {
   el.className = "gov-form";
   el.innerHTML = `
     <div class="gf-law">${escapeHtml(FORM_META.lawText)}</div>
-    <h1 class="gf-title">유해화학물질취급시설 자체점검대장<span class="gf-title-sub">(양식)</span></h1>
+    <h1 class="gf-title">유해화학물질취급시설 자체점검대장${
+      r.facility ? `<span class="gf-title-sub">${escapeHtml(r.facility)}</span>` : ""
+    }</h1>
 
     <table class="gf-head">
-      <tr>
-        <th>시설명</th>
-        <td colspan="3" class="gf-facility">${escapeHtml(r.facility || "")}</td>
-      </tr>
+      <colgroup>
+        <col style="width:18%" />
+        <col style="width:22%" />
+        <col style="width:20%" />
+        <col style="width:20%" />
+        <col style="width:20%" />
+      </colgroup>
       <tr>
         <th>점검연월일</th>
-        <td>${fmtDate(r.date)}</td>
-        <th>점검시간</th>
-        <td>${fmtTimeRange(r.timeStart, r.timeEnd)}</td>
+        <th>점검시간<br>(00:00 ~ 00:00)</th>
+        <th>소속</th>
+        <th>점검자성명</th>
+        <th>서명</th>
       </tr>
       <tr>
-        <th>소속</th>
+        <td>${fmtDate(r.date)}</td>
+        <td>${fmtTimeRange(r.timeStart, r.timeEnd)}</td>
         <td>${escapeHtml(r.org || "")}</td>
-        <th>점검자성명<br>(서명)</th>
-        <td class="gf-sign-cell">
-          <span class="gf-sign-name">${escapeHtml(r.inspector || "")}</span>
-          ${r.signature ? `<span class="gf-sign-slot">${signCell}</span>` : ""}
-        </td>
+        <td>${escapeHtml(r.inspector || "")}</td>
+        <td class="gf-sign-cell">${signCell}</td>
       </tr>
     </table>
 

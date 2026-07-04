@@ -182,7 +182,9 @@ textarea { resize: vertical; }
 .cdialog { position: fixed; inset: 0; z-index: 70; background: rgba(15,23,42,.55); display: flex; align-items: center; justify-content: center; padding: 24px; }
 .cdialog[hidden] { display: none; }
 .cdialog__box { background: #fff; border-radius: 16px; padding: 22px 20px 16px; width: 100%; max-width: 340px; box-shadow: 0 20px 50px rgba(0,0,0,.3); }
-.cdialog__msg { margin: 0 0 18px; font-size: 15px; line-height: 1.55; white-space: pre-wrap; text-align: center; }
+.cdialog__msg { margin: 0 0 14px; font-size: 15px; line-height: 1.55; white-space: pre-wrap; text-align: center; }
+.cdialog__input { margin: 0 0 16px; }
+.cdialog__input[hidden] { display: none; }
 .cdialog__btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .cdialog__btns .btn { padding: 12px; }
 .btn--danger-solid { background: var(--danger); color: #fff; }
@@ -206,17 +208,15 @@ textarea { resize: vertical; }
 .gov-form * { box-sizing: border-box; }
 .gf-law { font-size: 13px; margin-bottom: 6px; }
 .gf-title { text-align: center; font-size: 26px; font-weight: 800; letter-spacing: 2px; margin: 4px 0 16px; }
-.gf-title-sub { font-size: 15px; font-weight: 600; margin-left: 6px; letter-spacing: 0; }
+.gf-title-sub { font-size: 18px; font-weight: 700; margin-left: 16px; letter-spacing: 0; color: #0b5b54; }
+.gf-title-sub::before { content: "· "; color: #94a3b8; }
 
-.gf-head { width: 100%; border-collapse: collapse; margin-bottom: -1px; font-size: 14px; }
-.gf-head th, .gf-head td { border: 1.2px solid #000; padding: 7px 10px; }
-.gf-head th { background: #eef2f5; font-weight: 700; width: 130px; text-align: center; white-space: nowrap; }
-.gf-head td { text-align: center; }
-.gf-head td.gf-facility { text-align: left; font-weight: 700; padding-left: 14px; }
+.gf-head { width: 100%; border-collapse: collapse; margin-bottom: -1px; font-size: 14px; table-layout: fixed; }
+.gf-head th, .gf-head td { border: 1.2px solid #000; padding: 7px 8px; text-align: center; word-break: keep-all; }
+.gf-head th { background: #eef2f5; font-weight: 700; }
+.gf-head td { height: 46px; }
 .gf-sign-cell { position: relative; }
-.gf-sign-name { font-weight: 600; }
-.gf-sign-slot { display: inline-block; vertical-align: middle; margin-left: 8px; }
-.gf-sign-img { height: 40px; vertical-align: middle; }
+.gf-sign-img { height: 38px; vertical-align: middle; }
 
 .gf-main { width: 100%; border-collapse: collapse; font-size: 13px; }
 .gf-main th, .gf-main td { border: 1.2px solid #000; padding: 6px 8px; vertical-align: middle; }
