@@ -122,6 +122,12 @@ textarea { resize: vertical; }
 .action-bar { display: grid; gap: 10px; margin-bottom: 18px; }
 
 /* ===== 저장내역 ===== */
+/* ===== 날짜별 일괄 ===== */
+#batch-card[hidden] { display: none; }
+#batch-date { appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%230f766e' d='M1 1l5 5 5-5'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 34px; }
+.batch-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+.batch-actions .btn { width: 100%; }
+
 /* ===== 시설 폴더 그리드 ===== */
 .folder-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .folder { border: 1px solid var(--line); border-radius: 14px; padding: 14px 12px; background: #fff; cursor: pointer; display: flex; flex-direction: column; gap: 6px; text-align: left; font: inherit; color: inherit; transition: border-color .12s, transform .05s; }

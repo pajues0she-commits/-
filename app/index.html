@@ -110,6 +110,23 @@
 
     <!-- ===== 저장내역 화면 ===== -->
     <main id="view-history" class="view">
+      <!-- 날짜별 일괄 추출·전송 -->
+      <section class="card" id="batch-card" hidden>
+        <h2 class="card__title">날짜별 일괄 추출·전송</h2>
+        <label class="field">
+          <span>점검 날짜</span>
+          <select id="batch-date"></select>
+        </label>
+        <div class="batch-actions">
+          <button type="button" class="btn btn--accent" id="btn-batch-email">
+            합본 메일 전송
+          </button>
+          <button type="button" class="btn btn--ghost" id="btn-batch-pdf">
+            합본 PDF 저장
+          </button>
+        </div>
+      </section>
+
       <!-- 시설별 폴더 목록 -->
       <section class="card" id="folders-card">
         <div class="card__head">
@@ -222,7 +239,7 @@
       </div>
       <div class="modal__scroll">
         <div class="send-panel">
-          <div class="send-note">
+          <div class="send-note" id="pdf-note">
             아래는 저장될 <b>별지 제42호서식 · A4 규격 PDF</b> 미리보기입니다.
           </div>
           <div class="send-preview"><img id="pdf-img" alt="저장될 양식 미리보기" /></div>

@@ -366,27 +366,44 @@
     return canvas;
   }
 
-  // 원본 별지 제42호서식과 동일한 A4 세로(210㎜×297㎜) 규격으로 생성
-  function pdfFromCanvas(canvas) {
-    const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  // 현재 페이지에 캔버스를 A4 세로 인쇄영역에 맞춰 배치
+  function addCanvasToPdf(pdf, canvas) {
     const pw = pdf.internal.pageSize.getWidth(); // 210
     const ph = pdf.internal.pageSize.getHeight(); // 297
     const margin = 8;
     const availW = pw - margin * 2;
     const availH = ph - margin * 2;
-    // 폭을 A4 인쇄영역에 맞추고, 넘치면 높이에 맞춰 축소
     let w = availW;
     let h = (canvas.height / canvas.width) * w;
     if (h > availH) {
       h = availH;
       w = (canvas.width / canvas.height) * h;
     }
-    const x = (pw - w) / 2; // 가로 중앙
-    const y = margin; // 상단 여백부터
-    const img = canvas.toDataURL("image/jpeg", 0.92);
-    pdf.addImage(img, "JPEG", x, y, w, h);
+    const x = (pw - w) / 2;
+    const y = margin;
+    pdf.addImage(canvas.toDataURL("image/jpeg", 0.92), "JPEG", x, y, w, h);
+  }
+
+  // 원본 별지 제42호서식과 동일한 A4 세로(210㎜×297㎜) 규격 1페이지 PDF
+  function pdfFromCanvas(canvas) {
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    addCanvasToPdf(pdf, canvas);
     return pdf.output("blob");
+  }
+
+  // 여러 점검을 한 페이지씩 담은 합본 A4 PDF (첫 페이지 캔버스도 함께 반환)
+  async function buildRecordsPdf(records) {
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+    let firstCanvas = null;
+    for (let i = 0; i < records.length; i++) {
+      if (i > 0) pdf.addPage();
+      const canvas = await renderFormCanvas(records[i]);
+      if (i === 0) firstCanvas = canvas;
+      addCanvasToPdf(pdf, canvas);
+    }
+    return { blob: pdf.output("blob"), firstCanvas };
   }
 
   function pdfFilename(record) {
@@ -410,6 +427,17 @@
     await openPdfModal(current);
   }
 
+  // PDF 미리보기 모달 표시(미리보기 이미지 + 안내 + 다운로드용 blob)
+  function presentPdf(blob, filename, previewUrl, note) {
+    pdfCtx = { blob, filename };
+    $("#pdf-img").src = previewUrl;
+    if ($("#pdf-note"))
+      $("#pdf-note").innerHTML =
+        note || "저장될 <b>별지 제42호서식 · A4 규격 PDF</b> 미리보기입니다.";
+    $("#pdf-modal").hidden = false;
+    document.body.classList.add("modal-open");
+  }
+
   async function openPdfModal(record) {
     const btn = $("#btn-pdf");
     const prev = btn ? btn.textContent : "";
@@ -420,13 +448,47 @@
     try {
       const canvas = await renderFormCanvas(record);
       const blob = pdfFromCanvas(canvas);
-      pdfCtx = { blob, filename: pdfFilename(record) };
-      $("#pdf-img").src = canvas.toDataURL("image/png");
-      $("#pdf-modal").hidden = false;
-      document.body.classList.add("modal-open");
+      presentPdf(
+        blob,
+        pdfFilename(record),
+        canvas.toDataURL("image/png"),
+        "저장될 <b>별지 제42호서식 · A4 규격 PDF</b> 미리보기입니다."
+      );
     } catch (e) {
       console.error(e);
       toast("PDF 생성 중 오류가 발생했습니다.", "warn");
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = prev;
+      }
+    }
+  }
+
+  // 같은 날짜의 모든 점검을 합본 PDF로 미리보기(저장)
+  async function openBatchPdf(date) {
+    const recs = recordsByDate(date);
+    if (!recs.length) {
+      toast("해당 날짜의 점검 결과가 없습니다.", "warn");
+      return;
+    }
+    const btn = $("#btn-batch-pdf");
+    const prev = btn ? btn.textContent : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "합본 PDF 생성 중…";
+    }
+    try {
+      const { blob, firstCanvas } = await buildRecordsPdf(recs);
+      presentPdf(
+        blob,
+        batchFilename(date, recs.length),
+        firstCanvas.toDataURL("image/png"),
+        `<b>${date}</b> 합본 PDF · 총 <b>${recs.length}건</b>(${recs.length}페이지) · 첫 페이지 미리보기`
+      );
+    } catch (e) {
+      console.error(e);
+      toast("합본 PDF 생성 중 오류가 발생했습니다.", "warn");
     } finally {
       if (btn) {
         btn.disabled = false;
@@ -594,6 +656,45 @@
     return `[자체점검] ${fac}유해화학물질 취급시설 자체점검대장 (${record.date || ""})`;
   }
 
+  // ---------- 날짜별 일괄 ----------
+  function recordsByDate(date) {
+    return store.records().filter((r) => r.date === date);
+  }
+  function distinctDates() {
+    const seen = [];
+    store.records().forEach((r) => {
+      const d = r.date || "";
+      if (d && seen.indexOf(d) === -1) seen.push(d);
+    });
+    return seen.sort((a, b) => b.localeCompare(a)); // 최신 날짜 먼저
+  }
+  function batchFilename(date, count) {
+    return `자체점검대장_합본_${(date || "").replace(/-/g, "")}_${count}건.pdf`;
+  }
+  function batchSubject(date, count) {
+    return `[자체점검] 유해화학물질 취급시설 자체점검대장 합본 (${date}, ${count}건)`;
+  }
+  function batchSummary(date, recs) {
+    const lines = [];
+    lines.push("유해화학물질 취급시설 자체점검 결과 (합본)");
+    lines.push("(화학물질관리법 시행규칙 별지 제42호서식)");
+    lines.push("");
+    lines.push(`■ 점검연월일: ${date}`);
+    lines.push(`■ 점검 건수: ${recs.length}건`);
+    lines.push("");
+    lines.push("[시설별 결과]");
+    recs.forEach((r) => {
+      const rc = CHECK_ITEMS.filter((it) => r.items[it.no] === "recheck").length;
+      const status = rc ? `⚠ 재점검 ${rc}건` : "✔ 이상없음";
+      lines.push(
+        `- ${r.facility || "(시설명 미지정)"} / 점검자 ${r.inspector || "-"} / ${status}`
+      );
+    });
+    lines.push("");
+    lines.push(`※ 상세 양식은 첨부된 합본 PDF(${recs.length}페이지)를 확인하세요.`);
+    return lines.join("\n");
+  }
+
   // 이메일 형식 간단 검증
   function isEmail(s) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s || "");
@@ -610,8 +711,93 @@
     await sendEmail(current);
   }
 
-  // PDF 파일을 첨부해 앱에서 바로 이메일로 발송
-  // (모바일: Web Share 로 PDF 파일 첨부 → 메일 앱에서 바로 전송, 다운로드 없음)
+  // 공통 전송기: 준비된 PDF blob 을 Gmail(Apps Script)/공유/mailto 로 발송
+  async function deliverEmail(opts) {
+    const { blob, filename, subject, body, btn } = opts;
+    const settings = store.settings();
+    const savedTo = (settings.email || "").trim();
+    const gasUrl = (settings.gasUrl || "").trim();
+
+    async function ensureRecipient() {
+      let to = savedTo;
+      if (isEmail(to)) return to;
+      to = await promptDialog("받는 사람 이메일을 입력하세요.", {
+        type: "email",
+        placeholder: "report@example.com",
+        okText: "전송",
+      });
+      if (!to) return null;
+      if (!isEmail(to)) {
+        toast("이메일 형식이 올바르지 않습니다.", "warn");
+        return null;
+      }
+      const s = store.settings();
+      s.email = to;
+      store.saveSettings(s);
+      if ($("#s-email")) $("#s-email").value = to;
+      return to;
+    }
+
+    // 0순위: Gmail 자동 발송(Apps Script) → 내 Google 계정으로 즉시 발송
+    if (gasUrl) {
+      const to = await ensureRecipient();
+      if (!to) return;
+      if (btn) btn.textContent = "Gmail 전송 중…";
+      const pdfB64 = await blobToBase64(blob);
+      await sendViaGas(gasUrl, { to, subject, body, filename, pdf: pdfB64 });
+      toast(`${to} 주소로 Gmail 발송했습니다.`, "ok");
+      return;
+    }
+
+    // 1순위(모바일): PDF 파일을 첨부해 그대로 공유 → 메일 앱에서 바로 전송
+    const file = new File([blob], filename, { type: "application/pdf" });
+    if (
+      navigator.canShare &&
+      navigator.canShare({ files: [file] }) &&
+      navigator.share
+    ) {
+      try {
+        await navigator.share({
+          files: [file],
+          title: subject,
+          text: (savedTo ? `받는 사람: ${savedTo}\n\n` : "") + body,
+        });
+        toast("메일 앱을 선택하면 PDF가 첨부된 채로 전송됩니다.", "ok");
+        return;
+      } catch (e) {
+        if (e && e.name === "AbortError") {
+          toast("전송이 취소되었습니다.");
+          return;
+        }
+        // 공유 실패 시 아래 폴백으로 진행
+      }
+    }
+
+    // 2순위(공유 미지원·데스크톱): 저장된 주소로 메일 작성창(mailto) + PDF 내려받기
+    const to = await ensureRecipient();
+    if (!to) return;
+    const dl = downloadBlob(blob, filename);
+    const mailto =
+      "mailto:" +
+      to +
+      "?subject=" +
+      encodeURIComponent(subject) +
+      "&body=" +
+      encodeURIComponent(
+        body + "\n\n※ 방금 내려받은 PDF 파일(" + filename + ")을 첨부해 주세요."
+      );
+    const opened = openMailto(mailto);
+    toast(
+      opened
+        ? `${to} 주소로 메일 작성창을 열었습니다. 내려받은 PDF를 첨부 후 보내세요.`
+        : dl
+        ? "PDF를 내려받았습니다. 메일에 첨부해 주세요."
+        : "이 미리보기 환경에서는 전송이 제한됩니다. 배포(HTTPS) 후 이용하세요.",
+      opened || dl ? "ok" : "warn"
+    );
+  }
+
+  // 단일 점검 이메일 전송 (모바일: PDF 첨부 발송)
   async function sendEmail(record) {
     const btn = $("#btn-email");
     const prev = btn ? btn.textContent : "";
@@ -622,101 +808,46 @@
     try {
       const canvas = await renderFormCanvas(record);
       const blob = pdfFromCanvas(canvas);
-      const filename = pdfFilename(record);
-      const subject = emailSubject(record);
-      const body = emailSummary(record);
-      const settings = store.settings();
-      const savedTo = (settings.email || "").trim();
-      const gasUrl = (settings.gasUrl || "").trim();
-
-      // 0순위: Gmail 자동 발송(Apps Script)이 설정된 경우 → 내 Google 계정으로 즉시 발송
-      if (gasUrl) {
-        let to = savedTo;
-        if (!isEmail(to)) {
-          to = await promptDialog("받는 사람 이메일을 입력하세요.", {
-            type: "email",
-            placeholder: "report@example.com",
-            okText: "전송",
-          });
-          if (!to) return;
-          if (!isEmail(to)) {
-            toast("이메일 형식이 올바르지 않습니다.", "warn");
-            return;
-          }
-          const s2 = store.settings();
-          s2.email = to;
-          store.saveSettings(s2);
-          if ($("#s-email")) $("#s-email").value = to;
-        }
-        if (btn) btn.textContent = "Gmail 전송 중…";
-        const pdfB64 = await blobToBase64(blob);
-        await sendViaGas(gasUrl, { to, subject, body, filename, pdf: pdfB64 });
-        toast(`${to} 주소로 Gmail 발송했습니다.`, "ok");
-        return;
+      await deliverEmail({
+        blob,
+        filename: pdfFilename(record),
+        subject: emailSubject(record),
+        body: emailSummary(record),
+        btn,
+      });
+    } catch (e) {
+      console.error(e);
+      toast("전송 준비 중 오류가 발생했습니다.", "warn");
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = prev;
       }
+    }
+  }
 
-      const file = new File([blob], filename, { type: "application/pdf" });
-
-      // 1순위(모바일): PDF 파일을 첨부해 그대로 공유 → 메일 앱 선택 후 바로 전송
-      if (
-        navigator.canShare &&
-        navigator.canShare({ files: [file] }) &&
-        navigator.share
-      ) {
-        try {
-          await navigator.share({
-            files: [file],
-            title: subject,
-            text: (savedTo ? `받는 사람: ${savedTo}\n\n` : "") + body,
-          });
-          toast("메일 앱을 선택하면 PDF가 첨부된 채로 전송됩니다.", "ok");
-          return;
-        } catch (e) {
-          if (e && e.name === "AbortError") {
-            toast("전송이 취소되었습니다.");
-            return;
-          }
-          // 공유 실패 시 아래 폴백으로 진행
-        }
-      }
-
-      // 2순위(공유 미지원·데스크톱): 저장된 주소로 메일 작성창(mailto) + PDF 내려받기
-      let to = savedTo;
-      if (!isEmail(to)) {
-        to = await promptDialog("받는 사람 이메일을 입력하세요.", {
-          type: "email",
-          placeholder: "report@example.com",
-          okText: "전송",
-        });
-        if (!to) return;
-        if (!isEmail(to)) {
-          toast("이메일 형식이 올바르지 않습니다.", "warn");
-          return;
-        }
-        const s = store.settings();
-        s.email = to;
-        store.saveSettings(s);
-        if ($("#s-email")) $("#s-email").value = to;
-      }
-      const dl = downloadBlob(blob, filename);
-      const mailto =
-        "mailto:" +
-        to +
-        "?subject=" +
-        encodeURIComponent(subject) +
-        "&body=" +
-        encodeURIComponent(
-          body + "\n\n※ 방금 내려받은 PDF 파일(" + filename + ")을 첨부해 주세요."
-        );
-      const opened = openMailto(mailto);
-      toast(
-        opened
-          ? `${to} 주소로 메일 작성창을 열었습니다. 내려받은 PDF를 첨부 후 보내세요.`
-          : dl
-          ? "PDF를 내려받았습니다. 메일에 첨부해 주세요."
-          : "이 미리보기 환경에서는 전송이 제한됩니다. 배포(HTTPS) 후 이용하세요.",
-        opened || dl ? "ok" : "warn"
-      );
+  // 같은 날짜의 모든 점검을 합본 PDF로 이메일 전송
+  async function sendDateEmail(date) {
+    const recs = recordsByDate(date);
+    if (!recs.length) {
+      toast("해당 날짜의 점검 결과가 없습니다.", "warn");
+      return;
+    }
+    const btn = $("#btn-batch-email");
+    const prev = btn ? btn.textContent : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "합본 PDF 생성 중…";
+    }
+    try {
+      const { blob } = await buildRecordsPdf(recs);
+      await deliverEmail({
+        blob,
+        filename: batchFilename(date, recs.length),
+        subject: batchSubject(date, recs.length),
+        body: batchSummary(date, recs),
+        btn,
+      });
     } catch (e) {
       console.error(e);
       toast("전송 준비 중 오류가 발생했습니다.", "warn");
@@ -831,11 +962,25 @@
   const facilityOf = (r) => (r.facility || "").trim() || NO_FACILITY;
   let currentFolder = null; // 상세보기 중인 시설명
 
+  // 날짜별 일괄 카드(날짜 선택 옵션) 갱신
+  function renderBatchDates() {
+    const sel = $("#batch-date");
+    if (!sel) return;
+    const dates = distinctDates();
+    const keep = sel.value;
+    sel.innerHTML = dates
+      .map((d) => `<option value="${d}">${d} (${recordsByDate(d).length}건)</option>`)
+      .join("");
+    if (dates.indexOf(keep) !== -1) sel.value = keep;
+    $("#batch-card").hidden = dates.length === 0;
+  }
+
   // 내역 = 시설별 폴더 그리드
   function renderHistory() {
     currentFolder = null;
     $("#detail-card").hidden = true;
     $("#folders-card").hidden = false;
+    renderBatchDates();
 
     const list = store.records();
     $("#history-count").textContent = list.length + "건";
@@ -878,6 +1023,7 @@
     $("#record-list").innerHTML = recs.map(recordItemHtml).join("");
     $("#detail-empty").hidden = recs.length > 0;
     $("#folders-card").hidden = true;
+    $("#batch-card").hidden = true;
     $("#detail-card").hidden = false;
     window.scrollTo(0, 0);
   }
@@ -980,6 +1126,16 @@
       if (f) openFacility(f.dataset.facility);
     });
     $("#btn-folder-back").addEventListener("click", backToFolders);
+
+    // 날짜별 일괄 추출·전송
+    $("#btn-batch-pdf").addEventListener("click", () => {
+      const d = $("#batch-date").value;
+      if (d) openBatchPdf(d);
+    });
+    $("#btn-batch-email").addEventListener("click", () => {
+      const d = $("#batch-date").value;
+      if (d) sendDateEmail(d);
+    });
 
     // 내역(시설 상세) 액션
     $("#record-list").addEventListener("click", (e) => {
