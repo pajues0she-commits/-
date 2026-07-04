@@ -341,6 +341,25 @@ button { font-family: inherit; cursor: pointer; }
 .install-banner b { color: var(--primary); }
 .install-banner .close-x { margin-left: auto; border: none; background: transparent; color: var(--muted); font-size: 1.1rem; }
 
+/* ---------- 확인 다이얼로그 (네이티브 confirm 대체) ---------- */
+.confirm-backdrop {
+  position: fixed; inset: 0; z-index: 70; background: rgba(10, 12, 20, 0.55);
+  display: flex; align-items: center; justify-content: center; padding: 28px;
+  backdrop-filter: blur(2px); opacity: 0; transition: opacity 0.18s;
+}
+.confirm-backdrop.open { opacity: 1; }
+.confirm-box {
+  background: var(--surface); width: 100%; max-width: 340px; border-radius: 18px;
+  padding: 22px; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+  transform: scale(0.94); transition: transform 0.18s;
+}
+.confirm-backdrop.open .confirm-box { transform: scale(1); }
+.confirm-title { font-size: 1.1rem; font-weight: 800; }
+.confirm-msg { font-size: 0.9rem; color: var(--muted); margin-top: 8px; }
+.confirm-actions { display: flex; gap: 10px; margin-top: 20px; }
+.confirm-actions .btn { flex: 1; }
+.btn-danger-solid { background: var(--danger); border-color: var(--danger); color: #fff; }
+
 @media (min-width: 481px) {
   .phone { min-height: 100vh; }
 }

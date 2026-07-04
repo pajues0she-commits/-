@@ -392,6 +392,28 @@ function closeSheet() {
   document.body.style.overflow = "";
 }
 
+// 자체 확인 다이얼로그 — 네이티브 confirm()은 샌드박스 환경(프리뷰 등)에서
+// 차단되어 무시되므로, 어디서나 동작하는 인앱 다이얼로그를 사용합니다.
+function confirmAction({ title, message = "", confirmLabel = "확인", danger = false, onConfirm }) {
+  const overlay = document.createElement("div");
+  overlay.className = "confirm-backdrop";
+  overlay.innerHTML = `
+    <div class="confirm-box" role="alertdialog" aria-modal="true">
+      <h3 class="confirm-title">${escapeHtml(title)}</h3>
+      ${message ? `<p class="confirm-msg">${escapeHtml(message)}</p>` : ""}
+      <div class="confirm-actions">
+        <button type="button" class="btn btn-ghost" data-cancel>취소</button>
+        <button type="button" class="btn ${danger ? "btn-danger-solid" : "btn-primary"}" data-ok>${escapeHtml(confirmLabel)}</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  requestAnimationFrame(() => overlay.classList.add("open"));
+  const close = () => { overlay.classList.remove("open"); setTimeout(() => overlay.remove(), 200); };
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+  overlay.querySelector("[data-cancel]").addEventListener("click", close);
+  overlay.querySelector("[data-ok]").addEventListener("click", () => { close(); onConfirm(); });
+}
+
 function openDogSheet(dog = null) {
   const editing = !!dog;
   openSheet(`
@@ -417,12 +439,18 @@ function openDogSheet(dog = null) {
 
   if (editing) {
     $("#deleteDogBtn").addEventListener("click", () => {
-      if (confirm(`${dog.name}의 프로필과 모든 기록을 삭제할까요?`)) {
-        Store.deleteDog(dog.id);
-        closeSheet();
-        toast("삭제했어요");
-        renderScreen();
-      }
+      confirmAction({
+        title: "강아지 삭제",
+        message: `${dog.name}의 프로필과 모든 기록이 삭제됩니다. 되돌릴 수 없어요.`,
+        confirmLabel: "삭제",
+        danger: true,
+        onConfirm: () => {
+          Store.deleteDog(dog.id);
+          closeSheet();
+          toast("삭제했어요");
+          renderScreen();
+        },
+      });
     });
   }
   $("#dogForm").addEventListener("submit", (e) => {
@@ -470,12 +498,18 @@ function openRecordSheet(rec = null) {
 
   if (editing) {
     $("#deleteRecBtn").addEventListener("click", () => {
-      if (confirm("이 기록을 삭제할까요?")) {
-        Store.deleteRecord(rec.id);
-        closeSheet();
-        toast("삭제했어요");
-        renderScreen();
-      }
+      confirmAction({
+        title: "기록 삭제",
+        message: `${rec.date} 측정 기록을 삭제할까요?`,
+        confirmLabel: "삭제",
+        danger: true,
+        onConfirm: () => {
+          Store.deleteRecord(rec.id);
+          closeSheet();
+          toast("삭제했어요");
+          renderScreen();
+        },
+      });
     });
   }
   $("#recForm").addEventListener("submit", (e) => {
@@ -527,7 +561,7 @@ function setupDataButtons() {
         toast("복원했어요");
         navigate("home");
       } catch (err) {
-        alert("불러오기 실패: " + err.message);
+        toast("불러오기 실패: " + err.message);
       }
     };
     reader.readAsText(file);
