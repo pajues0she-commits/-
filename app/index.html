@@ -31,14 +31,9 @@
         <h2 class="card__title">점검 기본정보</h2>
         <label class="field field--facility">
           <span>시설명</span>
-          <input
-            type="text"
-            id="f-facility"
-            list="facility-list"
-            placeholder="예) 제1저장탱크동 / ○○사업장"
-            autocomplete="off"
-          />
-          <datalist id="facility-list"></datalist>
+          <select id="f-facility">
+            <option value="" disabled selected>시설을 선택하세요</option>
+          </select>
         </label>
         <div class="field-grid">
           <label class="field">
@@ -115,13 +110,23 @@
 
     <!-- ===== 저장내역 화면 ===== -->
     <main id="view-history" class="view">
-      <section class="card">
+      <!-- 시설별 폴더 목록 -->
+      <section class="card" id="folders-card">
         <div class="card__head">
-          <h2 class="card__title">저장된 점검 내역</h2>
+          <h2 class="card__title">시설별 점검 폴더</h2>
           <span class="count" id="history-count">0건</span>
         </div>
+        <div class="folder-grid" id="folder-grid"></div>
+      </section>
+
+      <!-- 선택한 시설의 점검 결과 -->
+      <section class="card" id="detail-card" hidden>
+        <div class="detail-head">
+          <button type="button" class="btn btn--ghost" id="btn-folder-back">← 폴더</button>
+          <h2 class="detail-title" id="detail-title"></h2>
+        </div>
         <ul class="record-list" id="record-list"></ul>
-        <p class="empty" id="history-empty">저장된 점검 결과가 없습니다.</p>
+        <p class="empty" id="detail-empty" hidden>이 시설의 점검 결과가 없습니다.</p>
       </section>
     </main>
 

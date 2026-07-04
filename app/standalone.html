@@ -72,7 +72,7 @@ body.modal-open { overflow: hidden; }
 .field > span { font-size: 12.5px; font-weight: 600; color: var(--muted); }
 .field--time, .field--sign { grid-column: 1 / -1; }
 .field--facility { margin-bottom: 12px; }
-.field--facility input { border-color: var(--teal); background: #f0fdfa; font-weight: 600; }
+.field--facility select { border-color: var(--teal); background: #f0fdfa; font-weight: 600; appearance: none; -webkit-appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%230f766e' d='M1 1l5 5 5-5'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 34px; }
 input, textarea, select {
   font: inherit; color: var(--ink);
   border: 1px solid #cbd5e1; border-radius: 10px;
@@ -131,6 +131,24 @@ textarea { resize: vertical; }
 .action-bar { display: grid; gap: 10px; margin-bottom: 18px; }
 
 /* ===== 저장내역 ===== */
+/* ===== 시설 폴더 그리드 ===== */
+.folder-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.folder { border: 1px solid var(--line); border-radius: 14px; padding: 14px 12px; background: #fff; cursor: pointer; display: flex; flex-direction: column; gap: 6px; text-align: left; font: inherit; color: inherit; transition: border-color .12s, transform .05s; }
+.folder:active { transform: scale(0.98); }
+.folder--has { border-color: #a7f3d0; background: #f0fdfa; }
+.folder--empty { opacity: 0.55; }
+.folder__top { display: flex; align-items: center; justify-content: space-between; }
+.folder__ico { font-size: 26px; line-height: 1; }
+.folder__count { font-size: 12px; font-weight: 800; color: var(--teal-d); background: #d1fae5; border-radius: 20px; padding: 2px 9px; }
+.folder--empty .folder__count { color: var(--muted); background: #f1f5f9; }
+.folder__name { font-weight: 700; font-size: 14px; line-height: 1.3; word-break: keep-all; }
+.folder__warn { display: inline-block; font-size: 11px; font-weight: 700; color: var(--danger); background: #fee2e2; border-radius: 20px; padding: 1px 8px; }
+
+/* ===== 시설 상세 헤더 ===== */
+.detail-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.detail-head .btn { width: auto; padding: 8px 12px; font-size: 13px; }
+.detail-title { font-size: 16px; font-weight: 800; margin: 0; color: var(--teal-d); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 .record-list { list-style: none; margin: 0; padding: 0; }
 .fac-group { list-style: none; margin: 0 0 18px; }
 .fac-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 10px; margin-bottom: 8px; }
@@ -277,14 +295,9 @@ textarea { resize: vertical; }
         <h2 class="card__title">점검 기본정보</h2>
         <label class="field field--facility">
           <span>시설명</span>
-          <input
-            type="text"
-            id="f-facility"
-            list="facility-list"
-            placeholder="예) 제1저장탱크동 / ○○사업장"
-            autocomplete="off"
-          />
-          <datalist id="facility-list"></datalist>
+          <select id="f-facility">
+            <option value="" disabled selected>시설을 선택하세요</option>
+          </select>
         </label>
         <div class="field-grid">
           <label class="field">
@@ -361,13 +374,23 @@ textarea { resize: vertical; }
 
     <!-- ===== 저장내역 화면 ===== -->
     <main id="view-history" class="view">
-      <section class="card">
+      <!-- 시설별 폴더 목록 -->
+      <section class="card" id="folders-card">
         <div class="card__head">
-          <h2 class="card__title">저장된 점검 내역</h2>
+          <h2 class="card__title">시설별 점검 폴더</h2>
           <span class="count" id="history-count">0건</span>
         </div>
+        <div class="folder-grid" id="folder-grid"></div>
+      </section>
+
+      <!-- 선택한 시설의 점검 결과 -->
+      <section class="card" id="detail-card" hidden>
+        <div class="detail-head">
+          <button type="button" class="btn btn--ghost" id="btn-folder-back">← 폴더</button>
+          <h2 class="detail-title" id="detail-title"></h2>
+        </div>
         <ul class="record-list" id="record-list"></ul>
-        <p class="empty" id="history-empty">저장된 점검 결과가 없습니다.</p>
+        <p class="empty" id="detail-empty" hidden>이 시설의 점검 결과가 없습니다.</p>
       </section>
     </main>
 
@@ -967,6 +990,20 @@ const REMARK_NOTES = [
   "유해화학물질 취급시설 자체점검을 하려는 자는 양식의 점검 항목이 모두 포함된 별도의 서식을 사용할 수 있으며, 점검 항목이 모두 포함되어 있음을 명확하게 알 수 있도록 표기해야 합니다.",
 ];
 
+// 점검 대상 시설 목록 (시설명 선택지)
+const FACILITIES = [
+  "1CC 암모니아수",
+  "2CC 암모니아수",
+  "실험실",
+  "1CC SWAS",
+  "2CC SWAS",
+  "메탄올",
+  "가성소다",
+  "염산",
+  "1CC 황산",
+  "2CC 황산",
+];
+
 const FORM_META = {
   lawText: "■ 화학물질관리법 시행규칙 [별지 제42호서식] <개정 2025. 10. 1.>",
   title: "유해화학물질취급시설 자체점검대장",
@@ -1230,6 +1267,7 @@ function buildFormElement(record) {
 
   // ---------- 폼 ↔ 상태 동기화 ----------
   function fillFormFromCurrent() {
+    ensureFacilityOption(current.facility);
     $("#f-facility").value = current.facility || "";
     $("#f-date").value = current.date || "";
     $("#f-time-start").value = current.timeStart || "";
@@ -1431,7 +1469,7 @@ function buildFormElement(record) {
   function validate() {
     readHeaderIntoCurrent();
     const missing = CHECK_ITEMS.filter((it) => !current.items[it.no]);
-    if (!current.facility) return "시설명을 입력하세요.";
+    if (!current.facility) return "시설명을 선택하세요.";
     if (!current.date) return "점검연월일을 입력하세요.";
     if (!current.inspector) return "점검자 성명을 입력하세요.";
     if (missing.length)
@@ -1766,23 +1804,39 @@ function buildFormElement(record) {
       .replace(/"/g, "&quot;");
   }
 
-  // 저장된 시설명 목록(중복 제거) — 시설명 입력 자동완성용
-  function facilityNames() {
-    const seen = [];
+  // 시설명 선택(select) 옵션 구성 — FACILITIES + (레코드에 남은 그 외 시설)
+  function buildFacilitySelect() {
+    const sel = $("#f-facility");
+    if (!sel) return;
+    const current = sel.value;
+    const extras = [];
     store.records().forEach((r) => {
       const f = (r.facility || "").trim();
-      if (f && seen.indexOf(f) === -1) seen.push(f);
+      if (f && FACILITIES.indexOf(f) === -1 && extras.indexOf(f) === -1) extras.push(f);
     });
-    return seen.sort((a, b) => a.localeCompare(b, "ko"));
+    const opts = ['<option value="" disabled>시설을 선택하세요</option>'];
+    FACILITIES.forEach((f) => opts.push(`<option value="${esc(f)}">${esc(f)}</option>`));
+    extras.forEach((f) => opts.push(`<option value="${esc(f)}">${esc(f)}</option>`));
+    sel.innerHTML = opts.join("");
+    sel.value = current || "";
   }
 
-  function refreshFacilityDatalist() {
-    const dl = $("#facility-list");
-    if (!dl) return;
-    dl.innerHTML = facilityNames()
-      .map((f) => `<option value="${esc(f)}"></option>`)
-      .join("");
+  // 선택지에 없는 시설명(과거 데이터 등)도 표시되도록 옵션 보강
+  function ensureFacilityOption(name) {
+    const sel = $("#f-facility");
+    if (!sel || !name) return;
+    const exists = Array.prototype.some.call(sel.options, (o) => o.value === name);
+    if (!exists) {
+      const o = document.createElement("option");
+      o.value = name;
+      o.textContent = name;
+      sel.appendChild(o);
+    }
   }
+
+  const recheckCount = (r) =>
+    CHECK_ITEMS.filter((it) => r.items[it.no] === "recheck").length;
+  const hasRecheck = (r) => CHECK_ITEMS.some((it) => r.items[it.no] === "recheck");
 
   function recordItemHtml(r) {
     return `<li class="rec">
@@ -1803,46 +1857,62 @@ function buildFormElement(record) {
       </li>`;
   }
 
-  // 시설별로 묶어서 내역 표시
+  const facilityOf = (r) => (r.facility || "").trim() || NO_FACILITY;
+  let currentFolder = null; // 상세보기 중인 시설명
+
+  // 내역 = 시설별 폴더 그리드
   function renderHistory() {
+    currentFolder = null;
+    $("#detail-card").hidden = true;
+    $("#folders-card").hidden = false;
+
     const list = store.records();
     $("#history-count").textContent = list.length + "건";
-    $("#history-empty").style.display = list.length ? "none" : "block";
-    refreshFacilityDatalist();
 
-    // 시설명 → 레코드 배열
-    const groups = new Map();
+    // 시설별 개수 집계
+    const counts = {};
     list.forEach((r) => {
-      const key = (r.facility || "").trim() || NO_FACILITY;
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(r);
+      const f = facilityOf(r);
+      counts[f] = (counts[f] || 0) + 1;
     });
-    // 시설명 가나다순 (미지정은 맨 뒤)
-    const keys = Array.from(groups.keys()).sort((a, b) => {
-      if (a === NO_FACILITY) return 1;
-      if (b === NO_FACILITY) return -1;
-      return a.localeCompare(b, "ko");
-    });
+    // 폴더 순서: 정의된 시설 → 그 외(미지정 포함)
+    const extras = Object.keys(counts)
+      .filter((f) => FACILITIES.indexOf(f) === -1)
+      .sort((a, b) => (a === NO_FACILITY ? 1 : b === NO_FACILITY ? -1 : a.localeCompare(b, "ko")));
+    const folders = FACILITIES.concat(extras);
 
-    const root = $("#record-list");
-    root.innerHTML = keys
-      .map((key) => {
-        const recs = groups.get(key);
-        const recheck = recs.filter((r) =>
-          CHECK_ITEMS.some((it) => r.items[it.no] === "recheck")
-        ).length;
-        const warn = recheck
-          ? `<span class="fac__warn">재점검 ${recheck}</span>`
-          : "";
-        return `<li class="fac-group">
-            <div class="fac-head">
-              <span class="fac-head__name">🏭 ${esc(key)}</span>
-              <span class="fac-head__meta">${recs.length}건${warn}</span>
+    $("#folder-grid").innerHTML = folders
+      .map((f) => {
+        const recs = list.filter((r) => facilityOf(r) === f);
+        const rc = recs.reduce((n, r) => n + (hasRecheck(r) ? 1 : 0), 0);
+        const cls = recs.length ? "folder folder--has" : "folder folder--empty";
+        const warn = rc ? `<span class="folder__warn">재점검 ${rc}</span>` : "";
+        return `<button type="button" class="${cls}" data-facility="${esc(f)}">
+            <div class="folder__top">
+              <span class="folder__ico">${recs.length ? "📁" : "📂"}</span>
+              <span class="folder__count">${recs.length}건</span>
             </div>
-            <ul class="fac-recs">${recs.map(recordItemHtml).join("")}</ul>
-          </li>`;
+            <span class="folder__name">${esc(f)}</span>
+            ${warn}
+          </button>`;
       })
       .join("");
+  }
+
+  // 특정 시설 폴더 열기 → 해당 시설 점검 결과 목록
+  function openFacility(name) {
+    currentFolder = name;
+    const recs = store.records().filter((r) => facilityOf(r) === name);
+    $("#detail-title").textContent = "🏭 " + name;
+    $("#record-list").innerHTML = recs.map(recordItemHtml).join("");
+    $("#detail-empty").hidden = recs.length > 0;
+    $("#folders-card").hidden = true;
+    $("#detail-card").hidden = false;
+    window.scrollTo(0, 0);
+  }
+
+  function backToFolders() {
+    renderHistory();
   }
 
   // ---------- 뷰 전환 ----------
@@ -1933,7 +2003,14 @@ function buildFormElement(record) {
       t.addEventListener("click", () => showView(t.dataset.view))
     );
 
-    // 내역 액션
+    // 시설 폴더 열기 / 뒤로가기
+    $("#folder-grid").addEventListener("click", (e) => {
+      const f = e.target.closest("[data-facility]");
+      if (f) openFacility(f.dataset.facility);
+    });
+    $("#btn-folder-back").addEventListener("click", backToFolders);
+
+    // 내역(시설 상세) 액션
     $("#record-list").addEventListener("click", (e) => {
       const el = e.target.closest("[data-act]");
       if (!el) return;
@@ -1951,7 +2028,9 @@ function buildFormElement(record) {
         }).then((yes) => {
           if (!yes) return;
           store.remove(id);
-          renderHistory();
+          // 상세보기 중이면 해당 폴더 갱신, 아니면 폴더 목록 갱신
+          if (currentFolder) openFacility(currentFolder);
+          else renderHistory();
           toast("삭제되었습니다.");
         });
       }
@@ -2000,9 +2079,9 @@ function buildFormElement(record) {
     current = draft || newRecord();
     bind();
     initSignature();
+    buildFacilitySelect();
     fillFormFromCurrent();
     loadSettingsIntoForm();
-    refreshFacilityDatalist();
     renderHistory();
   }
 

@@ -125,6 +125,7 @@
 
   // ---------- 폼 ↔ 상태 동기화 ----------
   function fillFormFromCurrent() {
+    ensureFacilityOption(current.facility);
     $("#f-facility").value = current.facility || "";
     $("#f-date").value = current.date || "";
     $("#f-time-start").value = current.timeStart || "";
@@ -326,7 +327,7 @@
   function validate() {
     readHeaderIntoCurrent();
     const missing = CHECK_ITEMS.filter((it) => !current.items[it.no]);
-    if (!current.facility) return "시설명을 입력하세요.";
+    if (!current.facility) return "시설명을 선택하세요.";
     if (!current.date) return "점검연월일을 입력하세요.";
     if (!current.inspector) return "점검자 성명을 입력하세요.";
     if (missing.length)
@@ -661,23 +662,39 @@
       .replace(/"/g, "&quot;");
   }
 
-  // 저장된 시설명 목록(중복 제거) — 시설명 입력 자동완성용
-  function facilityNames() {
-    const seen = [];
+  // 시설명 선택(select) 옵션 구성 — FACILITIES + (레코드에 남은 그 외 시설)
+  function buildFacilitySelect() {
+    const sel = $("#f-facility");
+    if (!sel) return;
+    const current = sel.value;
+    const extras = [];
     store.records().forEach((r) => {
       const f = (r.facility || "").trim();
-      if (f && seen.indexOf(f) === -1) seen.push(f);
+      if (f && FACILITIES.indexOf(f) === -1 && extras.indexOf(f) === -1) extras.push(f);
     });
-    return seen.sort((a, b) => a.localeCompare(b, "ko"));
+    const opts = ['<option value="" disabled>시설을 선택하세요</option>'];
+    FACILITIES.forEach((f) => opts.push(`<option value="${esc(f)}">${esc(f)}</option>`));
+    extras.forEach((f) => opts.push(`<option value="${esc(f)}">${esc(f)}</option>`));
+    sel.innerHTML = opts.join("");
+    sel.value = current || "";
   }
 
-  function refreshFacilityDatalist() {
-    const dl = $("#facility-list");
-    if (!dl) return;
-    dl.innerHTML = facilityNames()
-      .map((f) => `<option value="${esc(f)}"></option>`)
-      .join("");
+  // 선택지에 없는 시설명(과거 데이터 등)도 표시되도록 옵션 보강
+  function ensureFacilityOption(name) {
+    const sel = $("#f-facility");
+    if (!sel || !name) return;
+    const exists = Array.prototype.some.call(sel.options, (o) => o.value === name);
+    if (!exists) {
+      const o = document.createElement("option");
+      o.value = name;
+      o.textContent = name;
+      sel.appendChild(o);
+    }
   }
+
+  const recheckCount = (r) =>
+    CHECK_ITEMS.filter((it) => r.items[it.no] === "recheck").length;
+  const hasRecheck = (r) => CHECK_ITEMS.some((it) => r.items[it.no] === "recheck");
 
   function recordItemHtml(r) {
     return `<li class="rec">
@@ -698,46 +715,62 @@
       </li>`;
   }
 
-  // 시설별로 묶어서 내역 표시
+  const facilityOf = (r) => (r.facility || "").trim() || NO_FACILITY;
+  let currentFolder = null; // 상세보기 중인 시설명
+
+  // 내역 = 시설별 폴더 그리드
   function renderHistory() {
+    currentFolder = null;
+    $("#detail-card").hidden = true;
+    $("#folders-card").hidden = false;
+
     const list = store.records();
     $("#history-count").textContent = list.length + "건";
-    $("#history-empty").style.display = list.length ? "none" : "block";
-    refreshFacilityDatalist();
 
-    // 시설명 → 레코드 배열
-    const groups = new Map();
+    // 시설별 개수 집계
+    const counts = {};
     list.forEach((r) => {
-      const key = (r.facility || "").trim() || NO_FACILITY;
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(r);
+      const f = facilityOf(r);
+      counts[f] = (counts[f] || 0) + 1;
     });
-    // 시설명 가나다순 (미지정은 맨 뒤)
-    const keys = Array.from(groups.keys()).sort((a, b) => {
-      if (a === NO_FACILITY) return 1;
-      if (b === NO_FACILITY) return -1;
-      return a.localeCompare(b, "ko");
-    });
+    // 폴더 순서: 정의된 시설 → 그 외(미지정 포함)
+    const extras = Object.keys(counts)
+      .filter((f) => FACILITIES.indexOf(f) === -1)
+      .sort((a, b) => (a === NO_FACILITY ? 1 : b === NO_FACILITY ? -1 : a.localeCompare(b, "ko")));
+    const folders = FACILITIES.concat(extras);
 
-    const root = $("#record-list");
-    root.innerHTML = keys
-      .map((key) => {
-        const recs = groups.get(key);
-        const recheck = recs.filter((r) =>
-          CHECK_ITEMS.some((it) => r.items[it.no] === "recheck")
-        ).length;
-        const warn = recheck
-          ? `<span class="fac__warn">재점검 ${recheck}</span>`
-          : "";
-        return `<li class="fac-group">
-            <div class="fac-head">
-              <span class="fac-head__name">🏭 ${esc(key)}</span>
-              <span class="fac-head__meta">${recs.length}건${warn}</span>
+    $("#folder-grid").innerHTML = folders
+      .map((f) => {
+        const recs = list.filter((r) => facilityOf(r) === f);
+        const rc = recs.reduce((n, r) => n + (hasRecheck(r) ? 1 : 0), 0);
+        const cls = recs.length ? "folder folder--has" : "folder folder--empty";
+        const warn = rc ? `<span class="folder__warn">재점검 ${rc}</span>` : "";
+        return `<button type="button" class="${cls}" data-facility="${esc(f)}">
+            <div class="folder__top">
+              <span class="folder__ico">${recs.length ? "📁" : "📂"}</span>
+              <span class="folder__count">${recs.length}건</span>
             </div>
-            <ul class="fac-recs">${recs.map(recordItemHtml).join("")}</ul>
-          </li>`;
+            <span class="folder__name">${esc(f)}</span>
+            ${warn}
+          </button>`;
       })
       .join("");
+  }
+
+  // 특정 시설 폴더 열기 → 해당 시설 점검 결과 목록
+  function openFacility(name) {
+    currentFolder = name;
+    const recs = store.records().filter((r) => facilityOf(r) === name);
+    $("#detail-title").textContent = "🏭 " + name;
+    $("#record-list").innerHTML = recs.map(recordItemHtml).join("");
+    $("#detail-empty").hidden = recs.length > 0;
+    $("#folders-card").hidden = true;
+    $("#detail-card").hidden = false;
+    window.scrollTo(0, 0);
+  }
+
+  function backToFolders() {
+    renderHistory();
   }
 
   // ---------- 뷰 전환 ----------
@@ -828,7 +861,14 @@
       t.addEventListener("click", () => showView(t.dataset.view))
     );
 
-    // 내역 액션
+    // 시설 폴더 열기 / 뒤로가기
+    $("#folder-grid").addEventListener("click", (e) => {
+      const f = e.target.closest("[data-facility]");
+      if (f) openFacility(f.dataset.facility);
+    });
+    $("#btn-folder-back").addEventListener("click", backToFolders);
+
+    // 내역(시설 상세) 액션
     $("#record-list").addEventListener("click", (e) => {
       const el = e.target.closest("[data-act]");
       if (!el) return;
@@ -846,7 +886,9 @@
         }).then((yes) => {
           if (!yes) return;
           store.remove(id);
-          renderHistory();
+          // 상세보기 중이면 해당 폴더 갱신, 아니면 폴더 목록 갱신
+          if (currentFolder) openFacility(currentFolder);
+          else renderHistory();
           toast("삭제되었습니다.");
         });
       }
@@ -895,9 +937,9 @@
     current = draft || newRecord();
     bind();
     initSignature();
+    buildFacilitySelect();
     fillFormFromCurrent();
     loadSettingsIntoForm();
-    refreshFacilityDatalist();
     renderHistory();
 
     if ("serviceWorker" in navigator) {
