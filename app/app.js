@@ -551,31 +551,14 @@
     await sendEmail(current);
   }
 
-  // 설정에 저장된 수신 이메일로 즉시 전송(없으면 한 번 입력받아 저장)
+  // PDF 파일을 첨부해 앱에서 바로 이메일로 발송
+  // (모바일: Web Share 로 PDF 파일 첨부 → 메일 앱에서 바로 전송, 다운로드 없음)
   async function sendEmail(record) {
-    let to = (store.settings().email || "").trim();
-    if (!isEmail(to)) {
-      to = await promptDialog("받는 사람 이메일을 입력하세요.", {
-        type: "email",
-        placeholder: "report@example.com",
-        okText: "전송",
-      });
-      if (!to) return;
-      if (!isEmail(to)) {
-        toast("이메일 형식이 올바르지 않습니다.", "warn");
-        return;
-      }
-      const s = store.settings();
-      s.email = to;
-      store.saveSettings(s);
-      if ($("#s-email")) $("#s-email").value = to;
-    }
-
     const btn = $("#btn-email");
     const prev = btn ? btn.textContent : "";
     if (btn) {
       btn.disabled = true;
-      btn.textContent = "전송 준비 중…";
+      btn.textContent = "PDF 생성 중…";
     }
     try {
       const canvas = await renderFormCanvas(record);
@@ -583,21 +566,60 @@
       const filename = pdfFilename(record);
       const subject = emailSubject(record);
       const body = emailSummary(record);
+      const savedTo = (store.settings().email || "").trim();
+      const file = new File([blob], filename, { type: "application/pdf" });
 
-      // 입력한 이메일 주소로 메일 작성창(mailto) 열기 — 공유 시트를 띄우지 않고
-      // 사용자가 지정한 주소로 바로 보내는 메일 앱을 연다.
-      // (웹 표준상 mailto 로는 첨부가 불가하므로 PDF는 함께 내려받아 첨부하도록 함)
+      // 1순위(모바일): PDF 파일을 첨부해 그대로 공유 → 메일 앱 선택 후 바로 전송
+      if (
+        navigator.canShare &&
+        navigator.canShare({ files: [file] }) &&
+        navigator.share
+      ) {
+        try {
+          await navigator.share({
+            files: [file],
+            title: subject,
+            text: (savedTo ? `받는 사람: ${savedTo}\n\n` : "") + body,
+          });
+          toast("메일 앱을 선택하면 PDF가 첨부된 채로 전송됩니다.", "ok");
+          return;
+        } catch (e) {
+          if (e && e.name === "AbortError") {
+            toast("전송이 취소되었습니다.");
+            return;
+          }
+          // 공유 실패 시 아래 폴백으로 진행
+        }
+      }
+
+      // 2순위(공유 미지원·데스크톱): 저장된 주소로 메일 작성창(mailto) + PDF 내려받기
+      let to = savedTo;
+      if (!isEmail(to)) {
+        to = await promptDialog("받는 사람 이메일을 입력하세요.", {
+          type: "email",
+          placeholder: "report@example.com",
+          okText: "전송",
+        });
+        if (!to) return;
+        if (!isEmail(to)) {
+          toast("이메일 형식이 올바르지 않습니다.", "warn");
+          return;
+        }
+        const s = store.settings();
+        s.email = to;
+        store.saveSettings(s);
+        if ($("#s-email")) $("#s-email").value = to;
+      }
       const dl = downloadBlob(blob, filename);
-      const mailtoBody =
-        body + "\n\n※ 방금 내려받은 PDF 파일(" + filename + ")을 첨부해 주세요.";
-      // 수신 주소는 원문 그대로(검증된 이메일) — 일부 메일 앱은 %40 을 못 읽음
       const mailto =
         "mailto:" +
         to +
         "?subject=" +
         encodeURIComponent(subject) +
         "&body=" +
-        encodeURIComponent(mailtoBody);
+        encodeURIComponent(
+          body + "\n\n※ 방금 내려받은 PDF 파일(" + filename + ")을 첨부해 주세요."
+        );
       const opened = openMailto(mailto);
       toast(
         opened
