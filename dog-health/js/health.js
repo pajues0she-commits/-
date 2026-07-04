@@ -41,6 +41,52 @@ function obesityPercent(record, breed) {
   return (record.weight / ideal) * 100;
 }
 
+// ── 몸통 둘레 대비 체고(체형) 지수 ────────────────────────────
+// 프레임(체고)에 맞는 기대 몸통 둘레(cm) — 이상 체형일 때 예상되는 둘레
+function expectedChest(record, breed) {
+  const r = frameRatio(record, breed);
+  if (r == null) return null;
+  const [cMin, cMax] = breed.chest;
+  return cMin + r * (cMax - cMin);
+}
+
+// 체형 지수(%) = 실제 몸통 둘레 / 프레임 기대 둘레 * 100
+// 체고(골격) 대비 몸통이 얼마나 두꺼운지 → 지방 축적을 가늠하는 독립 지표.
+// 체중과 별개라, 체중이 정상이어도 몸통만 두꺼우면 복부 지방을 잡아낼 수 있습니다.
+function bodyShapeIndex(record, breed) {
+  if (!record || record.chest == null || isNaN(record.chest)) return null;
+  const ec = expectedChest(record, breed);
+  if (!ec) return null;
+  return (record.chest / ec) * 100;
+}
+
+// 체형 지수 등급 — 몸통 둘레는 체중보다 변화폭이 작아(둘레 ≈ √체중) 더 좁은 기준 적용
+function bodyShapeGrade(bsi) {
+  if (bsi == null) return { label: "-", level: "none", color: "#94a3b8" };
+  if (bsi < 93) return { label: "마른 체형", level: "under", color: "#38bdf8" };
+  if (bsi <= 108) return { label: "이상 체형", level: "normal", color: "#22c55e" };
+  if (bsi <= 116) return { label: "통통한 체형", level: "over", color: "#f59e0b" };
+  return { label: "비만 체형", level: "obese", color: "#ef4444" };
+}
+
+// 체중 기준 등급 + 체형 기준 등급 종합 코멘트 (교차 검증)
+function combinedAssessment(weightGrade, shapeGrade) {
+  if (!weightGrade || !shapeGrade) return null;
+  if (weightGrade.level === "none" || shapeGrade.level === "none") return null;
+  const heavy = (l) => l === "over" || l === "obese";
+  const light = (l) => l === "under";
+  const w = weightGrade.level, s = shapeGrade.level;
+  if (heavy(s) && !heavy(w))
+    return "체중은 큰 문제 없지만 몸통이 두꺼운 편이에요. 근육이 아니라면 복부 지방일 수 있으니 갈비뼈가 잘 만져지는지 확인해 보세요.";
+  if (heavy(w) && !heavy(s))
+    return "체중은 높지만 몸통 둘레는 이상적이에요. 골격·근육량이 많은 편일 수 있어요.";
+  if (heavy(w) && heavy(s))
+    return "체중과 체형 모두 과체중 신호예요. 식단·운동 관리를 권장합니다.";
+  if (light(w) && light(s))
+    return "체중과 체형 모두 마른 편이에요. 영양 상태를 점검하세요.";
+  return "체중과 체형 모두 이상적인 범위예요. 지금 습관을 유지하세요.";
+}
+
 // 비만도 등급 판정
 // 임상적으로 이상 체중 대비 +15% 과체중, +30% 비만으로 봅니다.
 function obesityGrade(pct) {

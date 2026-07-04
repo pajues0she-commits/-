@@ -151,6 +151,7 @@ function renderHome(dog) {
     </div>
 
     ${breed ? obesityPanel(pct, grade, bcs, breed, last) : ""}
+    ${breed ? bodyShapePanel(last, breed, grade) : ""}
     ${breed ? tipsPanel(breed) : ""}
   `;
   bindDogStrip(screen);
@@ -194,6 +195,38 @@ function obesityPanel(pct, grade, bcs, breed, record) {
   </section>`;
 }
 
+function bodyShapePanel(record, breed, weightGrade) {
+  if (!record) return "";
+  const bsi = bodyShapeIndex(record, breed);
+  if (bsi == null) {
+    // 몸통 둘레 또는 체고가 없어 체형 분석 불가 — 안내만 표시
+    const missing = record.chest == null ? "몸통 둘레" : "체고";
+    return `<section class="card">
+      <div class="card-head"><h3>📐 체형 분석 <span class="muted small">몸통 둘레 기준</span></h3></div>
+      <p class="muted small">${missing}를 함께 기록하면, 골격 대비 몸통 두께로 지방 축적을 교차 검증해 드려요.</p>
+    </section>`;
+  }
+  const grade = bodyShapeGrade(bsi);
+  const ec = expectedChest(record, breed);
+  const combined = combinedAssessment(weightGrade, grade);
+  const pos = Math.max(0, Math.min(100, ((bsi - 80) / 50) * 100)); // 80~130% 구간 매핑
+  return `<section class="card">
+    <div class="card-head"><h3>📐 체형 분석 <span class="muted small">몸통 둘레 기준</span></h3>
+      <span class="badge-lg" style="background:${grade.color}1a;color:${grade.color}">${grade.label} · ${fmt(bsi, 0)}%</span>
+    </div>
+    <div class="shape-bar">
+      <div class="shape-bar-track"><span class="shape-marker" style="left:${pos}%"></span></div>
+      <div class="shape-scale"><span>마름</span><span>이상</span><span>통통</span><span>비만</span></div>
+    </div>
+    <div class="obesity-meta">
+      <div><span class="muted small">프레임 기대 둘레</span><b>${fmt(ec)} cm</b></div>
+      <div><span class="muted small">실제 둘레</span><b>${fmt(record.chest)} cm</b></div>
+      <div><span class="muted small">체형 지수</span><b>${fmt(bsi, 0)}%</b></div>
+    </div>
+    ${combined ? `<p class="advice">${combined}</p>` : ""}
+  </section>`;
+}
+
 function tipsPanel(breed) {
   return `<section class="card">
     <div class="card-head"><h3>💡 ${escapeHtml(breed.name)} 관리 포인트</h3></div>
@@ -213,6 +246,7 @@ function renderTrends(dog) {
       <button class="tab ${UI.trendMetric === "obesity" ? "active" : ""}" data-metric="obesity">비만도</button>
       <button class="tab ${UI.trendMetric === "height" ? "active" : ""}" data-metric="height">체고</button>
       <button class="tab ${UI.trendMetric === "chest" ? "active" : ""}" data-metric="chest">몸통</button>
+      <button class="tab ${UI.trendMetric === "shape" ? "active" : ""}" data-metric="shape">체형</button>
     </div>
     <section class="card">
       <div id="chartArea" class="chart-area-wrap"></div>
@@ -250,10 +284,15 @@ function drawTrend(metric, breed, records) {
     points = records.map((r) => ({ x: r.date, y: r.height }));
     opts = { unit: "cm", color: "#8b5cf6", band: breed ? breed.height : null };
     note.textContent = breed ? `밴드 = 표준 체고(${breed.height[0]}~${breed.height[1]}cm).` : "";
-  } else {
+  } else if (metric === "chest") {
     points = records.map((r) => ({ x: r.date, y: r.chest }));
     opts = { unit: "cm", color: "#0ea5b7", band: breed ? breed.chest : null };
     note.textContent = breed ? `밴드 = 표준 몸통 둘레(${breed.chest[0]}~${breed.chest[1]}cm).` : "";
+  } else {
+    // 체형 지수 (몸통 둘레 ÷ 프레임 기대 둘레)
+    points = records.map((r) => ({ x: r.date, y: breed ? bodyShapeIndex(r, breed) : null }));
+    opts = { unit: "%", color: "#f59e0b", ideal: 100, band: [93, 108] };
+    note.textContent = "몸통 둘레 ÷ 프레임 기대 둘레. 100% = 이상 체형, 밴드(93~108%) 안이면 이상적이에요. (체고·몸통 둘레 필요)";
   }
   renderLineChart(area, points, opts);
 }
@@ -330,7 +369,7 @@ function renderMore() {
     <div class="section-title" style="margin-top:22px">앱 정보</div>
     <div class="card" style="font-size:0.85rem">
       <b>멍멍 건강수첩</b> <span class="muted">v1.0</span>
-      <p class="muted" style="margin-top:8px">견종별 표준값에 더해 <b>체고(체격)</b>까지 반영해 비만도를 평가하는 앱입니다. 같은 견종이라도 골격이 큰 아이는 이상 체중을 높게, 작은 아이는 낮게 잡아 더 공정하게 판단합니다. 표준값은 참고용이며, 정확한 진단은 수의사와 상담하세요.</p>
+      <p class="muted" style="margin-top:8px">견종 표준값에 더해 <b>체고(체격)</b>로 이상 체중을 보정하고, <b>몸통 둘레 ÷ 체고</b> 체형 지수로 지방 축적을 교차 검증하는 앱입니다. 같은 견종이라도 골격 차이를 반영해 더 공정하게 판단합니다. 표준값은 참고용이며, 정확한 진단은 수의사와 상담하세요.</p>
       <p class="muted small" style="margin-top:8px">모든 데이터는 이 기기에만 저장됩니다.</p>
     </div>
   `;
