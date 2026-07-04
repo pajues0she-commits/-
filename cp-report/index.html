@@ -153,6 +153,40 @@
   .summary-verdict.ng{background:var(--ng-bg);color:var(--ng);}
   .summary-verdict.na{background:#eef2f6;color:var(--muted);}
 
+  /* ---------- Email modal ---------- */
+  #mailModal{display:none;position:fixed;inset:0;z-index:120;
+    background:rgba(15,25,40,.55);align-items:center;justify-content:center;padding:16px;}
+  #mailModal.show{display:flex;}
+  .mail-card{background:#fff;border-radius:14px;max-width:460px;width:100%;padding:20px 20px 18px;
+    box-shadow:0 14px 46px rgba(0,0,0,.4);max-height:92vh;overflow:auto;}
+  .mail-card h3{font-size:17px;color:var(--brand);display:flex;align-items:center;gap:8px;}
+  .mail-card .sub{font-size:12.5px;color:var(--muted);margin:4px 0 14px;}
+  .mail-card label{font-size:12.5px;color:var(--muted);font-weight:600;display:block;margin:12px 0 5px;}
+  .mail-card input{width:100%;border:1px solid var(--line-strong);border-radius:8px;
+    padding:11px;background:#fbfcfe;color:var(--text);}
+  .mail-card input:focus{outline:none;border-color:var(--brand-2);box-shadow:0 0 0 3px rgba(46,109,164,.15);}
+  .mail-setup{margin-top:14px;border-top:1px dashed var(--line);padding-top:6px;}
+  .mail-setup summary{font-size:13px;color:var(--brand);font-weight:700;cursor:pointer;padding:6px 0;}
+  .mail-setup .guide{font-size:12px;color:var(--text);line-height:1.65;margin-top:6px;}
+  .mail-setup .guide ol{margin:6px 0 6px 18px;padding:0;}
+  .mail-setup .guide li{margin-bottom:4px;}
+  .mail-setup .guide .muted{color:var(--muted);}
+  .code-wrap{position:relative;margin:8px 0;}
+  .code-wrap pre{background:#0f1b2a;color:#d6e4f0;border-radius:8px;padding:12px 12px;overflow:auto;
+    font-size:11px;line-height:1.5;max-height:190px;margin:0;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre;}
+  .code-wrap .copy{position:absolute;top:8px;right:8px;background:var(--brand-2);color:#fff;border:0;
+    border-radius:6px;padding:5px 10px;font-size:11.5px;font-weight:700;}
+  .mail-actions{display:flex;gap:10px;margin-top:18px;}
+  .mail-actions button{flex:1;border:0;border-radius:9px;padding:12px;font-weight:700;font-size:15px;}
+  .mail-send{background:var(--ok);color:#fff;}
+  .mail-send:disabled{opacity:.6;}
+  .mail-cancel{background:#eef2f6;color:var(--text);}
+  .mail-status{font-size:13px;margin-top:12px;min-height:18px;font-weight:600;}
+  .mail-status.err{color:var(--ng);}
+  .mail-status.ok{color:var(--ok);}
+  .mail-status.busy{color:var(--brand);}
+
   /* ---------- Print / A4 report ---------- */
   #report{display:none;}
   @media screen{
@@ -303,6 +337,65 @@
     <button class="ra-btn close" id="btnClose">닫기 ✕</button>
   </div>
   <div id="reportBody"></div>
+</div>
+
+<!-- ===== Email modal ===== -->
+<div id="mailModal">
+  <div class="mail-card">
+    <h3>📧 이메일로 보고서 전송</h3>
+    <div class="sub">입력한 주소로 사진이 포함된 보고서(.html)를 바로 보냅니다.</div>
+
+    <label>받는사람 이메일</label>
+    <input id="mailTo" type="email" inputmode="email" placeholder="예) manager@company.com">
+
+    <label>참조(CC) · 선택</label>
+    <input id="mailCc" type="email" inputmode="email" placeholder="여러 명은 쉼표(,)로 구분">
+
+    <details class="mail-setup" id="mailSetup">
+      <summary>⚙ 발신 설정 (최초 1회만)</summary>
+      <div class="guide">
+        <p>앱에서 바로 전송하려면 본인 Gmail로 보내는 <b>Google Apps Script 웹앱</b>을 한 번만 배포하고, 생성된 주소를 아래에 붙여넣으세요.</p>
+        <ol>
+          <li><a href="https://script.google.com/home/projects/create" target="_blank" rel="noopener">script.google.com</a> 접속 → <b>새 프로젝트</b></li>
+          <li>기본 코드를 지우고 아래 코드를 붙여넣기 → 저장</li>
+          <li><b>배포 → 새 배포 → 유형: 웹 앱</b></li>
+          <li>실행 계정: <b>나</b>, 액세스 권한: <b>모든 사용자</b> → <b>배포</b></li>
+          <li>최초 1회 권한 승인(Gmail 전송) 후 <b>웹 앱 URL</b> 복사 → 아래에 붙여넣기</li>
+        </ol>
+        <div class="code-wrap">
+          <button class="copy" id="btnCopyCode" type="button">코드 복사</button>
+          <pre id="gasCode">function doPost(e) {
+  try {
+    var d = JSON.parse(e.postData.contents);
+    var opts = { name: '방식전위측정 보고서' };
+    if (d.cc) opts.cc = d.cc;
+    if (d.htmlBase64) {
+      var bytes = Utilities.base64Decode(d.htmlBase64);
+      opts.attachments = [
+        Utilities.newBlob(bytes, 'text/html', d.filename || 'report.html')
+      ];
+    }
+    GmailApp.sendEmail(d.to, d.subject || '방식전위 측정 보고서', d.body || '', opts);
+    return ContentService.createTextOutput(JSON.stringify({ ok: true }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ ok: false, error: String(err) }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}</pre>
+        </div>
+        <label>웹 앱 URL (.../exec 로 끝나는 주소)</label>
+        <input id="mailEndpoint" type="url" inputmode="url" placeholder="https://script.google.com/macros/s/.../exec">
+        <p class="muted">※ 이 설정은 이 기기에만 저장되며, 매번 다시 입력할 필요 없습니다.</p>
+      </div>
+    </details>
+
+    <div class="mail-status" id="mailStatus"></div>
+    <div class="mail-actions">
+      <button class="mail-cancel" id="mailCancel" type="button">취소</button>
+      <button class="mail-send" id="mailSend" type="button">보내기</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -621,11 +714,13 @@ $("#btnReport").addEventListener("click", openReport);
 $("#btnReport2").addEventListener("click", openReport);
 $("#btnClose").addEventListener("click", closeReport);
 $("#btnPrint").addEventListener("click", ()=>window.print());
-$("#btnEmail").addEventListener("click", sendEmail);
-document.addEventListener("keydown", e=>{ if(e.key==="Escape") closeReport(); });
+$("#btnEmail").addEventListener("click", openMailDialog);
+document.addEventListener("keydown", e=>{ if(e.key==="Escape"){ if($("#mailModal").classList.contains("show")) closeMailDialog(); else closeReport(); } });
 
-/* ---------- Email ---------- */
-// 사진이 포함된 자체 완결형(오프라인) 보고서 HTML 파일 생성 → 메일 첨부용
+/* ---------- Email (Gmail / Apps Script 웹앱 직접 전송) ---------- */
+const MAIL_KEYS = {ep:"cp_mail_endpoint", to:"cp_mail_to", cc:"cp_mail_cc"};
+
+// 사진이 포함된 자체 완결형(오프라인) 보고서 HTML → 메일 첨부용
 function reportStandaloneHTML(){
   const css = $$("style").map(s=>s.textContent).join("\n");
   const body = $("#reportBody").innerHTML;
@@ -662,33 +757,80 @@ ${lines.join("\n")||"— 측정 데이터 없음 —"}
 ※ 측정지 사진이 포함된 보고서 파일을 함께 첨부합니다. (파일을 열면 인쇄/PDF 저장도 가능합니다)`;
   return {subject, body};
 }
-function downloadFile(name, text, type){
-  const url = URL.createObjectURL(new Blob([text],{type}));
-  const a = document.createElement("a");
-  a.href = url; a.download = name; document.body.appendChild(a); a.click();
-  a.remove(); setTimeout(()=>URL.revokeObjectURL(url), 4000);
+// UTF-8 문자열 → base64 (대용량 안전, 청크 처리)
+function utf8ToB64(str){
+  const bytes = new TextEncoder().encode(str);
+  let bin = "", chunk = 0x8000;
+  for(let i=0;i<bytes.length;i+=chunk){ bin += String.fromCharCode.apply(null, bytes.subarray(i,i+chunk)); }
+  return btoa(bin);
 }
-async function sendEmail(){
+
+function openMailDialog(){
+  $("#mailTo").value = localStorage.getItem(MAIL_KEYS.to) || "";
+  $("#mailCc").value = localStorage.getItem(MAIL_KEYS.cc) || "";
+  const ep = localStorage.getItem(MAIL_KEYS.ep) || "";
+  $("#mailEndpoint").value = ep;
+  setMailStatus("");
+  // 발신 설정이 아직 없으면 설정 영역을 펼쳐 안내
+  $("#mailSetup").open = !ep;
+  $("#mailModal").classList.add("show");
+  setTimeout(()=>$("#mailTo").focus(), 50);
+}
+function closeMailDialog(){ $("#mailModal").classList.remove("show"); }
+function setMailStatus(msg, cls){
+  const el = $("#mailStatus"); el.textContent = msg || ""; el.className = "mail-status"+(cls?" "+cls:"");
+}
+$("#mailCancel").addEventListener("click", closeMailDialog);
+$("#mailModal").addEventListener("click", e=>{ if(e.target.id==="mailModal") closeMailDialog(); });
+$("#btnCopyCode").addEventListener("click", async ()=>{
+  const code = $("#gasCode").textContent;
+  try{ await navigator.clipboard.writeText(code); $("#btnCopyCode").textContent="복사됨 ✓"; }
+  catch(e){ const r=document.createRange(); r.selectNode($("#gasCode")); getSelection().removeAllRanges(); getSelection().addRange(r); }
+  setTimeout(()=>$("#btnCopyCode").textContent="코드 복사", 1600);
+});
+
+$("#mailSend").addEventListener("click", async ()=>{
+  const to = $("#mailTo").value.trim();
+  const cc = $("#mailCc").value.trim();
+  const endpoint = $("#mailEndpoint").value.trim();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)){ setMailStatus("받는사람 이메일 주소를 확인해 주세요.", "err"); $("#mailTo").focus(); return; }
+  if(!/^https:\/\/script\.google\.com\/.+\/exec$/.test(endpoint)){
+    setMailStatus("발신 설정의 웹 앱 URL(.../exec)을 먼저 입력해 주세요.", "err");
+    $("#mailSetup").open = true; $("#mailEndpoint").focus(); return;
+  }
+  // 설정 저장
+  localStorage.setItem(MAIL_KEYS.to, to);
+  localStorage.setItem(MAIL_KEYS.cc, cc);
+  localStorage.setItem(MAIL_KEYS.ep, endpoint);
+
   const h = collect().header;
   const {subject, body} = buildEmailText(h);
-  const fname = `방식전위측정보고서_${h.date||"측정"}.html`;
-  const html = reportStandaloneHTML();
-  // 1) 모바일 등 파일 공유 지원 → 공유시트로 메일 앱에 보고서 첨부 후 전송
+  const payload = {
+    to, cc, subject, body,
+    filename: `방식전위측정보고서_${h.date||"측정"}.html`,
+    htmlBase64: utf8ToB64(reportStandaloneHTML())
+  };
+  const btn = $("#mailSend"); btn.disabled = true;
+  setMailStatus("전송 중…", "busy");
   try{
-    const file = new File([html], fname, {type:"text/html"});
-    if(navigator.canShare && navigator.canShare({files:[file]})){
-      await navigator.share({title:subject, text:body, files:[file]});
-      return;
+    // text/plain → CORS preflight 회피 (Apps Script는 프리플라이트 미지원)
+    const res = await fetch(endpoint, {
+      method:"POST",
+      headers:{"Content-Type":"text/plain;charset=utf-8"},
+      body: JSON.stringify(payload)
+    });
+    let ok=false, errMsg="";
+    try{ const j = JSON.parse(await res.text()); ok = j.ok; errMsg = j.error||""; }catch(e){}
+    if(ok){
+      setMailStatus("✔ 전송 완료 — "+to+" 로 보고서를 보냈습니다.", "ok");
+      setTimeout(closeMailDialog, 1400);
+    }else{
+      setMailStatus("전송 실패"+(errMsg?": "+errMsg:"")+". 발신 설정(URL·권한)을 확인해 주세요.", "err");
     }
   }catch(err){
-    if(err && err.name==="AbortError") return;   // 사용자가 공유 취소
-    /* 미지원 → 아래 fallback */
-  }
-  // 2) fallback: 보고서 파일 내려받기 + 요약 메일 창 열기(수동 첨부)
-  downloadFile(fname, html, "text/html");
-  flash("보고서 파일을 내려받았어요. 메일 창에 첨부해 보내세요.");
-  location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-}
+    setMailStatus("전송 실패: 네트워크 또는 발신 설정을 확인해 주세요.", "err");
+  }finally{ btn.disabled = false; }
+});
 
 /* ---------- init ---------- */
 load();
