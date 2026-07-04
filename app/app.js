@@ -65,6 +65,7 @@
     const now = new Date();
     return {
       id: "chk_" + now.getTime(),
+      facility: "",
       date: now.toISOString().slice(0, 10),
       timeStart: "",
       timeEnd: "",
@@ -124,6 +125,7 @@
 
   // ---------- 폼 ↔ 상태 동기화 ----------
   function fillFormFromCurrent() {
+    $("#f-facility").value = current.facility || "";
     $("#f-date").value = current.date || "";
     $("#f-time-start").value = current.timeStart || "";
     $("#f-time-end").value = current.timeEnd || "";
@@ -135,6 +137,7 @@
   }
 
   function readHeaderIntoCurrent() {
+    current.facility = $("#f-facility").value.trim();
     current.date = $("#f-date").value;
     current.timeStart = $("#f-time-start").value;
     current.timeEnd = $("#f-time-end").value;
@@ -283,6 +286,7 @@
   function validate() {
     readHeaderIntoCurrent();
     const missing = CHECK_ITEMS.filter((it) => !current.items[it.no]);
+    if (!current.facility) return "시설명을 입력하세요.";
     if (!current.date) return "점검연월일을 입력하세요.";
     if (!current.inspector) return "점검자 성명을 입력하세요.";
     if (missing.length)
@@ -346,8 +350,9 @@
 
   function pdfFilename(record) {
     const d = (record.date || "").replace(/-/g, "");
+    const fac = (record.facility || "시설").replace(/[\\/:*?"<>|\s]+/g, "");
     const who = (record.inspector || "점검자").replace(/\s+/g, "");
-    return `자체점검대장_${d || "날짜"}_${who}.pdf`;
+    return `자체점검대장_${fac}_${d || "날짜"}_${who}.pdf`;
   }
 
   // ---------- PDF 저장: 미리보기 모달을 먼저 연다 ----------
@@ -424,6 +429,148 @@
     }
   }
 
+  // ---------- 이메일 본문 요약 ----------
+  function emailSummary(record) {
+    const map = {};
+    STATUS_OPTIONS.forEach((o) => (map[o.key] = o.label));
+    const lines = [];
+    lines.push("유해화학물질 취급시설 자체점검 결과");
+    lines.push("(화학물질관리법 시행규칙 별지 제42호서식)");
+    lines.push("");
+    lines.push(`■ 시설명: ${record.facility || "-"}`);
+    lines.push(`■ 점검연월일: ${record.date || "-"}`);
+    lines.push(
+      `■ 점검시간: ${record.timeStart || "--:--"} ~ ${record.timeEnd || "--:--"}`
+    );
+    lines.push(`■ 소속: ${record.org || "-"}`);
+    lines.push(`■ 점검자: ${record.inspector || "-"}`);
+    lines.push("");
+    lines.push("[점검 항목 결과]");
+    CHECK_ITEMS.forEach((it) => {
+      const st = map[record.items[it.no]] || "미점검";
+      const rm = record.itemRemarks[it.no] ? ` / 비고: ${record.itemRemarks[it.no]}` : "";
+      lines.push(`${it.no} ${st}${rm}`);
+    });
+    const recheck = CHECK_ITEMS.filter((it) => record.items[it.no] === "recheck");
+    lines.push("");
+    lines.push(
+      recheck.length
+        ? `⚠ 정밀 재점검 필요: ${recheck.length}건 (${recheck.map((r) => r.no).join(" ")})`
+        : "✔ 정밀 재점검 필요 항목 없음"
+    );
+    if (record.remark) {
+      lines.push("");
+      lines.push("[비고]");
+      lines.push(record.remark);
+    }
+    lines.push("");
+    lines.push("※ 상세 양식(별지 제42호서식)은 첨부된 A4 PDF를 확인하세요.");
+    return lines.join("\n");
+  }
+
+  function emailSubject(record) {
+    const fac = record.facility ? `[${record.facility}] ` : "";
+    return `[자체점검] ${fac}유해화학물질 취급시설 자체점검대장 (${record.date || ""})`;
+  }
+
+  // ---------- 이메일 전송: 미리보기 모달을 먼저 연다 ----------
+  // (샌드박스/미리보기 환경에서 실제 전송이 막혀도 결과 PDF를 눈으로 확인 가능)
+  let sendCtx = null; // { blob, filename, subject, body }
+
+  async function emailResult() {
+    const err = validate();
+    if (err) {
+      toast(err, "warn");
+      return;
+    }
+    saveCurrent(true);
+    await openSendModal(current);
+  }
+
+  async function openSendModal(record) {
+    const btn = $("#btn-email");
+    const prev = btn ? btn.textContent : "";
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "PDF 생성 중…";
+    }
+    try {
+      const canvas = await renderFormCanvas(record);
+      const blob = pdfFromCanvas(canvas);
+      const subject = emailSubject(record);
+      const body = emailSummary(record);
+      sendCtx = { blob, filename: pdfFilename(record), subject, body };
+      $("#send-img").src = canvas.toDataURL("image/png");
+      $("#send-to").value = store.settings().email || "";
+      $("#send-subject").value = subject;
+      $("#send-body-text").textContent = body;
+      $("#send-modal").hidden = false;
+      document.body.classList.add("modal-open");
+    } catch (e) {
+      console.error(e);
+      toast("PDF 생성 중 오류가 발생했습니다.", "warn");
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = prev;
+      }
+    }
+  }
+
+  function closeSendModal() {
+    $("#send-modal").hidden = true;
+    document.body.classList.remove("modal-open");
+  }
+
+  // 실제 전송(공유 시트 → mailto 순), 환경상 막히면 안내
+  async function doSend() {
+    if (!sendCtx) return;
+    const to = $("#send-to").value.trim();
+    const subject = $("#send-subject").value.trim() || sendCtx.subject;
+    const body = sendCtx.body;
+    if (to) {
+      const s = store.settings();
+      s.email = to;
+      store.saveSettings(s);
+    }
+    const file = new File([sendCtx.blob], sendCtx.filename, {
+      type: "application/pdf",
+    });
+    try {
+      if (
+        navigator.canShare &&
+        navigator.canShare({ files: [file] }) &&
+        navigator.share
+      ) {
+        await navigator.share({ files: [file], title: subject, text: body });
+        toast("공유 시트에서 메일 앱을 선택하세요.", "ok");
+        return;
+      }
+      const dl = downloadBlob(sendCtx.blob, sendCtx.filename);
+      const mailto = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(
+        subject
+      )}&body=${encodeURIComponent(body + "\n\n(내려받은 PDF 파일을 첨부해 주세요.)")}`;
+      try {
+        window.location.href = mailto;
+      } catch (e) {}
+      toast(
+        dl
+          ? "PDF를 내려받았습니다. 메일에 첨부해 주세요."
+          : "이 미리보기 환경에서는 전송·다운로드가 제한됩니다. 배포 후 이용하세요.",
+        dl ? "ok" : "warn"
+      );
+    } catch (e) {
+      if (e && e.name === "AbortError") {
+        toast("전송이 취소되었습니다.");
+      } else {
+        toast(
+          "이 미리보기 환경에서는 전송이 제한됩니다. PDF 내려받기 또는 배포 후 이용하세요.",
+          "warn"
+        );
+      }
+    }
+  }
+
   // ---------- 미리보기 · 인쇄 ----------
   function openPreview(record) {
     readHeaderIntoCurrent();
@@ -461,30 +608,93 @@
     return `<span class="rec__badge">${done}/${CHECK_ITEMS.length}</span>`;
   }
 
-  function renderHistory() {
-    const list = store.records();
-    $("#history-count").textContent = list.length + "건";
-    $("#record-list").innerHTML = "";
-    $("#history-empty").style.display = list.length ? "none" : "block";
-    list.forEach((r) => {
-      const li = document.createElement("li");
-      li.className = "rec";
-      li.innerHTML = `
+  const NO_FACILITY = "(시설명 미지정)";
+
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  // 저장된 시설명 목록(중복 제거) — 시설명 입력 자동완성용
+  function facilityNames() {
+    const seen = [];
+    store.records().forEach((r) => {
+      const f = (r.facility || "").trim();
+      if (f && seen.indexOf(f) === -1) seen.push(f);
+    });
+    return seen.sort((a, b) => a.localeCompare(b, "ko"));
+  }
+
+  function refreshFacilityDatalist() {
+    const dl = $("#facility-list");
+    if (!dl) return;
+    dl.innerHTML = facilityNames()
+      .map((f) => `<option value="${esc(f)}"></option>`)
+      .join("");
+  }
+
+  function recordItemHtml(r) {
+    return `<li class="rec">
         <div class="rec__main" data-act="open" data-id="${r.id}">
           <div class="rec__row">
             <strong>${r.date || "날짜 미상"}</strong>
             ${statusBadge(r)}
           </div>
-          <div class="rec__sub">${(r.org || "-")} · ${(r.inspector || "-")} · ${
-        r.timeStart || "--:--"
-      }~${r.timeEnd || "--:--"}</div>
+          <div class="rec__sub">${esc(r.org || "-")} · ${esc(r.inspector || "-")} · ${
+    r.timeStart || "--:--"
+  }~${r.timeEnd || "--:--"}</div>
         </div>
         <div class="rec__acts">
+          <button class="mini" data-act="email" data-id="${r.id}">메일</button>
           <button class="mini" data-act="pdf" data-id="${r.id}">PDF</button>
           <button class="mini mini--danger" data-act="del" data-id="${r.id}">삭제</button>
-        </div>`;
-      $("#record-list").appendChild(li);
+        </div>
+      </li>`;
+  }
+
+  // 시설별로 묶어서 내역 표시
+  function renderHistory() {
+    const list = store.records();
+    $("#history-count").textContent = list.length + "건";
+    $("#history-empty").style.display = list.length ? "none" : "block";
+    refreshFacilityDatalist();
+
+    // 시설명 → 레코드 배열
+    const groups = new Map();
+    list.forEach((r) => {
+      const key = (r.facility || "").trim() || NO_FACILITY;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(r);
     });
+    // 시설명 가나다순 (미지정은 맨 뒤)
+    const keys = Array.from(groups.keys()).sort((a, b) => {
+      if (a === NO_FACILITY) return 1;
+      if (b === NO_FACILITY) return -1;
+      return a.localeCompare(b, "ko");
+    });
+
+    const root = $("#record-list");
+    root.innerHTML = keys
+      .map((key) => {
+        const recs = groups.get(key);
+        const recheck = recs.filter((r) =>
+          CHECK_ITEMS.some((it) => r.items[it.no] === "recheck")
+        ).length;
+        const warn = recheck
+          ? `<span class="fac__warn">재점검 ${recheck}</span>`
+          : "";
+        return `<li class="fac-group">
+            <div class="fac-head">
+              <span class="fac-head__name">🏭 ${esc(key)}</span>
+              <span class="fac-head__meta">${recs.length}건${warn}</span>
+            </div>
+            <ul class="fac-recs">${recs.map(recordItemHtml).join("")}</ul>
+          </li>`;
+      })
+      .join("");
   }
 
   // ---------- 뷰 전환 ----------
@@ -531,15 +741,22 @@
     });
 
     // 헤더 입력 → 드래프트 저장
-    ["#f-date", "#f-time-start", "#f-time-end", "#f-org", "#f-inspector", "#f-remark"].forEach(
-      (id) => $(id).addEventListener("input", saveDraftSoon)
-    );
+    [
+      "#f-facility",
+      "#f-date",
+      "#f-time-start",
+      "#f-time-end",
+      "#f-org",
+      "#f-inspector",
+      "#f-remark",
+    ].forEach((id) => $(id).addEventListener("input", saveDraftSoon));
 
     $("#btn-save").addEventListener("click", async () => {
       const err = validate();
       if (err && !(await confirmDialog(err + "\n그래도 저장하시겠습니까?"))) return;
       saveCurrent();
     });
+    $("#btn-email").addEventListener("click", emailResult);
     $("#btn-pdf").addEventListener("click", savePdf);
     $("#btn-preview").addEventListener("click", () => openPreview());
     $("#btn-reset").addEventListener("click", async () => {
@@ -563,6 +780,18 @@
     $("#btn-pdf-close").addEventListener("click", closePdfModal);
     $("#btn-pdf-download").addEventListener("click", downloadPdf);
 
+    // 이메일 전송 미리보기 모달
+    $("#btn-send-close").addEventListener("click", closeSendModal);
+    $("#btn-do-send").addEventListener("click", doSend);
+    $("#btn-do-download").addEventListener("click", () => {
+      if (!sendCtx) return;
+      const ok = downloadBlob(sendCtx.blob, sendCtx.filename);
+      toast(
+        ok ? "PDF를 내려받았습니다." : "미리보기 환경에서는 다운로드가 제한됩니다.",
+        ok ? "ok" : "warn"
+      );
+    });
+
     // 탭
     $$(".tab").forEach((t) =>
       t.addEventListener("click", () => showView(t.dataset.view))
@@ -577,6 +806,7 @@
       if (!rec) return;
       const act = el.dataset.act;
       if (act === "open") openPreview(rec);
+      else if (act === "email") openSendModal(rec);
       else if (act === "pdf") openPdfModal(rec);
       else if (act === "del") {
         confirmDialog("이 점검 내역을 삭제할까요?", {
@@ -594,6 +824,7 @@
     // 설정
     $("#btn-save-settings").addEventListener("click", () => {
       store.saveSettings({
+        email: $("#s-email").value.trim(),
         org: $("#s-org").value.trim(),
         inspector: $("#s-inspector").value.trim(),
       });
@@ -621,6 +852,7 @@
 
   function loadSettingsIntoForm() {
     const s = store.settings();
+    $("#s-email").value = s.email || "";
     $("#s-org").value = s.org || "";
     $("#s-inspector").value = s.inspector || "";
     $("#app-version").textContent = "버전 " + APP_VERSION;
@@ -634,6 +866,7 @@
     initSignature();
     fillFormFromCurrent();
     loadSettingsIntoForm();
+    refreshFacilityDatalist();
     renderHistory();
 
     if ("serviceWorker" in navigator) {

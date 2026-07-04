@@ -73,6 +73,10 @@ function buildFormElement(record) {
 
     <table class="gf-head">
       <tr>
+        <th>시설명</th>
+        <td colspan="3" class="gf-facility">${escapeHtml(r.facility || "")}</td>
+      </tr>
+      <tr>
         <th>점검연월일</th>
         <td>${fmtDate(r.date)}</td>
         <th>점검시간</th>

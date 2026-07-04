@@ -29,6 +29,17 @@
     <main id="view-edit" class="view view--active">
       <section class="card">
         <h2 class="card__title">점검 기본정보</h2>
+        <label class="field field--facility">
+          <span>시설명</span>
+          <input
+            type="text"
+            id="f-facility"
+            list="facility-list"
+            placeholder="예) 제1저장탱크동 / ○○사업장"
+            autocomplete="off"
+          />
+          <datalist id="facility-list"></datalist>
+        </label>
         <div class="field-grid">
           <label class="field">
             <span>점검연월일</span>
@@ -87,7 +98,10 @@
 
       <div class="action-bar">
         <button type="button" class="btn btn--primary" id="btn-save">저장</button>
-        <button type="button" class="btn btn--accent" id="btn-pdf">
+        <button type="button" class="btn btn--accent" id="btn-email">
+          이메일로 전송
+        </button>
+        <button type="button" class="btn btn--ghost" id="btn-pdf">
           PDF로 저장 (A4)
         </button>
         <button type="button" class="btn btn--ghost" id="btn-preview">
@@ -115,6 +129,10 @@
     <main id="view-settings" class="view">
       <section class="card">
         <h2 class="card__title">설정</h2>
+        <label class="field">
+          <span>기본 수신 이메일</span>
+          <input type="email" id="s-email" placeholder="report@example.com" />
+        </label>
         <label class="field">
           <span>기본 소속</span>
           <input type="text" id="s-org" placeholder="예) 안전관리팀" />
@@ -161,6 +179,43 @@
       </div>
       <div class="modal__scroll">
         <div id="preview-holder"></div>
+      </div>
+    </div>
+
+    <!-- ===== 이메일 전송 미리보기 모달 ===== -->
+    <div class="modal" id="send-modal" hidden>
+      <div class="modal__bar">
+        <button class="btn btn--ghost btn--sm" id="btn-send-close">닫기</button>
+        <span>이메일로 전송</span>
+        <span class="modal__spacer"></span>
+      </div>
+      <div class="modal__scroll">
+        <div class="send-panel">
+          <label class="field">
+            <span>받는 사람 이메일</span>
+            <input type="email" id="send-to" placeholder="report@example.com" />
+          </label>
+          <label class="field">
+            <span>제목</span>
+            <input type="text" id="send-subject" />
+          </label>
+          <div class="send-note">
+            아래는 첨부될 <b>별지 제42호서식 · A4 규격 PDF</b> 미리보기입니다.
+          </div>
+          <div class="send-preview"><img id="send-img" alt="전송될 양식 미리보기" /></div>
+          <details class="send-body">
+            <summary>메일 본문 미리보기</summary>
+            <pre id="send-body-text"></pre>
+          </details>
+        </div>
+      </div>
+      <div class="modal__actions">
+        <button type="button" class="btn btn--accent" id="btn-do-send">
+          메일 앱으로 전송
+        </button>
+        <button type="button" class="btn btn--ghost" id="btn-do-download">
+          PDF 내려받기
+        </button>
       </div>
     </div>
 
