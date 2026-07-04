@@ -491,6 +491,65 @@
     }
   }
 
+  // Blob → base64 문자열(데이터URL 접두어 제거)
+  function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result).split(",")[1] || "");
+      r.onerror = reject;
+      r.readAsDataURL(blob);
+    });
+  }
+
+  // Google Apps Script 웹앱으로 PDF 첨부 메일 발송(내 Gmail 계정 발송)
+  // Apps Script 응답은 CORS 로 읽을 수 없으므로 no-cors 로 요청만 전달한다.
+  async function sendViaGas(gasUrl, payload) {
+    const form = new URLSearchParams();
+    Object.keys(payload).forEach((k) => form.set(k, payload[k] == null ? "" : payload[k]));
+    await fetch(gasUrl, { method: "POST", mode: "no-cors", body: form });
+  }
+
+  async function testGmail() {
+    const s = store.settings();
+    const gasUrl = (s.gasUrl || "").trim();
+    if (!gasUrl) {
+      toast("먼저 Gmail 발송 웹앱 URL을 저장하세요.", "warn");
+      return;
+    }
+    let to = (s.email || "").trim();
+    if (!isEmail(to)) {
+      to = await promptDialog("테스트 메일을 받을 이메일을 입력하세요.", {
+        type: "email",
+        placeholder: "me@example.com",
+        okText: "전송",
+      });
+      if (!isEmail(to || "")) {
+        if (to) toast("이메일 형식이 올바르지 않습니다.", "warn");
+        return;
+      }
+    }
+    const btn = $("#btn-test-gas");
+    const prev = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "전송 중…";
+    try {
+      await sendViaGas(gasUrl, {
+        to: to,
+        subject: "[자체점검] Gmail 발송 테스트",
+        body: "이 메일이 수신되면 Gmail 자동 발송 설정이 정상입니다.",
+        filename: "",
+        pdf: "",
+      });
+      toast(`${to} 주소로 테스트 메일을 보냈습니다. 수신함을 확인하세요.`, "ok");
+    } catch (e) {
+      console.error(e);
+      toast("전송 실패: 웹앱 URL/네트워크를 확인하세요.", "warn");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = prev;
+    }
+  }
+
   // ---------- 이메일 본문 요약 ----------
   function emailSummary(record) {
     const map = {};
@@ -566,7 +625,36 @@
       const filename = pdfFilename(record);
       const subject = emailSubject(record);
       const body = emailSummary(record);
-      const savedTo = (store.settings().email || "").trim();
+      const settings = store.settings();
+      const savedTo = (settings.email || "").trim();
+      const gasUrl = (settings.gasUrl || "").trim();
+
+      // 0순위: Gmail 자동 발송(Apps Script)이 설정된 경우 → 내 Google 계정으로 즉시 발송
+      if (gasUrl) {
+        let to = savedTo;
+        if (!isEmail(to)) {
+          to = await promptDialog("받는 사람 이메일을 입력하세요.", {
+            type: "email",
+            placeholder: "report@example.com",
+            okText: "전송",
+          });
+          if (!to) return;
+          if (!isEmail(to)) {
+            toast("이메일 형식이 올바르지 않습니다.", "warn");
+            return;
+          }
+          const s2 = store.settings();
+          s2.email = to;
+          store.saveSettings(s2);
+          if ($("#s-email")) $("#s-email").value = to;
+        }
+        if (btn) btn.textContent = "Gmail 전송 중…";
+        const pdfB64 = await blobToBase64(blob);
+        await sendViaGas(gasUrl, { to, subject, body, filename, pdf: pdfB64 });
+        toast(`${to} 주소로 Gmail 발송했습니다.`, "ok");
+        return;
+      }
+
       const file = new File([blob], filename, { type: "application/pdf" });
 
       // 1순위(모바일): PDF 파일을 첨부해 그대로 공유 → 메일 앱 선택 후 바로 전송
@@ -919,15 +1007,29 @@
       }
     });
 
-    // 설정
+    // 설정 (기존 값 보존하며 병합 저장)
     $("#btn-save-settings").addEventListener("click", () => {
-      store.saveSettings({
-        email: $("#s-email").value.trim(),
-        org: $("#s-org").value.trim(),
-        inspector: $("#s-inspector").value.trim(),
-      });
+      const s = store.settings();
+      s.email = $("#s-email").value.trim();
+      s.org = $("#s-org").value.trim();
+      s.inspector = $("#s-inspector").value.trim();
+      store.saveSettings(s);
       toast("설정이 저장되었습니다.", "ok");
     });
+    // Gmail(Apps Script) 발송 URL 저장
+    $("#btn-save-gas").addEventListener("click", () => {
+      const url = $("#s-gas").value.trim();
+      if (url && !/^https:\/\/script\.google\.com\/.*\/exec$/.test(url)) {
+        toast("Apps Script 웹앱 URL(.../exec)을 확인하세요.", "warn");
+        return;
+      }
+      const s = store.settings();
+      s.gasUrl = url;
+      store.saveSettings(s);
+      toast(url ? "Gmail 자동 발송이 설정되었습니다." : "Gmail 자동 발송을 해제했습니다.", "ok");
+    });
+    // Gmail 테스트 메일
+    $("#btn-test-gas").addEventListener("click", testGmail);
     $("#btn-export-json").addEventListener("click", () => {
       const blob = new Blob([JSON.stringify(store.records(), null, 2)], {
         type: "application/json",
@@ -953,6 +1055,7 @@
     $("#s-email").value = s.email || "";
     $("#s-org").value = s.org || "";
     $("#s-inspector").value = s.inspector || "";
+    $("#s-gas").value = s.gasUrl || "";
     $("#app-version").textContent = "버전 " + APP_VERSION;
   }
 

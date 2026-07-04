@@ -150,6 +150,32 @@
           설정 저장
         </button>
       </section>
+
+      <section class="card">
+        <h2 class="card__title">Gmail 자동 발송 (Google 계정)</h2>
+        <p class="muted small" style="margin: 0 0 12px">
+          내 Google 계정으로 보고서를 <b>바로 이메일 발송</b>합니다. Google Apps Script
+          웹앱 주소를 등록하면, 이메일 전송 시 PDF가 첨부되어 자동으로 보내집니다.
+          (미등록 시 메일 앱 공유 방식으로 동작)
+        </p>
+        <label class="field">
+          <span>Gmail 발송 웹앱 URL (Apps Script /exec)</span>
+          <input
+            type="url"
+            id="s-gas"
+            placeholder="https://script.google.com/macros/s/.../exec"
+          />
+        </label>
+        <button type="button" class="btn btn--primary" id="btn-save-gas">
+          Gmail 설정 저장
+        </button>
+        <button type="button" class="btn btn--ghost" id="btn-test-gas">
+          테스트 메일 보내기
+        </button>
+        <p class="muted small" id="gas-help">
+          설정 방법은 함께 제공된 <b>GMAIL_설정방법.md</b> 또는 README를 참고하세요.
+        </p>
+      </section>
       <section class="card">
         <h2 class="card__title">데이터</h2>
         <button type="button" class="btn btn--ghost" id="btn-export-json">

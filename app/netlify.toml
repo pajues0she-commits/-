@@ -1,0 +1,9 @@
+# Netlify 배포 설정 — 정적 사이트(빌드 불필요)
+[build]
+  publish = "."
+
+# 서비스 워커는 항상 최신본을 받도록 캐시하지 않음
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
