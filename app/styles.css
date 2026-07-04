@@ -229,13 +229,13 @@ textarea { resize: vertical; }
 /* 미리보기 화면에서 폭 맞춤 */
 @media (max-width: 1088px) {
   #preview-holder .gov-form { transform: scale(calc((100vw - 32px) / 1040)); transform-origin: top left; }
-  #preview-holder { height: calc((100vw - 32px) / 1040 * 760px); }
+  #preview-holder { height: calc((100vw - 32px) / 1040 * 1360px); }
 }
 
 /* ===== 인쇄 ===== */
 #print-root { display: none; }
 @media print {
-  @page { size: A4 landscape; margin: 8mm; }
+  @page { size: A4 portrait; margin: 8mm; }
   body { background: #fff; padding: 0; }
   body * { visibility: hidden; }
   #print-root, #print-root * { visibility: visible; }
