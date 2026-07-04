@@ -251,18 +251,22 @@
 
 <div class="wrap">
 
-  <!-- 1. 판정 기준 -->
+  <!-- 1. 측정 정보 · 판정 기준 -->
   <div class="card">
-    <h2><span class="num">1</span> 판정 기준</h2>
+    <h2><span class="num">1</span> 측정 정보 · 판정 기준</h2>
     <div class="grid">
+      <div class="field">
+        <label>측정일자</label>
+        <input id="date" type="date">
+      </div>
       <div class="field">
         <label>방식 방법</label>
         <input value="외부전원법" readonly class="ro">
       </div>
-      <div class="field">
+      <div class="field full">
         <label>판정 기준값 (mV)</label>
-        <input id="crit" inputmode="decimal" value="-850">
-        <span class="hint">기준값보다 더 (−)이면 합격. 통상 −850 mV</span>
+        <input id="crit" value="-850" readonly class="ro">
+        <span class="hint">−850 mV 고정 · 측정값이 −850 mV보다 더 (−)이면 합격</span>
       </div>
     </div>
   </div>
@@ -303,6 +307,7 @@
 const $ = (s,el=document)=>el.querySelector(s);
 const $$ = (s,el=document)=>Array.from(el.querySelectorAll(s));
 const STORE_KEY = "cp_report_v1";
+const LOC_OPTIONS = Array.from({length:10},(_,i)=>`NO.${i+1}`).concat("G/S1","G/S2");
 
 let points = [];   // {id, name, value, note, photo(dataURL)}
 let uid = 1;
@@ -355,8 +360,11 @@ function renderPoints(){
       </div>
       <div class="grid">
         <div class="field">
-          <label>측정 위치명 (TB / 지점)</label>
-          <input data-f="name" value="${esc(p.name)}" placeholder="예) T/B No.3, 밸브스테이션">
+          <label>측정 지점</label>
+          <select data-f="name">
+            <option value="">선택</option>
+            ${LOC_OPTIONS.map(o=>`<option${p.name===o?" selected":""}>${o}</option>`).join("")}
+          </select>
         </div>
         <div class="field">
           <label>측정 평균값 (mV)</label>
@@ -465,7 +473,7 @@ $("#btnReset").addEventListener("click", ()=>{
   location.reload();
 });
 
-const HEADER_FIELDS = ["crit","opinion"];
+const HEADER_FIELDS = ["date","crit","opinion"];
 function collect(){
   const h = {};
   HEADER_FIELDS.forEach(id=> h[id] = $("#"+id).value);
@@ -486,6 +494,8 @@ function load(){
     points = raw.points || [];
     uid = raw.uid || (points.reduce((m,p)=>Math.max(m,p.id),0)+1);
   }
+  $("#crit").value = "-850";                 // 판정 기준값 고정
+  if(!$("#date").value) $("#date").value = new Date().toISOString().slice(0,10);
   if(points.length===0){ addPoint(); }
   renderPoints();
 }
@@ -537,6 +547,8 @@ function buildReport(){
     </div>`;
   }).join("");
 
+  const dateStr = h.date ? h.date.replace(/-/g,". ")+"." : "—";
+
   const page1 = `
   <div class="page">
     <div class="rpt-title">방식전위 측정 보고서</div>
@@ -544,13 +556,14 @@ function buildReport(){
     <div class="rpt-rule"></div>
 
     <table class="meta">
-      <tr><th>방식 방법</th><td>외부전원법</td><th>판정 기준값</th><td>${isNaN(crit)?"—":crit+" mV (이하 합격)"}</td></tr>
+      <tr><th>측정일자</th><td>${dateStr}</td><th>방식 방법</th><td>외부전원법</td></tr>
+      <tr><th>판정 기준값</th><td colspan="3">${isNaN(crit)?"—":crit+" mV (이하 합격)"}</td></tr>
     </table>
 
     <h3 class="sec">측정 결과</h3>
     <table class="data">
       <thead><tr>
-        <th style="width:8%">번호</th><th style="width:30%">측정 위치</th>
+        <th style="width:8%">번호</th><th style="width:30%">측정 지점</th>
         <th style="width:16%">평균 측정값</th><th style="width:14%">기준값</th>
         <th style="width:12%">판정</th><th style="width:20%">비고</th>
       </tr></thead>
@@ -567,11 +580,6 @@ function buildReport(){
 
     <h3 class="sec">종합 의견 · 조치사항</h3>
     <div style="border:1px solid #7f93a8;border-radius:6px;padding:10px 12px;min-height:20mm;white-space:pre-wrap;font-size:10.5pt;">${esc(h.opinion)||""}</div>
-
-    <div class="sign-row">
-      <div class="s"><div class="line"></div>측정자 (인)</div>
-      <div class="s"><div class="line"></div>확인자 (인)</div>
-    </div>
 
     <div class="rpt-foot">본 보고서는 방식전위측정 앱으로 작성되었습니다 · 방식 방법: 외부전원법</div>
   </div>`;
