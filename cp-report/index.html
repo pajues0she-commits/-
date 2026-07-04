@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#1f4e79">
+<title>방식전위측정 보고서</title>
+<style>
+  :root{
+    --brand:#1f4e79;
+    --brand-2:#2e6da4;
+    --line:#d5dce4;
+    --line-strong:#9fb1c4;
+    --bg:#eef2f6;
+    --card:#ffffff;
+    --text:#1c2733;
+    --muted:#5f6f7f;
+    --ok:#1a7f45;
+    --ok-bg:#e6f4ec;
+    --ng:#c0392b;
+    --ng-bg:#fbeae8;
+    --radius:12px;
+    --shadow:0 2px 10px rgba(20,40,70,.08);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Malgun Gothic","Apple SD Gothic Neo",sans-serif;
+    background:var(--bg);color:var(--text);line-height:1.5;
+    -webkit-text-size-adjust:100%;
+  }
+  h1,h2,h3{margin:0;font-weight:700;}
+  button{font-family:inherit;cursor:pointer;}
+  input,select,textarea{font-family:inherit;font-size:16px;}
+
+  /* ---------- App chrome ---------- */
+  .topbar{
+    position:sticky;top:0;z-index:20;
+    background:var(--brand);color:#fff;
+    display:flex;align-items:center;justify-content:space-between;
+    padding:12px 16px;box-shadow:0 2px 8px rgba(0,0,0,.15);
+  }
+  .topbar h1{font-size:17px;letter-spacing:-.2px;display:flex;align-items:center;gap:8px;}
+  .topbar .logo{
+    width:26px;height:26px;border-radius:7px;background:#fff;color:var(--brand);
+    display:grid;place-items:center;font-size:14px;font-weight:800;
+  }
+  .topbar .actions{display:flex;gap:8px;}
+  .btn{
+    border:0;border-radius:9px;padding:9px 14px;font-size:14px;font-weight:600;
+    background:rgba(255,255,255,.16);color:#fff;transition:background .15s;
+  }
+  .btn:hover{background:rgba(255,255,255,.28);}
+  .btn.primary{background:#fff;color:var(--brand);}
+  .btn.primary:hover{background:#eef3f9;}
+
+  .wrap{max-width:820px;margin:0 auto;padding:16px 16px 120px;}
+
+  .card{
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    box-shadow:var(--shadow);padding:16px;margin-bottom:16px;
+  }
+  .card > h2{
+    font-size:15px;color:var(--brand);margin-bottom:14px;
+    display:flex;align-items:center;gap:8px;
+    border-bottom:2px solid var(--brand);padding-bottom:8px;
+  }
+  .card > h2 .num{
+    background:var(--brand);color:#fff;width:22px;height:22px;border-radius:6px;
+    display:grid;place-items:center;font-size:12px;
+  }
+
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  .field{display:flex;flex-direction:column;gap:5px;}
+  .field.full{grid-column:1/-1;}
+  .field label{font-size:12.5px;color:var(--muted);font-weight:600;}
+  .field input,.field select,.field textarea{
+    border:1px solid var(--line-strong);border-radius:8px;padding:10px 11px;
+    background:#fbfcfe;color:var(--text);width:100%;
+  }
+  .field input:focus,.field select:focus,.field textarea:focus{
+    outline:none;border-color:var(--brand-2);box-shadow:0 0 0 3px rgba(46,109,164,.15);
+  }
+  .hint{font-size:11.5px;color:var(--muted);}
+
+  /* ---------- Measurement points ---------- */
+  .pt{
+    border:1px solid var(--line);border-radius:11px;padding:14px;margin-bottom:14px;
+    background:#f8fafc;
+  }
+  .pt-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;}
+  .pt-head .tag{
+    background:var(--brand-2);color:#fff;font-size:12px;font-weight:700;
+    padding:4px 10px;border-radius:20px;
+  }
+  .pt-del{
+    border:1px solid var(--ng);color:var(--ng);background:#fff;border-radius:8px;
+    padding:6px 11px;font-size:13px;font-weight:600;
+  }
+  .pt-del:hover{background:var(--ng-bg);}
+
+  .photo-box{grid-column:1/-1;}
+  .drop{
+    border:2px dashed var(--line-strong);border-radius:10px;background:#fff;
+    padding:18px;text-align:center;color:var(--muted);position:relative;overflow:hidden;
+  }
+  .drop .cam-row{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:10px;}
+  .drop .mini{
+    border:1px solid var(--brand-2);color:var(--brand-2);background:#fff;
+    border-radius:8px;padding:8px 14px;font-size:13.5px;font-weight:600;
+  }
+  .drop .mini:hover{background:#eef4fb;}
+  .thumb-wrap{position:relative;display:inline-block;}
+  .thumb-wrap img{
+    max-width:100%;max-height:260px;border-radius:8px;border:1px solid var(--line-strong);
+    display:block;margin:0 auto;
+  }
+  .thumb-wrap .rm{
+    position:absolute;top:8px;right:8px;background:rgba(0,0,0,.6);color:#fff;
+    border:0;border-radius:50%;width:30px;height:30px;font-size:16px;line-height:1;
+  }
+  .verdict{
+    display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:700;
+    padding:5px 12px;border-radius:20px;margin-top:4px;
+  }
+  .verdict.ok{background:var(--ok-bg);color:var(--ok);}
+  .verdict.ng{background:var(--ng-bg);color:var(--ng);}
+  .verdict.na{background:#eef2f6;color:var(--muted);}
+
+  .add-pt{
+    width:100%;border:2px dashed var(--brand-2);color:var(--brand);background:#f2f7fc;
+    border-radius:11px;padding:14px;font-size:15px;font-weight:700;
+  }
+  .add-pt:hover{background:#e7f0fa;}
+
+  .toolbar{
+    position:fixed;left:0;right:0;bottom:0;z-index:30;
+    background:#fff;border-top:1px solid var(--line);
+    padding:12px 16px;display:flex;gap:10px;justify-content:center;
+    box-shadow:0 -2px 12px rgba(20,40,70,.08);
+  }
+  .toolbar .btn{color:var(--brand);background:#eef3f9;}
+  .toolbar .btn:hover{background:#e0eaf5;}
+  .toolbar .btn.primary{background:var(--brand);color:#fff;}
+  .toolbar .btn.primary:hover{background:#173d5f;}
+
+  .summary-verdict{
+    display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:10px;
+    font-weight:700;font-size:15px;margin-top:6px;
+  }
+  .summary-verdict.ok{background:var(--ok-bg);color:var(--ok);}
+  .summary-verdict.ng{background:var(--ng-bg);color:var(--ng);}
+  .summary-verdict.na{background:#eef2f6;color:var(--muted);}
+
+  /* ---------- Print / A4 report ---------- */
+  #report{display:none;}
+  @media screen{
+    #report.show{
+      display:block;position:fixed;inset:0;z-index:100;background:#5b6b7b;
+      overflow:auto;padding:24px 12px 80px;
+    }
+    .page{
+      background:#fff;width:210mm;min-height:297mm;margin:0 auto 18px;
+      box-shadow:0 4px 24px rgba(0,0,0,.35);padding:16mm 15mm;
+    }
+    .report-close{
+      position:fixed;top:14px;right:14px;z-index:110;
+      background:#fff;color:var(--brand);border:0;border-radius:9px;
+      padding:10px 16px;font-weight:700;font-size:14px;box-shadow:var(--shadow);
+    }
+    .report-print{
+      position:fixed;top:14px;right:118px;z-index:110;
+      background:var(--brand);color:#fff;border:0;border-radius:9px;
+      padding:10px 16px;font-weight:700;font-size:14px;box-shadow:var(--shadow);
+    }
+  }
+
+  .page{color:#111;font-size:11.5pt;}
+  .rpt-title{text-align:center;font-size:20pt;font-weight:800;letter-spacing:2px;color:var(--brand);}
+  .rpt-sub{text-align:center;font-size:10.5pt;color:#555;margin-top:4px;letter-spacing:1px;}
+  .rpt-rule{height:3px;background:var(--brand);margin:10px 0 16px;}
+
+  table.meta{width:100%;border-collapse:collapse;margin-bottom:16px;font-size:10.5pt;}
+  table.meta th,table.meta td{border:1px solid #7f93a8;padding:7px 9px;text-align:left;}
+  table.meta th{background:#e9eff6;color:var(--brand);width:24%;font-weight:700;white-space:nowrap;}
+
+  h3.sec{font-size:12pt;color:var(--brand);margin:14px 0 8px;
+    border-left:5px solid var(--brand);padding-left:9px;}
+
+  table.data{width:100%;border-collapse:collapse;font-size:10pt;}
+  table.data th,table.data td{border:1px solid #7f93a8;padding:7px 6px;text-align:center;}
+  table.data th{background:var(--brand);color:#fff;font-weight:700;}
+  table.data tr:nth-child(even) td{background:#f4f7fb;}
+  table.data td.left{text-align:left;}
+  .pill{display:inline-block;padding:2px 10px;border-radius:12px;font-weight:700;font-size:9.5pt;}
+  .pill.ok{background:var(--ok-bg);color:var(--ok);}
+  .pill.ng{background:var(--ng-bg);color:var(--ng);}
+  .pill.na{background:#eef2f6;color:#666;}
+
+  .final-box{
+    margin-top:16px;border:2px solid var(--brand);border-radius:8px;padding:12px 14px;
+    display:flex;align-items:center;gap:12px;font-size:11.5pt;
+  }
+  .final-box .lbl{font-weight:800;color:var(--brand);}
+  .final-box .pill{font-size:11pt;padding:4px 16px;}
+
+  .photos-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px;}
+  .photo-cell{border:1px solid #7f93a8;border-radius:6px;overflow:hidden;background:#fafbfd;}
+  .photo-cell .cap{
+    background:#e9eff6;color:var(--brand);font-size:9.5pt;font-weight:700;
+    padding:5px 8px;border-bottom:1px solid #7f93a8;
+  }
+  .photo-cell img{width:100%;height:auto;display:block;max-height:78mm;object-fit:contain;background:#fff;}
+  .photo-cell .val{font-size:9pt;color:#444;padding:4px 8px;text-align:center;}
+
+  .sign-row{display:flex;justify-content:flex-end;gap:34px;margin-top:22px;font-size:10.5pt;}
+  .sign-row .s{text-align:center;}
+  .sign-row .s .line{border-bottom:1px solid #333;width:120px;height:34px;margin-bottom:4px;}
+  .rpt-foot{margin-top:18px;text-align:center;font-size:8.5pt;color:#888;border-top:1px solid #ccc;padding-top:6px;}
+
+  @media print{
+    @page{size:A4;margin:0;}
+    body{background:#fff;}
+    .topbar,.wrap,.toolbar{display:none !important;}
+    #report{display:block !important;position:static;background:#fff;padding:0;}
+    #report .report-close,#report .report-print{display:none !important;}
+    .page{box-shadow:none;margin:0;width:auto;min-height:auto;
+      padding:14mm 14mm;page-break-after:always;}
+    .page:last-child{page-break-after:auto;}
+    .photo-cell,tr,.final-box{page-break-inside:avoid;}
+  }
+
+  @media (max-width:560px){
+    .grid{grid-template-columns:1fr;}
+    .page{width:auto;padding:10mm 8mm;}
+    .topbar h1{font-size:15px;}
+    .report-print{right:112px;}
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <h1><span class="logo">V</span> 방식전위측정 보고서</h1>
+  <div class="actions">
+    <button class="btn" id="btnReset">초기화</button>
+    <button class="btn primary" id="btnReport">보고서 미리보기</button>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <!-- 1. 기본 정보 -->
+  <div class="card">
+    <h2><span class="num">1</span> 현장 · 측정 기본정보</h2>
+    <div class="grid">
+      <div class="field full">
+        <label>현장명 / 설비명</label>
+        <input id="site" placeholder="예) ○○배관 방식설비 / △△지구 도시가스">
+      </div>
+      <div class="field">
+        <label>관리번호 / 문서번호</label>
+        <input id="docno" placeholder="예) CP-2026-001">
+      </div>
+      <div class="field">
+        <label>측정일자</label>
+        <input id="date" type="date">
+      </div>
+      <div class="field">
+        <label>측정자</label>
+        <input id="tester" placeholder="성명">
+      </div>
+      <div class="field">
+        <label>입회자 / 확인자</label>
+        <input id="witness" placeholder="성명">
+      </div>
+      <div class="field">
+        <label>날씨</label>
+        <input id="weather" placeholder="예) 맑음">
+      </div>
+      <div class="field">
+        <label>기온 (℃)</label>
+        <input id="temp" inputmode="decimal" placeholder="예) 24">
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. 측정 조건 -->
+  <div class="card">
+    <h2><span class="num">2</span> 측정 조건 · 판정 기준</h2>
+    <div class="grid">
+      <div class="field">
+        <label>방식 방식(방법)</label>
+        <select id="method">
+          <option>외부전원법</option>
+          <option>희생양극법(유전양극법)</option>
+          <option>배류법</option>
+          <option>기타</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>기준전극</label>
+        <select id="refelec">
+          <option value="CSE">포화황산동전극 (CSE)</option>
+          <option value="SCE">포화칼로멜전극 (SCE)</option>
+          <option value="AgCl">은/염화은전극 (Ag/AgCl)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>측정 방식</label>
+        <select id="ptype">
+          <option value="ON">ON 전위 (통전)</option>
+          <option value="OFF">순간 OFF 전위 (Instant-off)</option>
+          <option value="NATURAL">자연전위</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>판정 기준값 (V)</label>
+        <input id="crit" inputmode="decimal" value="-0.85">
+        <span class="hint">기준값보다 더 (−)이면 합격. CSE 기준 통상 −0.85V</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. 측정 지점 -->
+  <div class="card">
+    <h2><span class="num">3</span> 측정 지점별 결과</h2>
+    <div id="points"></div>
+    <button class="add-pt" id="btnAdd">＋ 측정 지점 추가</button>
+  </div>
+
+  <!-- 4. 종합 -->
+  <div class="card">
+    <h2><span class="num">4</span> 종합 판정 · 조치사항</h2>
+    <div id="summary" class="summary-verdict na">측정값을 입력하면 종합 판정이 표시됩니다.</div>
+    <div class="field full" style="margin-top:12px;">
+      <label>종합 의견 / 조치사항</label>
+      <textarea id="opinion" rows="3" placeholder="예) 전 지점 판정기준 만족. 정류기 출력 이상 없음. 차기 정기점검 시 재측정 예정."></textarea>
+    </div>
+  </div>
+
+</div>
+
+<div class="toolbar">
+  <button class="btn" id="btnSave">저장</button>
+  <button class="btn primary" id="btnReport2">A4 보고서 출력 →</button>
+</div>
+
+<!-- ===== Report overlay ===== -->
+<div id="report">
+  <button class="report-print" id="btnPrint">🖨 인쇄 / PDF 저장</button>
+  <button class="report-close" id="btnClose">닫기 ✕</button>
+  <div id="reportBody"></div>
+</div>
+
+<script>
+"use strict";
+const $ = (s,el=document)=>el.querySelector(s);
+const $$ = (s,el=document)=>Array.from(el.querySelectorAll(s));
+const STORE_KEY = "cp_report_v1";
+
+let points = [];   // {id, name, value, note, photo(dataURL)}
+let uid = 1;
+
+/* ---------- Image compression ---------- */
+function compressImage(file, maxDim=1400, quality=0.72){
+  return new Promise((resolve,reject)=>{
+    const reader = new FileReader();
+    reader.onload = ()=>{
+      const img = new Image();
+      img.onload = ()=>{
+        let {width:w,height:h} = img;
+        if(w>h && w>maxDim){ h=Math.round(h*maxDim/w); w=maxDim; }
+        else if(h>=w && h>maxDim){ w=Math.round(w*maxDim/h); h=maxDim; }
+        const c = document.createElement("canvas");
+        c.width=w; c.height=h;
+        c.getContext("2d").drawImage(img,0,0,w,h);
+        resolve(c.toDataURL("image/jpeg",quality));
+      };
+      img.onerror = reject;
+      img.src = reader.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+/* ---------- Verdict logic ---------- */
+function verdictFor(valueStr){
+  const crit = parseFloat($("#crit").value);
+  const v = parseFloat(valueStr);
+  if(isNaN(v) || isNaN(crit)) return {cls:"na", txt:"—"};
+  // more negative than criterion = pass (protected)
+  return v <= crit ? {cls:"ok", txt:"합격"} : {cls:"ng", txt:"부적합"};
+}
+
+/* ---------- Render measurement points ---------- */
+function renderPoints(){
+  const host = $("#points");
+  host.innerHTML = "";
+  points.forEach((p,i)=>{
+    const el = document.createElement("div");
+    el.className = "pt";
+    el.dataset.id = p.id;
+    const vd = verdictFor(p.value);
+    el.innerHTML = `
+      <div class="pt-head">
+        <span class="tag">지점 ${i+1}</span>
+        <button class="pt-del" data-act="del">삭제</button>
+      </div>
+      <div class="grid">
+        <div class="field">
+          <label>측정 위치명 (TB / 지점)</label>
+          <input data-f="name" value="${esc(p.name)}" placeholder="예) T/B No.3, 밸브스테이션">
+        </div>
+        <div class="field">
+          <label>측정 평균값 (V)</label>
+          <input data-f="value" inputmode="decimal" value="${esc(p.value)}" placeholder="예) -1.05">
+        </div>
+        <div class="field full">
+          <span class="verdict ${vd.cls}" data-role="verdict">${vd.cls==='ok'?'✔':vd.cls==='ng'?'✖':'○'} 판정: ${vd.txt}</span>
+        </div>
+        <div class="field full">
+          <label>비고</label>
+          <input data-f="note" value="${esc(p.note)}" placeholder="특이사항 (선택)">
+        </div>
+        <div class="field full photo-box">
+          <label>측정지 사진</label>
+          <div class="drop" data-role="drop">
+            ${p.photo ? photoHtml(p.photo) : `
+              <div>측정지(측정표)를 촬영하거나 사진을 선택하세요</div>
+              <div class="cam-row">
+                <button class="mini" data-act="cam">📷 사진 촬영</button>
+                <button class="mini" data-act="pick">🖼 갤러리에서 선택</button>
+              </div>`}
+          </div>
+          <input type="file" accept="image/*" capture="environment" data-role="cam-input" hidden>
+          <input type="file" accept="image/*" data-role="pick-input" hidden>
+        </div>
+      </div>`;
+    host.appendChild(el);
+  });
+  updateSummary();
+  save(true);
+}
+function photoHtml(src){
+  return `<div class="thumb-wrap"><img src="${src}" alt="측정지 사진"><button class="rm" data-act="rmphoto" title="사진 삭제">✕</button></div>`;
+}
+function esc(s){return String(s??"").replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+/* ---------- Summary ---------- */
+function updateSummary(){
+  const el = $("#summary");
+  const withVal = points.filter(p=>p.value!=="" && !isNaN(parseFloat(p.value)));
+  if(withVal.length===0){ el.className="summary-verdict na"; el.textContent="측정값을 입력하면 종합 판정이 표시됩니다."; return; }
+  const ng = withVal.filter(p=>verdictFor(p.value).cls==="ng");
+  if(ng.length===0){
+    el.className="summary-verdict ok";
+    el.innerHTML = `✔ 종합 판정: <b>합격</b> — 측정 ${withVal.length}개 지점 전체 판정기준 만족`;
+  }else{
+    el.className="summary-verdict ng";
+    el.innerHTML = `✖ 종합 판정: <b>부적합</b> — 총 ${withVal.length}개 중 ${ng.length}개 지점 기준 미달`;
+  }
+}
+
+/* ---------- Events (delegated) ---------- */
+$("#points").addEventListener("input", e=>{
+  const pt = e.target.closest(".pt"); if(!pt) return;
+  const p = points.find(x=>x.id==pt.dataset.id); if(!p) return;
+  const f = e.target.dataset.f; if(!f) return;
+  p[f] = e.target.value;
+  if(f==="value"){
+    const vd = verdictFor(p.value);
+    const vEl = $('[data-role="verdict"]', pt);
+    vEl.className = "verdict "+vd.cls;
+    vEl.textContent = (vd.cls==='ok'?'✔':vd.cls==='ng'?'✖':'○')+" 판정: "+vd.txt;
+    updateSummary();
+  }
+  save(true);
+});
+
+$("#points").addEventListener("click", async e=>{
+  const btn = e.target.closest("[data-act]"); if(!btn) return;
+  const pt = e.target.closest(".pt"); const p = points.find(x=>x.id==pt.dataset.id);
+  const act = btn.dataset.act;
+  if(act==="del"){
+    if(confirm("이 측정 지점을 삭제할까요?")){ points = points.filter(x=>x.id!=p.id); renderPoints(); }
+  }else if(act==="cam"){
+    $('[data-role="cam-input"]', pt).click();
+  }else if(act==="pick"){
+    $('[data-role="pick-input"]', pt).click();
+  }else if(act==="rmphoto"){
+    p.photo = null; renderPoints();
+  }
+});
+
+$("#points").addEventListener("change", async e=>{
+  const role = e.target.dataset.role;
+  if(role!=="cam-input" && role!=="pick-input") return;
+  const file = e.target.files[0]; if(!file) return;
+  const pt = e.target.closest(".pt"); const p = points.find(x=>x.id==pt.dataset.id);
+  const drop = $('[data-role="drop"]', pt);
+  drop.innerHTML = "<div>사진 처리 중…</div>";
+  try{
+    p.photo = await compressImage(file);
+  }catch(err){ alert("사진을 불러오지 못했습니다."); }
+  e.target.value = "";
+  renderPoints();
+});
+
+/* ---------- Add / reset / save ---------- */
+function addPoint(data){
+  points.push(Object.assign({id:uid++, name:"", value:"", note:"", photo:null}, data||{}));
+}
+$("#btnAdd").addEventListener("click", ()=>{ addPoint(); renderPoints(); });
+
+$("#btnReset").addEventListener("click", ()=>{
+  if(!confirm("입력한 모든 내용을 지우고 새로 시작할까요?")) return;
+  localStorage.removeItem(STORE_KEY);
+  location.reload();
+});
+
+const HEADER_FIELDS = ["site","docno","date","tester","witness","weather","temp","method","refelec","ptype","crit","opinion"];
+function collect(){
+  const h = {};
+  HEADER_FIELDS.forEach(id=> h[id] = $("#"+id).value);
+  return {header:h, points, uid};
+}
+function save(silent){
+  try{
+    localStorage.setItem(STORE_KEY, JSON.stringify(collect()));
+    if(!silent) flash("저장되었습니다");
+  }catch(err){ if(!silent) alert("저장 실패: 사진 용량이 너무 큽니다."); }
+}
+$("#btnSave").addEventListener("click", ()=>save(false));
+
+function load(){
+  let raw; try{ raw = JSON.parse(localStorage.getItem(STORE_KEY)); }catch(e){}
+  if(raw && raw.header){
+    HEADER_FIELDS.forEach(id=>{ if(raw.header[id]!=null) $("#"+id).value = raw.header[id]; });
+    points = raw.points || [];
+    uid = raw.uid || (points.reduce((m,p)=>Math.max(m,p.id),0)+1);
+  }
+  if(!$("#date").value) $("#date").value = new Date().toISOString().slice(0,10);
+  if(points.length===0){ addPoint(); }
+  renderPoints();
+}
+
+// re-evaluate verdicts if criterion changes
+$("#crit").addEventListener("input", ()=>{ renderPoints(); });
+
+let flashTimer;
+function flash(msg){
+  let t = $("#flash");
+  if(!t){ t=document.createElement("div"); t.id="flash";
+    t.style.cssText="position:fixed;left:50%;bottom:82px;transform:translateX(-50%);background:#1c2733;color:#fff;padding:10px 18px;border-radius:22px;font-size:14px;z-index:200;box-shadow:0 4px 14px rgba(0,0,0,.3);transition:opacity .3s";
+    document.body.appendChild(t); }
+  t.textContent = msg; t.style.opacity="1";
+  clearTimeout(flashTimer);
+  flashTimer=setTimeout(()=>t.style.opacity="0",1400);
+}
+
+/* ---------- Report generation ---------- */
+const REF_LABEL = {CSE:"포화황산동전극 (CSE)",SCE:"포화칼로멜전극 (SCE)",AgCl:"은/염화은전극 (Ag/AgCl)"};
+const PTYPE_LABEL = {ON:"ON 전위(통전)",OFF:"순간 OFF 전위",NATURAL:"자연전위"};
+
+function buildReport(){
+  const h = collect().header;
+  const crit = parseFloat(h.crit);
+  const rows = points.map((p,i)=>{
+    const vd = verdictFor(p.value);
+    const v = parseFloat(p.value);
+    return `<tr>
+      <td>${i+1}</td>
+      <td class="left">${esc(p.name)||"—"}</td>
+      <td>${isNaN(v)?"—":v.toFixed(3)+" V"}</td>
+      <td>${isNaN(crit)?"—":crit.toFixed(2)+" V"}</td>
+      <td><span class="pill ${vd.cls}">${vd.txt}</span></td>
+      <td class="left">${esc(p.note)||""}</td>
+    </tr>`;
+  }).join("");
+
+  const withVal = points.filter(p=>!isNaN(parseFloat(p.value)));
+  const ng = withVal.filter(p=>verdictFor(p.value).cls==="ng");
+  let finalCls="na", finalTxt="판정 불가";
+  if(withVal.length){ if(ng.length===0){finalCls="ok";finalTxt="합격 (적합)";} else {finalCls="ng";finalTxt="부적합";} }
+
+  const withPhoto = points.filter(p=>p.photo);
+  const photoCells = withPhoto.map((p,i)=>{
+    const idx = points.indexOf(p)+1;
+    const v = parseFloat(p.value);
+    return `<div class="photo-cell">
+      <div class="cap">지점 ${idx}. ${esc(p.name)||"측정지"}</div>
+      <img src="${p.photo}" alt="측정지">
+      <div class="val">평균 측정값: ${isNaN(v)?"—":v.toFixed(3)+" V"}</div>
+    </div>`;
+  }).join("");
+
+  const dateStr = h.date ? h.date.replace(/-/g,". ")+"." : "—";
+
+  const page1 = `
+  <div class="page">
+    <div class="rpt-title">방식전위 측정 보고서</div>
+    <div class="rpt-sub">CATHODIC PROTECTION POTENTIAL MEASUREMENT REPORT</div>
+    <div class="rpt-rule"></div>
+
+    <table class="meta">
+      <tr><th>현장명 / 설비명</th><td colspan="3">${esc(h.site)||"—"}</td></tr>
+      <tr><th>문서번호</th><td>${esc(h.docno)||"—"}</td><th>측정일자</th><td>${dateStr}</td></tr>
+      <tr><th>방식 방법</th><td>${esc(h.method)||"—"}</td><th>기준전극</th><td>${REF_LABEL[h.refelec]||h.refelec||"—"}</td></tr>
+      <tr><th>측정 방식</th><td>${PTYPE_LABEL[h.ptype]||h.ptype||"—"}</td><th>판정 기준값</th><td>${isNaN(crit)?"—":crit.toFixed(2)+" V (이하 합격)"}</td></tr>
+      <tr><th>날씨 / 기온</th><td>${(esc(h.weather)||"—")} / ${h.temp?esc(h.temp)+" ℃":"—"}</td><th>측정자</th><td>${esc(h.tester)||"—"}</td></tr>
+      <tr><th>입회 / 확인자</th><td colspan="3">${esc(h.witness)||"—"}</td></tr>
+    </table>
+
+    <h3 class="sec">측정 결과</h3>
+    <table class="data">
+      <thead><tr>
+        <th style="width:8%">번호</th><th style="width:30%">측정 위치</th>
+        <th style="width:16%">평균 측정값</th><th style="width:14%">기준값</th>
+        <th style="width:12%">판정</th><th style="width:20%">비고</th>
+      </tr></thead>
+      <tbody>${rows||`<tr><td colspan="6">측정 데이터가 없습니다.</td></tr>`}</tbody>
+    </table>
+
+    <div class="final-box">
+      <span class="lbl">종 합 판 정</span>
+      <span class="pill ${finalCls}">${finalTxt}</span>
+      <span style="font-size:10pt;color:#555;">
+        총 ${withVal.length}개 측정 지점${ng.length?` 중 ${ng.length}개 지점 기준 미달` : withVal.length? " 전체 판정기준 만족":""}
+      </span>
+    </div>
+
+    <h3 class="sec">종합 의견 · 조치사항</h3>
+    <div style="border:1px solid #7f93a8;border-radius:6px;padding:10px 12px;min-height:20mm;white-space:pre-wrap;font-size:10.5pt;">${esc(h.opinion)||""}</div>
+
+    <div class="sign-row">
+      <div class="s"><div class="line"></div>측정자 ${esc(h.tester)||""} (인)</div>
+      <div class="s"><div class="line"></div>확인자 ${esc(h.witness)||""} (인)</div>
+    </div>
+
+    <div class="rpt-foot">본 보고서는 방식전위측정 앱으로 작성되었습니다 · 측정 방식: ${PTYPE_LABEL[h.ptype]||""} / 기준전극: ${REF_LABEL[h.refelec]||""}</div>
+  </div>`;
+
+  let page2 = "";
+  if(withPhoto.length){
+    page2 = `
+    <div class="page">
+      <div class="rpt-title" style="font-size:15pt;">첨부 — 측정지 사진</div>
+      <div class="rpt-rule"></div>
+      <div style="font-size:10pt;color:#555;margin-bottom:8px;">현장명: ${esc(h.site)||"—"} · 측정일자: ${dateStr}</div>
+      <div class="photos-grid">${photoCells}</div>
+      <div class="rpt-foot">측정지 원본 사진 (${withPhoto.length}매)</div>
+    </div>`;
+  }
+  return page1 + page2;
+}
+
+function openReport(){
+  save(true);
+  $("#reportBody").innerHTML = buildReport();
+  $("#report").classList.add("show");
+  document.body.style.overflow="hidden";
+  window.scrollTo(0,0);
+}
+function closeReport(){
+  $("#report").classList.remove("show");
+  document.body.style.overflow="";
+}
+$("#btnReport").addEventListener("click", openReport);
+$("#btnReport2").addEventListener("click", openReport);
+$("#btnClose").addEventListener("click", closeReport);
+$("#btnPrint").addEventListener("click", ()=>window.print());
+document.addEventListener("keydown", e=>{ if(e.key==="Escape") closeReport(); });
+
+/* ---------- init ---------- */
+load();
+</script>
+</body>
+</html>
