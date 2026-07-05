@@ -149,7 +149,7 @@
   .toolbar{
     position:fixed;left:0;right:0;bottom:0;z-index:30;
     background:#fff;border-top:1px solid var(--line);
-    padding:12px 16px;display:flex;gap:10px;justify-content:center;
+    padding:12px 16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;
     box-shadow:0 -2px 12px rgba(20,40,70,.08);
   }
   .toolbar .btn{color:var(--brand);background:#eef3f9;}
@@ -198,6 +198,31 @@
   .mail-status.err{color:var(--ng);}
   .mail-status.ok{color:var(--ok);}
   .mail-status.busy{color:var(--brand);}
+
+  /* ---------- History modal ---------- */
+  #histModal{display:none;position:fixed;inset:0;z-index:120;
+    background:rgba(15,25,40,.55);align-items:flex-start;justify-content:center;padding:16px;overflow:auto;}
+  #histModal.show{display:flex;}
+  .hist-card{background:#fff;border-radius:14px;max-width:560px;width:100%;padding:18px;
+    box-shadow:0 14px 46px rgba(0,0,0,.4);margin:auto;max-height:92vh;overflow:auto;}
+  .hist-card .hh{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+  .hist-card h3{font-size:17px;color:var(--brand);}
+  .hist-close{border:0;background:#eef2f6;color:var(--text);border-radius:8px;padding:8px 12px;font-weight:700;}
+  .hist-empty{color:var(--muted);text-align:center;padding:34px 10px;font-size:14px;line-height:1.7;}
+  .hist-list{display:flex;flex-direction:column;gap:10px;}
+  .hist-item{border:1px solid var(--line);border-radius:11px;padding:12px 13px;background:#f8fafc;}
+  .hist-item .top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:10px;}
+  .hist-item .date{font-weight:800;color:var(--text);font-size:15.5px;}
+  .hist-item .meta{font-size:12px;color:var(--muted);margin-top:3px;}
+  .hist-item .acts{display:flex;gap:7px;flex-wrap:wrap;}
+  .hist-item .acts button{border:0;border-radius:8px;padding:8px 12px;font-size:13px;font-weight:700;}
+  .hist-view{background:var(--brand);color:#fff;}
+  .hist-load{background:#e7eef6;color:var(--brand);}
+  .hist-del{background:#fff;color:var(--ng) !important;border:1px solid var(--ng) !important;}
+  .pill-sm{display:inline-block;padding:3px 11px;border-radius:12px;font-size:11.5px;font-weight:700;white-space:nowrap;}
+  .pill-sm.ok{background:var(--ok-bg);color:var(--ok);}
+  .pill-sm.ng{background:var(--ng-bg);color:var(--ng);}
+  .pill-sm.na{background:#eef2f6;color:var(--muted);}
 
   /* ---------- Print / A4 report ---------- */
   #report{display:none;}
@@ -337,7 +362,8 @@
 </div>
 
 <div class="toolbar">
-  <button class="btn" id="btnSave">저장</button>
+  <button class="btn" id="btnHistory">🕘 이력</button>
+  <button class="btn" id="btnSaveHistory">＋ 이력 저장</button>
   <button class="btn primary" id="btnReport2">A4 보고서 출력 →</button>
 </div>
 
@@ -410,6 +436,17 @@
   </div>
 </div>
 
+<!-- ===== History modal ===== -->
+<div id="histModal">
+  <div class="hist-card">
+    <div class="hh">
+      <h3>🕘 점검 이력</h3>
+      <button class="hist-close" id="histClose" type="button">닫기 ✕</button>
+    </div>
+    <div id="histBody"></div>
+  </div>
+</div>
+
 <script>
 "use strict";
 const $ = (s,el=document)=>el.querySelector(s);
@@ -444,8 +481,8 @@ function compressImage(file, maxDim=1400, quality=0.72){
 }
 
 /* ---------- Verdict logic ---------- */
-function verdictFor(valueStr){
-  const crit = parseFloat($("#crit").value);
+function verdictFor(valueStr, critOverride){
+  const crit = critOverride!=null ? parseFloat(critOverride) : parseFloat($("#crit").value);
   const v = parseFloat(valueStr);
   if(isNaN(v) || isNaN(crit)) return {cls:"na", txt:"—"};
   // more negative than criterion = pass (protected)
@@ -609,7 +646,6 @@ function save(silent){
     if(!silent) flash("저장되었습니다");
   }catch(err){ if(!silent) alert("저장 실패: 사진 용량이 너무 큽니다."); }
 }
-$("#btnSave").addEventListener("click", ()=>save(false));
 
 function load(){
   let raw; try{ raw = JSON.parse(localStorage.getItem(STORE_KEY)); }catch(e){}
@@ -640,18 +676,22 @@ function flash(msg){
 
 /* ---------- Report generation ---------- */
 // 측정 지점을 NO.1~NO.10 → G/S1 → G/S2 순서로 정렬 (미지정 지점은 뒤로)
-function sortedPoints(){
+function sortedPoints(list){
+  const src = list || points;
   const order = new Map(LOC_OPTIONS.map((o,i)=>[o,i]));
-  return points.slice().sort((a,b)=>
+  return src.slice().sort((a,b)=>
     (order.has(a.name)?order.get(a.name):999) - (order.has(b.name)?order.get(b.name):999));
 }
 
+// 현재 보고서 화면에 렌더링된 데이터(현재 작성분 또는 이력에서 불러온 기록)
+let reportCtx = null;
+
 function buildReport(){
-  const h = collect().header;
+  const h = reportCtx.header;
   const crit = parseFloat(h.crit);
-  const pts = sortedPoints();
+  const pts = sortedPoints(reportCtx.points);
   const rows = pts.map(p=>{
-    const vd = verdictFor(p.value);
+    const vd = verdictFor(p.value, crit);
     const v = parseFloat(p.value);
     return `<tr>
       <td class="left">${esc(p.name)||"—"}</td>
@@ -663,7 +703,7 @@ function buildReport(){
   }).join("");
 
   const withVal = pts.filter(p=>!isNaN(parseFloat(p.value)));
-  const ng = withVal.filter(p=>verdictFor(p.value).cls==="ng");
+  const ng = withVal.filter(p=>verdictFor(p.value, crit).cls==="ng");
   let finalCls="na", finalTxt="판정 불가";
   if(withVal.length){ if(ng.length===0){finalCls="ok";finalTxt="합격 (적합)";} else {finalCls="ng";finalTxt="부적합";} }
 
@@ -727,8 +767,9 @@ function buildReport(){
   return page1 + page2;
 }
 
-function openReport(){
+function openReport(data){
   save(true);
+  reportCtx = data || {header: collect().header, points: points.slice()};
   $("#reportBody").innerHTML = buildReport();
   $("#report").classList.add("show");
   document.body.style.overflow="hidden";
@@ -738,8 +779,8 @@ function closeReport(){
   $("#report").classList.remove("show");
   document.body.style.overflow="";
 }
-$("#btnReport").addEventListener("click", openReport);
-$("#btnReport2").addEventListener("click", openReport);
+$("#btnReport").addEventListener("click", ()=>openReport());
+$("#btnReport2").addEventListener("click", ()=>openReport());
 $("#btnClose").addEventListener("click", closeReport);
 $("#btnPrint").addEventListener("click", ()=>window.print());
 $("#btnEmail").addEventListener("click", openMailDialog);
@@ -757,14 +798,15 @@ function reportStandaloneHTML(){
     + `<title>방식전위 측정 보고서</title><style>${css}</style></head>`
     + `<body style="background:#fff">${body}</body></html>`;
 }
-function buildEmailText(h){
+function buildEmailText(){
+  const h = reportCtx.header;
   const crit = parseFloat(h.crit);
-  const pts = sortedPoints();
+  const pts = sortedPoints(reportCtx.points);
   const withVal = pts.filter(p=>!isNaN(parseFloat(p.value)));
-  const ng = withVal.filter(p=>verdictFor(p.value).cls==="ng");
+  const ng = withVal.filter(p=>verdictFor(p.value, crit).cls==="ng");
   const lines = pts.map(p=>{
     const v = parseFloat(p.value);
-    return `- ${p.name||"(미지정)"}: ${isNaN(v)?"—":v+" mV"} → ${verdictFor(p.value).txt}`;
+    return `- ${p.name||"(미지정)"}: ${isNaN(v)?"—":v+" mV"} → ${verdictFor(p.value, crit).txt}`;
   });
   const finalTxt = !withVal.length ? "판정 불가"
     : ng.length ? `부적합 (총 ${withVal.length}개 중 ${ng.length}개 미달)`
@@ -831,8 +873,8 @@ $("#mailSend").addEventListener("click", async ()=>{
   localStorage.setItem(MAIL_KEYS.cc, cc);
   localStorage.setItem(MAIL_KEYS.ep, endpoint);
 
-  const h = collect().header;
-  const {subject, body} = buildEmailText(h);
+  const h = (reportCtx && reportCtx.header) || collect().header;
+  const {subject, body} = buildEmailText();
   const payload = {
     to, cc, subject, body,
     filename: `방식전위측정보고서_${h.date||"측정"}.html`,
@@ -859,6 +901,112 @@ $("#mailSend").addEventListener("click", async ()=>{
     setMailStatus("전송 실패: 네트워크 또는 발신 설정을 확인해 주세요.", "err");
   }finally{ btn.disabled = false; }
 });
+
+/* ---------- 점검 이력 (History) ---------- */
+const HIST_KEY = "cp_report_history";
+let currentHistoryId = null;   // 이력에서 불러온 기록이면 그 id (저장 시 갱신)
+
+function loadHistory(){ try{ return JSON.parse(localStorage.getItem(HIST_KEY)) || []; }catch(e){ return []; } }
+function saveHistoryArr(arr){ localStorage.setItem(HIST_KEY, JSON.stringify(arr)); }
+
+// 기록 요약(종합 판정·지점 수 등) — 기록별 판정 기준값 사용
+function recordSummary(rec){
+  const crit = parseFloat(rec.crit);
+  const pts = rec.points || [];
+  const withVal = pts.filter(p=>!isNaN(parseFloat(p.value)));
+  const ng = withVal.filter(p=>{ const vd = verdictFor(p.value, rec.crit); return vd.cls==="ng"; });
+  let cls="na", txt="판정 불가";
+  if(withVal.length){ if(ng.length){cls="ng";txt="부적합";} else {cls="ok";txt="합격";} }
+  return {cls, txt, total: withVal.length, ng: ng.length, photos: pts.filter(p=>p.photo).length};
+}
+
+function saveCurrentToHistory(){
+  const h = collect().header;
+  const rec = {
+    id: currentHistoryId || String(Date.now()),
+    savedAt: new Date().toISOString(),
+    date: h.date, crit: h.crit, opinion: h.opinion,
+    points: JSON.parse(JSON.stringify(points))
+  };
+  const arr = loadHistory();
+  const idx = arr.findIndex(r=>r.id===rec.id);
+  if(idx>=0) arr[idx] = rec; else arr.push(rec);
+  try{ saveHistoryArr(arr); }
+  catch(e){ alert("저장 공간이 부족합니다. 이력에서 오래된 기록을 삭제한 뒤 다시 시도해 주세요."); return; }
+  currentHistoryId = rec.id;
+  flash(idx>=0 ? "이력을 업데이트했습니다." : "점검 이력에 저장했습니다.");
+}
+
+function renderHistory(){
+  const arr = loadHistory().slice().sort((a,b)=>{
+    // 측정일자 우선, 같으면 저장시각 최신순
+    const da=(a.date||""), db=(b.date||"");
+    if(da!==db) return db.localeCompare(da);
+    return (b.savedAt||"").localeCompare(a.savedAt||"");
+  });
+  const host = $("#histBody");
+  if(!arr.length){
+    host.innerHTML = `<div class="hist-empty">저장된 점검 이력이 없습니다.<br>측정 후 하단 <b>＋ 이력 저장</b>을 누르면 여기에 기록됩니다.</div>`;
+    return;
+  }
+  host.innerHTML = `<div class="hist-list">`+arr.map(rec=>{
+    const s = recordSummary(rec);
+    const savedStr = rec.savedAt ? rec.savedAt.slice(0,16).replace("T"," ") : "";
+    const editing = rec.id===currentHistoryId ? ` · <span style="color:var(--brand-2)">편집 중</span>` : "";
+    return `<div class="hist-item" data-id="${rec.id}">
+      <div class="top">
+        <div>
+          <div class="date">${esc(rec.date)||"날짜 미입력"}</div>
+          <div class="meta">지점 ${s.total}개 · 사진 ${s.photos}매 · 저장 ${savedStr}${editing}</div>
+        </div>
+        <span class="pill-sm ${s.cls}">${s.txt}</span>
+      </div>
+      <div class="acts">
+        <button class="hist-view" data-hact="view">보고서 보기</button>
+        <button class="hist-load" data-hact="load">불러와 편집</button>
+        <button class="hist-del" data-hact="del">삭제</button>
+      </div>
+    </div>`;
+  }).join("")+`</div>`;
+}
+
+function openHistory(){ renderHistory(); $("#histModal").classList.add("show"); }
+function closeHistory(){ $("#histModal").classList.remove("show"); }
+
+$("#btnHistory").addEventListener("click", openHistory);
+$("#btnSaveHistory").addEventListener("click", saveCurrentToHistory);
+$("#histClose").addEventListener("click", closeHistory);
+$("#histModal").addEventListener("click", e=>{ if(e.target.id==="histModal") closeHistory(); });
+
+$("#histBody").addEventListener("click", e=>{
+  const btn = e.target.closest("[data-hact]"); if(!btn) return;
+  const item = e.target.closest(".hist-item"); const id = item.dataset.id;
+  const rec = loadHistory().find(r=>r.id===id); if(!rec) return;
+  const act = btn.dataset.hact;
+  if(act==="view"){
+    closeHistory();
+    openReport({header:{date:rec.date, crit:rec.crit, opinion:rec.opinion}, points: rec.points||[]});
+  }else if(act==="load"){
+    if(!confirm("현재 입력 중인 내용을 이 이력으로 바꿀까요?")) return;
+    $("#date").value = rec.date || "";
+    $("#opinion").value = rec.opinion || "";
+    $("#crit").value = rec.crit || "-850";
+    points = JSON.parse(JSON.stringify(rec.points || []));
+    uid = points.reduce((m,p)=>Math.max(m,p.id),0) + 1;
+    if(points.length===0) addPoint();
+    currentHistoryId = rec.id;
+    renderPoints(); save(true);
+    closeHistory();
+    flash("이력을 불러왔습니다.");
+  }else if(act==="del"){
+    if(!confirm("이 점검 이력을 삭제할까요?")) return;
+    saveHistoryArr(loadHistory().filter(r=>r.id!==id));
+    if(currentHistoryId===id) currentHistoryId = null;
+    renderHistory();
+  }
+});
+
+document.addEventListener("keydown", e=>{ if(e.key==="Escape" && $("#histModal").classList.contains("show")) closeHistory(); });
 
 /* ---------- init ---------- */
 load();
