@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f1115" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="핏로그" />
+  <title>핏로그 · 웨이트 트레이닝 기록</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- 헤더 -->
+    <header class="appbar">
+      <h1 id="appbar-title">오늘의 운동</h1>
+      <div class="appbar-actions">
+        <button id="btn-menu" class="icon-btn" aria-label="메뉴">⋯</button>
+      </div>
+    </header>
+
+    <!-- 화면 컨테이너 -->
+    <main id="views">
+
+      <!-- ================= 운동 화면 ================= -->
+      <section class="view" id="view-workout" data-view="workout">
+        <div class="date-bar">
+          <button class="date-nav" id="wk-prev" aria-label="이전 날짜">‹</button>
+          <input type="date" id="wk-date" class="date-input" />
+          <button class="date-nav" id="wk-next" aria-label="다음 날짜">›</button>
+        </div>
+
+        <div id="wk-summary" class="summary-row"></div>
+
+        <div id="wk-list" class="card-list"></div>
+
+        <div id="wk-empty" class="empty-state">
+          <div class="empty-emoji">🏋️</div>
+          <p>이 날의 운동 기록이 없습니다.</p>
+          <p class="muted">아래 <b>＋</b> 버튼으로 운동을 추가하세요.</p>
+        </div>
+
+        <button class="fab" id="wk-add" aria-label="운동 추가">＋</button>
+      </section>
+
+      <!-- ================= 인바디 화면 ================= -->
+      <section class="view hidden" id="view-inbody" data-view="inbody">
+        <div id="ib-latest" class="inbody-hero"></div>
+        <h2 class="section-title">기록 추이</h2>
+        <div id="ib-charts" class="chart-stack"></div>
+        <h2 class="section-title">전체 기록</h2>
+        <div id="ib-list" class="card-list"></div>
+        <div id="ib-empty" class="empty-state">
+          <div class="empty-emoji">⚖️</div>
+          <p>인바디 기록이 없습니다.</p>
+          <p class="muted">아래 <b>＋</b> 버튼으로 측정 결과를 추가하세요.</p>
+        </div>
+        <button class="fab" id="ib-add" aria-label="인바디 추가">＋</button>
+      </section>
+
+      <!-- ================= 통계 화면 ================= -->
+      <section class="view hidden" id="view-stats" data-view="stats">
+        <div class="stat-cards" id="st-cards"></div>
+        <h2 class="section-title">운동별 중량 추이</h2>
+        <div class="select-wrap">
+          <select id="st-exercise" class="select"></select>
+        </div>
+        <div id="st-chart" class="chart-stack"></div>
+        <div id="st-empty" class="empty-state">
+          <div class="empty-emoji">📈</div>
+          <p>기록이 쌓이면 추이 그래프가 표시됩니다.</p>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- 하단 탭 -->
+    <nav class="tabbar">
+      <button class="tab active" data-tab="workout">
+        <span class="tab-ico">🏋️</span><span class="tab-txt">운동</span>
+      </button>
+      <button class="tab" data-tab="inbody">
+        <span class="tab-ico">⚖️</span><span class="tab-txt">인바디</span>
+      </button>
+      <button class="tab" data-tab="stats">
+        <span class="tab-ico">📊</span><span class="tab-txt">통계</span>
+      </button>
+    </nav>
+  </div>
+
+  <!-- ================= 운동 입력 시트 ================= -->
+  <div class="sheet-backdrop hidden" id="wk-sheet">
+    <div class="sheet" role="dialog" aria-modal="true">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <button class="sheet-cancel" id="wk-cancel">취소</button>
+        <h3 id="wk-sheet-title">운동 추가</h3>
+        <button class="sheet-save" id="wk-save">저장</button>
+      </div>
+      <div class="sheet-body">
+        <label class="field">
+          <span class="field-label">운동</span>
+          <div class="exercise-input">
+            <input type="text" id="wk-name" list="exercise-suggestions" placeholder="예: 벤치프레스" autocomplete="off" />
+            <datalist id="exercise-suggestions"></datalist>
+          </div>
+        </label>
+
+        <div class="chip-row" id="wk-quick"></div>
+
+        <div class="sets-head">
+          <span class="field-label">세트</span>
+          <span class="sets-hint">중량(kg) × 반복(회)</span>
+        </div>
+        <div id="wk-sets" class="sets-list"></div>
+        <button class="add-set" id="wk-add-set">＋ 세트 추가</button>
+
+        <label class="field">
+          <span class="field-label">메모 (선택)</span>
+          <input type="text" id="wk-note" placeholder="컨디션, 자세 등" />
+        </label>
+
+        <button class="danger-btn hidden" id="wk-delete">이 운동 기록 삭제</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 인바디 입력 시트 ================= -->
+  <div class="sheet-backdrop hidden" id="ib-sheet">
+    <div class="sheet" role="dialog" aria-modal="true">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <button class="sheet-cancel" id="ib-cancel">취소</button>
+        <h3 id="ib-sheet-title">인바디 추가</h3>
+        <button class="sheet-save" id="ib-save">저장</button>
+      </div>
+      <div class="sheet-body">
+        <label class="field">
+          <span class="field-label">측정일</span>
+          <input type="date" id="ib-date" />
+        </label>
+        <div class="grid-2">
+          <label class="field">
+            <span class="field-label">체중 (kg)</span>
+            <input type="number" inputmode="decimal" step="0.1" id="ib-weight" placeholder="0.0" />
+          </label>
+          <label class="field">
+            <span class="field-label">골격근량 (kg)</span>
+            <input type="number" inputmode="decimal" step="0.1" id="ib-muscle" placeholder="0.0" />
+          </label>
+          <label class="field">
+            <span class="field-label">체지방량 (kg)</span>
+            <input type="number" inputmode="decimal" step="0.1" id="ib-fatmass" placeholder="0.0" />
+          </label>
+          <label class="field">
+            <span class="field-label">체지방률 (%)</span>
+            <input type="number" inputmode="decimal" step="0.1" id="ib-fatpct" placeholder="0.0" />
+          </label>
+          <label class="field">
+            <span class="field-label">BMI</span>
+            <input type="number" inputmode="decimal" step="0.1" id="ib-bmi" placeholder="0.0" />
+          </label>
+          <label class="field">
+            <span class="field-label">인바디 점수</span>
+            <input type="number" inputmode="numeric" step="1" id="ib-score" placeholder="0" />
+          </label>
+        </div>
+        <label class="field">
+          <span class="field-label">메모 (선택)</span>
+          <input type="text" id="ib-note" placeholder="측정 조건 등" />
+        </label>
+        <button class="danger-btn hidden" id="ib-delete">이 측정 기록 삭제</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 메뉴 시트 ================= -->
+  <div class="sheet-backdrop hidden" id="menu-sheet">
+    <div class="sheet" role="dialog" aria-modal="true">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <button class="sheet-cancel" id="menu-cancel">닫기</button>
+        <h3>데이터 관리</h3>
+        <span style="width:44px"></span>
+      </div>
+      <div class="sheet-body">
+        <button class="menu-item" id="menu-export">📤 데이터 내보내기 (백업)</button>
+        <button class="menu-item" id="menu-import">📥 데이터 가져오기 (복원)</button>
+        <button class="menu-item" id="menu-sample">✨ 예시 데이터 채우기</button>
+        <button class="menu-item danger" id="menu-reset">🗑️ 모든 데이터 삭제</button>
+        <input type="file" id="menu-file" accept="application/json" hidden />
+        <p class="muted" style="margin-top:16px;font-size:13px;line-height:1.6">
+          모든 기록은 이 기기에만 저장됩니다. 기기 변경·앱 삭제 전에 <b>내보내기</b>로 백업하세요.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="js/store.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+    }
+  </script>
+</body>
+</html>
