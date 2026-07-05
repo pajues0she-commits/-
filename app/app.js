@@ -962,17 +962,26 @@
   const facilityOf = (r) => (r.facility || "").trim() || NO_FACILITY;
   let currentFolder = null; // 상세보기 중인 시설명
 
-  // 날짜별 일괄 카드(날짜 선택 옵션) 갱신
+  // 날짜별 일괄 카드(날짜 선택 옵션) 갱신 — 데이터가 없어도 카드는 보이고 비활성 처리
   function renderBatchDates() {
     const sel = $("#batch-date");
     if (!sel) return;
     const dates = distinctDates();
+    const emailBtn = $("#btn-batch-email");
+    const pdfBtn = $("#btn-batch-pdf");
+    const empty = dates.length === 0;
+    sel.disabled = empty;
+    if (emailBtn) emailBtn.disabled = empty;
+    if (pdfBtn) pdfBtn.disabled = empty;
+    if (empty) {
+      sel.innerHTML = '<option value="">저장된 점검이 없습니다</option>';
+      return;
+    }
     const keep = sel.value;
     sel.innerHTML = dates
       .map((d) => `<option value="${d}">${d} (${recordsByDate(d).length}건)</option>`)
       .join("");
     if (dates.indexOf(keep) !== -1) sel.value = keep;
-    $("#batch-card").hidden = dates.length === 0;
   }
 
   // 내역 = 시설별 폴더 그리드
@@ -980,6 +989,7 @@
     currentFolder = null;
     $("#detail-card").hidden = true;
     $("#folders-card").hidden = false;
+    $("#batch-card").hidden = false;
     renderBatchDates();
 
     const list = store.records();
@@ -1227,7 +1237,30 @@
     renderHistory();
 
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("sw.js").catch(() => {});
+      // 새 버전이 활성화되면 한 번만 새로고침해 최신 코드를 반영
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (refreshing) return;
+        refreshing = true;
+        location.reload();
+      });
+      navigator.serviceWorker
+        .register("sw.js")
+        .then((reg) => {
+          reg.update();
+          // 대기 중인 새 워커가 있으면 즉시 적용 요청
+          if (reg.waiting) reg.waiting.postMessage("skipWaiting");
+          reg.addEventListener("updatefound", () => {
+            const nw = reg.installing;
+            if (!nw) return;
+            nw.addEventListener("statechange", () => {
+              if (nw.state === "installed" && navigator.serviceWorker.controller) {
+                nw.postMessage("skipWaiting");
+              }
+            });
+          });
+        })
+        .catch(() => {});
     }
   }
 
