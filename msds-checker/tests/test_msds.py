@@ -142,5 +142,90 @@ class TestComparator(unittest.TestCase):
         self.assertEqual(len(csv_text.strip().splitlines()), 3)  # 헤더 + 2행
 
 
+class TestStorage(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        self.tmpdir = tempfile.mkdtemp()
+        os.environ["MSDS_DATA_DIR"] = self.tmpdir
+
+    def tearDown(self):
+        import shutil
+        os.environ.pop("MSDS_DATA_DIR", None)
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_add_load_remove(self):
+        from msds_checker import storage
+        history = storage.load()
+        self.assertEqual(history.entries, [])
+        rec = parse_file(sample("MSDS_신나A_2022.txt"))
+        entry = storage.add_record(
+            history, rec, intro_date="2022-03-15",
+            department="안전보건팀", author="홍길동",
+        )
+        # 파일 사본이 저장소로 복사됨
+        self.assertTrue(rec.path.startswith(self.tmpdir))
+        self.assertTrue(os.path.exists(rec.path))
+        # 다시 로드해도 유지됨 (누적 관리)
+        loaded = storage.load()
+        self.assertEqual(len(loaded.entries), 1)
+        e = loaded.entries[0]
+        self.assertEqual(e.intro_date, "2022-03-15")
+        self.assertEqual(e.department, "안전보건팀")
+        self.assertEqual(e.author, "홍길동")
+        self.assertEqual(e.record.year, 2022)
+        self.assertEqual(e.record.manufacturer, "대한케미칼(주)")
+        self.assertEqual(len(e.record.ingredients), 3)
+        self.assertEqual(loaded.department, "안전보건팀")
+        # 제거하면 사본도 삭제됨
+        storage.remove_entries(loaded, {entry.id})
+        self.assertEqual(storage.load().entries, [])
+        self.assertFalse(os.path.exists(rec.path))
+
+
+class TestExporter(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        self.tmpdir = tempfile.mkdtemp()
+        os.environ["MSDS_DATA_DIR"] = self.tmpdir
+
+    def tearDown(self):
+        import shutil
+        os.environ.pop("MSDS_DATA_DIR", None)
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_export_excel(self):
+        try:
+            import openpyxl
+        except ImportError:
+            self.skipTest("openpyxl 미설치")
+        from msds_checker import storage
+        from msds_checker.exporter import export_excel
+        history = storage.load()
+        for name, intro in (
+            ("MSDS_신나A_2022.txt", "2022-03-15"),
+            ("MSDS_신나A_2023.txt", "2023-02-01"),
+            ("MSDS_신나A_2024.txt", "2024-01-20"),
+        ):
+            storage.add_record(
+                history, parse_file(sample(name)), intro_date=intro,
+                department="안전보건팀", author="홍길동", copy_file=False,
+            )
+        years, rows, _ = build_matrix(history.records())
+        path = os.path.join(self.tmpdir, "out.xlsx")
+        export_excel(path, history, years, rows,
+                     department="안전보건팀", author="홍길동")
+
+        wb = openpyxl.load_workbook(path)
+        self.assertEqual(wb.sheetnames, ["누적 이력", "연도별 판정"])
+        ws = wb["누적 이력"]
+        self.assertEqual(ws["B7"].value, "2022-03-15")       # 첫 데이터 행 도입일자
+        self.assertEqual(ws["I7"].value, "안전보건팀")
+        self.assertEqual(ws["J7"].value, "홍길동")
+        ws2 = wb["연도별 판정"]
+        self.assertEqual(ws2["A5"].value, "제조사")
+        self.assertEqual(ws2["D5"].value, "▲ 한국정밀화학 주식회사")
+        self.assertEqual(ws2["E5"].value, "변경")
+
+
 if __name__ == "__main__":
     unittest.main()
