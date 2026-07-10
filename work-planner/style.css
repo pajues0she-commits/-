@@ -268,6 +268,47 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-soft
 }
 .history-meta { font-size: 12px; color: var(--muted); margin-top: 6px; }
 
+/* ---------- 루틴 업무 ---------- */
+.dow-picker { display: flex; gap: 4px; align-items: center; }
+.dow-btn {
+  width: 34px; padding: 8px 0; text-align: center;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--card); cursor: pointer;
+  font-size: 13px; font-family: inherit; color: var(--muted);
+}
+.dow-btn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.dom-picker { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.dom-picker input { width: 72px; }
+.routine-error { color: var(--q1); margin-bottom: 10px; }
+.routine-off { opacity: .55; }
+
+/* ---------- 알림 토스트 ---------- */
+#toastBox {
+  position: fixed; right: 16px; bottom: 16px;
+  display: flex; flex-direction: column; gap: 8px;
+  z-index: 200;
+}
+.toast {
+  background: var(--card);
+  border: 1px solid var(--accent);
+  border-left: 5px solid var(--accent);
+  border-radius: 10px;
+  padding: 12px 16px;
+  box-shadow: 0 6px 24px rgba(10, 15, 30, .2);
+  min-width: 240px; max-width: 340px;
+  cursor: pointer;
+  animation: toast-in .25s ease;
+}
+.toast b { display: block; margin-bottom: 3px; }
+.toast span { font-size: 12px; color: var(--muted); }
+@keyframes toast-in {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast { animation: none; }
+}
+
 /* ---------- 모달 ---------- */
 .modal-backdrop {
   position: fixed; inset: 0;

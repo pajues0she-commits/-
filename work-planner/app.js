@@ -2,8 +2,9 @@
 const STORAGE_KEY = 'workPlanner.v1';
 
 let state = {
-  tasks: [],          // {id,title,important,urgent,dueDate,createdAt,done,completedAt,completionNote}
-  plans: {}           // { 'YYYY-MM-DD': { '9': '보고서 작성', ... } }
+  tasks: [],          // {id,title,important,urgent,dueDate,createdAt,done,completedAt,completionNote,routineId?}
+  plans: {},          // { 'YYYY-MM-DD': { '9': '보고서 작성', ... } }
+  routines: []        // {id,title,repeat,days,dayOfMonth,time,important,urgent,enabled,lastDate,lastNotified}
 };
 
 function load() {
@@ -13,6 +14,7 @@ function load() {
       const parsed = JSON.parse(raw);
       state.tasks = Array.isArray(parsed.tasks) ? parsed.tasks : [];
       state.plans = parsed.plans && typeof parsed.plans === 'object' ? parsed.plans : {};
+      state.routines = Array.isArray(parsed.routines) ? parsed.routines : [];
     }
   } catch (e) {
     console.error('데이터 로드 실패', e);
@@ -106,6 +108,7 @@ function render() {
   else if (currentView === 'weekly') renderWeekly();
   else if (currentView === 'daily') renderDaily();
   else if (currentView === 'today') renderToday();
+  else if (currentView === 'routine') renderRoutines();
   else if (currentView === 'history') renderHistory();
 }
 
@@ -162,6 +165,7 @@ function taskCardHTML(t, opts = {}) {
         <div class="task-meta">
           <span class="badge ${q}">${QUADS[q].badge}</span>
           <span class="${overdue ? 'overdue' : ''}">📅 ${dueLabel}${overdue ? ' (지남!)' : ''}</span>
+          ${t.routineId ? '<span title="루틴 업무에서 자동 등록됨">🔁 루틴</span>' : ''}
         </div>
       </div>
       <div class="task-actions">
@@ -432,6 +436,212 @@ function renderToday() {
   }
 }
 
+/* ================= 루틴 업무 (반복 + 자동 알림) ================= */
+
+function occursToday(r, d) {
+  d = d || new Date();
+  if (r.repeat === 'daily') return true;
+  if (r.repeat === 'weekly') return Array.isArray(r.days) && r.days.includes(d.getDay());
+  if (r.repeat === 'monthly') {
+    const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+    return d.getDate() === Math.min(r.dayOfMonth, lastDay); // 31일 설정 + 30일까지인 달 → 말일에 실행
+  }
+  return false;
+}
+
+function repeatDesc(r) {
+  let base = '';
+  if (r.repeat === 'daily') base = '매일';
+  else if (r.repeat === 'weekly') base = '매주 ' + (r.days || []).slice().sort().map(i => DAY_NAMES[i]).join('·');
+  else base = `매월 ${r.dayOfMonth}일`;
+  return `${base} ${r.time}`;
+}
+
+/* 주기가 된 루틴을 오늘의 할 일로 자동 등록 */
+function generateRoutineTasks() {
+  const today = todayStr();
+  let changed = false;
+  for (const r of state.routines) {
+    if (!r.enabled || !occursToday(r) || r.lastDate === today) continue;
+    if (!state.tasks.some(t => t.routineId === r.id && t.dueDate === today)) {
+      state.tasks.push({
+        id: uid(),
+        title: r.title,
+        important: r.important,
+        urgent: r.urgent,
+        dueDate: today,
+        createdAt: new Date().toISOString(),
+        done: false,
+        completedAt: null,
+        completionNote: '',
+        routineId: r.id
+      });
+    }
+    r.lastDate = today;
+    changed = true;
+  }
+  if (changed) save();
+  return changed;
+}
+
+/* 지정 시간이 지나면 하루 한 번 알림 */
+function checkAlarms() {
+  const now = new Date();
+  const today = todayStr();
+  const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  let changed = false;
+  for (const r of state.routines) {
+    if (!r.enabled || !occursToday(r, now)) continue;
+    if (r.lastNotified === today || !r.time || r.time > hhmm) continue;
+    fireAlarm('🔁 루틴 업무 알림', `${r.title} — ${r.time}`);
+    r.lastNotified = today;
+    changed = true;
+  }
+  if (changed) save();
+}
+
+function fireAlarm(title, body) {
+  showToast(title, body);
+  beep();
+  try {
+    if ('Notification' in window) {
+      if (Notification.permission === 'granted') {
+        new Notification(title, { body });
+      } else if (Notification.permission !== 'denied') {
+        Notification.requestPermission().then(p => {
+          if (p === 'granted') new Notification(title, { body });
+        });
+      }
+    }
+  } catch (e) { /* 알림 미지원 환경은 토스트만 표시 */ }
+}
+
+function showToast(title, body) {
+  const box = document.getElementById('toastBox');
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.innerHTML = `<b>${esc(title)}</b><span>${esc(body)}</span>`;
+  el.addEventListener('click', () => el.remove());
+  box.appendChild(el);
+  setTimeout(() => el.remove(), 10000);
+}
+
+function beep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.08, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.4);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.4);
+  } catch (e) { /* 소리 재생 불가 시 무시 */ }
+}
+
+/* --- 루틴 등록 폼 --- */
+const rDaysWrap = document.getElementById('rDays');
+rDaysWrap.innerHTML = DAY_NAMES.map((n, i) =>
+  `<button type="button" class="dow-btn" data-day="${i}">${n}</button>`).join('');
+rDaysWrap.addEventListener('click', e => {
+  const b = e.target.closest('.dow-btn');
+  if (b) b.classList.toggle('on');
+});
+
+document.getElementById('rRepeat').addEventListener('change', e => {
+  rDaysWrap.classList.toggle('hidden', e.target.value !== 'weekly');
+  document.getElementById('rDomWrap').classList.toggle('hidden', e.target.value !== 'monthly');
+});
+
+document.getElementById('routineForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const errEl = document.getElementById('routineError');
+  errEl.textContent = '';
+  const title = document.getElementById('rTitle').value.trim();
+  if (!title) return;
+  const repeat = document.getElementById('rRepeat').value;
+  const days = [...rDaysWrap.querySelectorAll('.dow-btn.on')].map(b => Number(b.dataset.day));
+  if (repeat === 'weekly' && days.length === 0) {
+    errEl.textContent = '매주 반복은 요일을 하나 이상 선택해 주세요.';
+    return;
+  }
+  const dayOfMonth = Math.min(31, Math.max(1, Number(document.getElementById('rDom').value) || 1));
+
+  state.routines.push({
+    id: uid(),
+    title,
+    repeat,
+    days,
+    dayOfMonth,
+    time: document.getElementById('rTime').value || '09:00',
+    important: document.getElementById('rImportant').value === '1',
+    urgent: document.getElementById('rUrgent').value === '1',
+    enabled: true,
+    lastDate: null,
+    lastNotified: null
+  });
+  save();
+
+  try {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  } catch (e2) { /* 무시 */ }
+
+  document.getElementById('rTitle').value = '';
+  generateRoutineTasks();   // 오늘이 주기면 즉시 할 일에 등록
+  checkAlarms();            // 시간이 이미 지났으면 즉시 알림
+  render();
+});
+
+document.getElementById('routineList').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-act]');
+  if (!btn) return;
+  const card = btn.closest('.task-card');
+  const routine = state.routines.find(r => r.id === card.dataset.id);
+  if (!routine) return;
+
+  if (btn.dataset.act === 'toggle') {
+    routine.enabled = !routine.enabled;
+    save();
+    renderRoutines();
+  } else if (btn.dataset.act === 'del') {
+    if (confirm(`루틴 "${routine.title}" 을(를) 삭제할까요?\n(이미 등록된 할 일은 남습니다)`)) {
+      state.routines = state.routines.filter(r => r.id !== routine.id);
+      save();
+      renderRoutines();
+    }
+  }
+});
+
+function renderRoutines() {
+  const wrap = document.getElementById('routineList');
+  if (state.routines.length === 0) {
+    wrap.innerHTML = `<div class="empty">등록된 루틴 업무가 없습니다.<br>매일 반복하는 업무를 등록하면 자동으로 할 일에 추가되고 알림을 받습니다.</div>`;
+    return;
+  }
+  wrap.innerHTML = state.routines.map(r => {
+    const q = quadOf(r);
+    return `
+      <div class="task-card ${q} ${r.enabled ? '' : 'routine-off'}" data-id="${r.id}">
+        <div class="task-main">
+          <div class="task-title">🔁 ${esc(r.title)}</div>
+          <div class="task-meta">
+            <span class="badge ${q}">${QUADS[q].badge}</span>
+            <span>⏰ ${esc(repeatDesc(r))}</span>
+            <span>${r.enabled ? '🔔 알림 켜짐' : '🔕 알림 꺼짐'}</span>
+          </div>
+        </div>
+        <div class="task-actions">
+          <button class="btn" data-act="toggle">${r.enabled ? '🔕 끄기' : '🔔 켜기'}</button>
+          <button class="btn danger" data-act="del" title="삭제">🗑</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
 /* ================= 5. 완료 이력 ================= */
 document.getElementById('historySearch').addEventListener('input', renderHistory);
 document.getElementById('historyList').addEventListener('click', e => {
@@ -499,4 +709,11 @@ function renderHistory() {
 /* ================= 시작 ================= */
 load();
 document.getElementById('inputDue').value = todayStr();
+generateRoutineTasks();
+checkAlarms();
+setInterval(() => {          // 30초마다: 자정 넘김·알림 시간 확인
+  if (generateRoutineTasks()) render();
+  checkAlarms();
+  renderSidebarInfo();
+}, 30000);
 render();

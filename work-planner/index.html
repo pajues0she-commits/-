@@ -16,6 +16,7 @@
       <button class="nav-btn" data-view="weekly">🗓️ 주간 업무</button>
       <button class="nav-btn" data-view="daily">📆 일간 업무</button>
       <button class="nav-btn" data-view="today">⏰ 오늘 시간 계획</button>
+      <button class="nav-btn" data-view="routine">🔁 루틴 업무</button>
       <button class="nav-btn" data-view="history">✅ 완료 이력</button>
       <div class="sidebar-footer" id="todayInfo"></div>
     </nav>
@@ -106,6 +107,36 @@
         </div>
       </section>
 
+      <!-- 루틴 업무 (반복 + 자동 알림) -->
+      <section class="view hidden" id="view-routine">
+        <div class="view-header">
+          <h2>루틴 업무</h2>
+          <div class="hint">등록한 루틴은 반복 주기에 맞춰 할 일 목록에 자동 추가되고, 지정한 시간에 알림을 보냅니다.</div>
+        </div>
+        <form class="add-form" id="routineForm">
+          <input type="text" id="rTitle" placeholder="루틴 업무 이름 (예: 일일 보고 작성)" required>
+          <select id="rRepeat" title="반복 주기">
+            <option value="daily">매일</option>
+            <option value="weekly">매주</option>
+            <option value="monthly">매월</option>
+          </select>
+          <span class="dow-picker hidden" id="rDays"></span>
+          <span class="dom-picker hidden" id="rDomWrap"><input type="number" id="rDom" min="1" max="31" value="1"> 일</span>
+          <input type="time" id="rTime" value="09:00" title="알림 시간">
+          <select id="rImportant">
+            <option value="1">중요한 일</option>
+            <option value="0">덜 중요한 일</option>
+          </select>
+          <select id="rUrgent">
+            <option value="1">급한 일</option>
+            <option value="0" selected>천천히 해도 되는 일</option>
+          </select>
+          <button type="submit" class="btn primary">+ 등록</button>
+        </form>
+        <div class="hint routine-error" id="routineError"></div>
+        <div id="routineList"></div>
+      </section>
+
       <!-- 5. 완료 이력 -->
       <section class="view hidden" id="view-history">
         <div class="view-header">
@@ -131,6 +162,9 @@
       </div>
     </div>
   </div>
+
+  <!-- 알림 토스트 -->
+  <div id="toastBox"></div>
 
   <script src="app.js"></script>
 </body>
