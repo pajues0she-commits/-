@@ -280,7 +280,8 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-soft
 .subtask-del { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 2px 4px; }
 .subtask-del:hover { color: var(--q1); }
 .subtask-form { display: flex; gap: 6px; }
-.subtask-form input { flex: 1; }
+.subtask-form input[type="text"] { flex: 1; min-width: 0; }
+.subtask-due { width: 138px; flex-shrink: 0; padding: 5px 8px; font-size: 12px; }
 .task-progress { color: var(--accent); font-weight: 600; }
 
 /* ---------- 달력의 루틴 표시 ---------- */

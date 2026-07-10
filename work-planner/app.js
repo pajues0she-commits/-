@@ -310,14 +310,23 @@ function renderSubtasks() {
     <div class="subtask-item ${s.done ? 'done' : ''}">
       <input type="checkbox" data-sid="${s.id}" ${s.done ? 'checked' : ''}>
       <span class="subtask-text">${esc(s.text)}</span>
+      <input type="date" class="subtask-due" data-sid="${s.id}" value="${s.due || ''}" title="기한">
       <button type="button" class="subtask-del" data-sid="${s.id}" title="항목 삭제">✕</button>
     </div>`).join('');
 }
 document.getElementById('subtaskList').addEventListener('change', e => {
+  if (!detailTask) return;
   const cb = e.target.closest('input[type="checkbox"]');
-  if (!cb || !detailTask) return;
-  const s = detailTask.subtasks.find(x => x.id === cb.dataset.sid);
-  if (s) { s.done = cb.checked; save(); renderSubtasks(); }
+  if (cb) {
+    const s = detailTask.subtasks.find(x => x.id === cb.dataset.sid);
+    if (s) { s.done = cb.checked; save(); renderSubtasks(); }
+    return;
+  }
+  const due = e.target.closest('.subtask-due');
+  if (due) {
+    const s = detailTask.subtasks.find(x => x.id === due.dataset.sid);
+    if (s) { s.due = due.value || null; save(); }
+  }
 });
 document.getElementById('subtaskList').addEventListener('click', e => {
   const del = e.target.closest('.subtask-del');
@@ -331,7 +340,7 @@ document.getElementById('subtaskForm').addEventListener('submit', e => {
   if (!detailTask) return;
   const text = document.getElementById('subtaskInput').value.trim();
   if (!text) return;
-  detailTask.subtasks.push({ id: uid(), text, done: false });
+  detailTask.subtasks.push({ id: uid(), text, done: false, due: document.getElementById('subtaskDue').value || null });
   document.getElementById('subtaskInput').value = '';
   save();
   renderSubtasks();
@@ -571,32 +580,54 @@ function renderToday() {
     });
   });
 
-  // 오늘 마감 할 일 풀 + 다가오는 마감(연간 계획 등 7일 이내)
+  // 오늘 마감 할 일 풀 + 기한 있는 세부 항목 + 다가오는 마감(7일 이내)
   const pool = activeTasks().filter(t => t.dueDate <= ds).sort((a, b) => quadOf(a).localeCompare(quadOf(b)));
   const weekAhead = fmtDate(addDays(new Date(), 7));
   const upcoming = activeTasks().filter(t => t.dueDate > ds && t.dueDate <= weekAhead)
     .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  const subDue = [];
+  for (const t of activeTasks()) {
+    for (const s of (t.subtasks || [])) {
+      if (!s.done && s.due) subDue.push({ t, s });
+    }
+  }
+  const subToday = subDue.filter(x => x.s.due <= ds);
+  const subUpcoming = subDue.filter(x => x.s.due > ds && x.s.due <= weekAhead)
+    .sort((a, b) => a.s.due.localeCompare(b.s.due));
   const poolWrap = document.getElementById('todayTaskPool');
-  if (pool.length === 0 && upcoming.length === 0) {
+  if (pool.length === 0 && upcoming.length === 0 && subToday.length === 0 && subUpcoming.length === 0) {
     poolWrap.innerHTML = `<div class="hint">오늘까지 할 일이 없습니다 🎉</div>`;
   } else {
+    const subItemHTML = x =>
+      `<div class="pool-item ${quadOf(x.t)}" data-id="${x.t.id}" data-sid="${x.s.id}">📋 ${esc(x.s.text)} <span class="pool-due">${esc(x.t.title)}${x.s.due > ds ? ' · ' + fmtKorean(x.s.due) : ''}</span></div>`;
+    const upcomingItems = [
+      ...upcoming.map(t => ({ kind: 'task', date: t.dueDate, t })),
+      ...subUpcoming.map(x => ({ kind: 'sub', date: x.s.due, t: x.t, s: x.s }))
+    ].sort((a, b) => a.date.localeCompare(b.date));
     poolWrap.innerHTML =
       pool.map(t =>
         `<div class="pool-item ${quadOf(t)}" data-id="${t.id}">${esc(t.title)}</div>`).join('') +
-      (upcoming.length ? `<div class="pool-sub">다가오는 마감 (7일 이내)</div>` +
-        upcoming.map(t =>
-          `<div class="pool-item ${quadOf(t)}" data-id="${t.id}">${esc(t.title)} <span class="pool-due">${fmtKorean(t.dueDate)}</span></div>`).join('') : '');
+      subToday.map(subItemHTML).join('') +
+      (upcomingItems.length ? `<div class="pool-sub">다가오는 마감 (7일 이내)</div>` +
+        upcomingItems.map(it => it.kind === 'task'
+          ? `<div class="pool-item ${quadOf(it.t)}" data-id="${it.t.id}">${esc(it.t.title)} <span class="pool-due">${fmtKorean(it.t.dueDate)}</span></div>`
+          : subItemHTML(it)).join('') : '');
     poolWrap.querySelectorAll('.pool-item').forEach(item => {
       item.addEventListener('click', () => {
         const task = state.tasks.find(t => t.id === item.dataset.id);
         if (!task) return;
+        let label = task.title;
+        if (item.dataset.sid) {
+          const s = (task.subtasks || []).find(x => x.id === item.dataset.sid);
+          if (s) label = `${s.text} (${task.title})`;
+        }
         if (selectedHour === null) {
           alert('먼저 왼쪽에서 넣을 시간대 칸을 클릭해 주세요.');
           return;
         }
         if (!state.plans[ds]) state.plans[ds] = {};
         const cur = state.plans[ds][selectedHour] || '';
-        state.plans[ds][selectedHour] = cur ? cur + ', ' + task.title : task.title;
+        state.plans[ds][selectedHour] = cur ? cur + ', ' + label : label;
         save();
         renderToday();
       });

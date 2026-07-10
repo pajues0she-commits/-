@@ -202,8 +202,10 @@
       <div id="subtaskList" class="subtask-list"></div>
       <form id="subtaskForm" class="subtask-form">
         <input type="text" id="subtaskInput" placeholder="세부 계획 추가 (예: 자료 조사)">
+        <input type="date" id="subtaskDue" class="subtask-due" title="기한 (선택)">
         <button type="submit" class="btn">+ 추가</button>
       </form>
+      <div class="hint">기한을 넣은 세부 항목은 그 날짜부터 [오늘 시간 계획]의 할 일 목록에 나타납니다.</div>
       <div class="modal-actions">
         <button class="btn primary" id="detailClose">닫기 (자동 저장됨)</button>
       </div>
