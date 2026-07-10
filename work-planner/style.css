@@ -226,6 +226,13 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-soft
 }
 .time-row.now .time-input { border-color: var(--accent); background: var(--accent-soft); }
 .time-input.selected { outline: 2px solid var(--accent); }
+.time-input.done { text-decoration: line-through; opacity: .55; }
+.time-check {
+  width: 17px; flex-shrink: 0; align-self: center;
+  accent-color: var(--accent); cursor: pointer;
+}
+.time-check:disabled { opacity: .3; cursor: default; }
+.time-row.drag-over .time-input { outline: 2px dashed var(--accent); background: var(--accent-soft); }
 
 .today-tasks {
   width: 260px; flex-shrink: 0;
@@ -239,9 +246,10 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-soft
 .today-tasks .hint { margin-bottom: 10px; }
 .pool-item {
   padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px;
-  margin-bottom: 6px; cursor: pointer; font-size: 13px;
+  margin-bottom: 6px; cursor: grab; font-size: 13px;
   border-left-width: 4px;
 }
+.pool-item:active { cursor: grabbing; }
 .pool-item:hover { background: var(--accent-soft); }
 .pool-item.q1 { border-left-color: var(--q1); }
 .pool-item.q2 { border-left-color: var(--q2); }

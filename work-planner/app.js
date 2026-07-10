@@ -104,7 +104,6 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
 function render() {
   renderSidebarInfo();
   if (currentView === 'list') renderList();
-  else if (currentView === 'yearly') renderYearly();
   else if (currentView === 'monthly') renderMonthly();
   else if (currentView === 'weekly') renderWeekly();
   else if (currentView === 'daily') renderDaily();
@@ -171,7 +170,7 @@ function taskCardHTML(t, opts = {}) {
           <span class="badge ${q}">${QUADS[q].badge}</span>
           <span class="${overdue ? 'overdue' : ''}">📅 ${dueLabel}${overdue ? ' (지남!)' : ''}</span>
           ${t.routineId ? '<span title="루틴 업무에서 자동 등록됨">🔁 루틴</span>' : ''}
-          ${t.yearly ? '<span title="연간 업무계획에 등록됨">📌 연간</span>' : ''}
+          ${t.yearly ? '<span title="매년 반복되는 마감 업무">📌 연간</span>' : ''}
           ${subs.length ? `<span class="task-progress">📋 세부 ${subDone}/${subs.length}</span>` : ''}
         </div>
       </div>
@@ -351,71 +350,6 @@ document.getElementById('detailMemo').addEventListener('input', e => {
 document.getElementById('detailClose').addEventListener('click', closeDetailModal);
 detailModal.addEventListener('click', e => { if (e.target === detailModal) closeDetailModal(); });
 
-/* ================= 연간 업무계획 ================= */
-let yearCursor = new Date().getFullYear();
-
-document.getElementById('yearPrev').addEventListener('click', () => { yearCursor--; renderYearly(); });
-document.getElementById('yearNext').addEventListener('click', () => { yearCursor++; renderYearly(); });
-document.getElementById('yearNow').addEventListener('click', () => { yearCursor = new Date().getFullYear(); renderYearly(); });
-
-document.getElementById('yearlyForm').addEventListener('submit', e => {
-  e.preventDefault();
-  const title = document.getElementById('yTitle').value.trim();
-  const due = document.getElementById('yDue').value;
-  if (!title || !due) return;
-  state.tasks.push({
-    id: uid(),
-    title,
-    important: document.getElementById('yImportant').value === '1',
-    urgent: document.getElementById('yUrgent').value === '1',
-    dueDate: due,
-    createdAt: new Date().toISOString(),
-    done: false,
-    completedAt: null,
-    completionNote: '',
-    memo: '',
-    subtasks: [],
-    yearly: true
-  });
-  save();
-  document.getElementById('yTitle').value = '';
-  yearCursor = Number(due.slice(0, 4));   // 등록한 연도로 이동해서 바로 확인
-  renderYearly();
-  renderSidebarInfo();
-});
-document.getElementById('yearlyList').addEventListener('click', handleCardAction);
-
-function renderYearly() {
-  document.getElementById('yearlyTitle').textContent = `${yearCursor}년 업무계획`;
-  const wrap = document.getElementById('yearlyList');
-  const prefix = String(yearCursor) + '-';
-  const yearTasks = state.tasks.filter(t => !t.routineId && t.dueDate.startsWith(prefix));
-  if (yearTasks.length === 0) {
-    wrap.innerHTML = `<div class="empty">${yearCursor}년에 등록된 업무가 없습니다.<br>위에서 마감기한과 함께 업무를 등록해 보세요.</div>`;
-    return;
-  }
-  let html = '';
-  for (let m = 1; m <= 12; m++) {
-    const mm = String(m).padStart(2, '0');
-    const monthTasks = yearTasks
-      .filter(t => t.dueDate.slice(5, 7) === mm)
-      .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
-    if (monthTasks.length === 0) continue;
-    const doneCnt = monthTasks.filter(t => t.done).length;
-    html += `<div class="quad-group"><h3>${m}월 — ${monthTasks.length}건 (완료 ${doneCnt}건)</h3>`;
-    html += monthTasks.map(t => t.done
-      ? `<div class="task-card ${quadOf(t)}" style="opacity:.6" data-id="${t.id}">
-          <div class="task-main">
-            <div class="task-title" style="text-decoration:line-through">${esc(t.title)}</div>
-            <div class="task-meta"><span>완료: ${t.completedAt ? fmtDateTime(t.completedAt) : '-'}</span></div>
-          </div>
-        </div>`
-      : taskCardHTML(t)).join('');
-    html += `</div>`;
-  }
-  wrap.innerHTML = html;
-}
-
 /* ================= 3. 월간 ================= */
 let monthCursor = new Date();
 
@@ -546,6 +480,91 @@ function renderDaily() {
 const HOUR_START = 6, HOUR_END = 23;
 let selectedHour = null;
 
+/* 계획 항목: 예전 문자열 형식도 객체로 변환해서 읽기 */
+function planEntry(plan, h) {
+  const v = plan[h];
+  if (!v) return null;
+  if (typeof v === 'string') return { text: v, done: false, links: [] };
+  if (!Array.isArray(v.links)) v.links = [];
+  return v;
+}
+
+/* 할 일(또는 세부 항목)을 시간대에 넣기 — 클릭·드래그 공용 */
+function insertIntoHour(ds, hour, task, sub) {
+  const label = sub ? `${sub.text} (${task.title})` : task.title;
+  if (!state.plans[ds]) state.plans[ds] = {};
+  const ent = planEntry(state.plans[ds], hour) || { text: '', done: false, links: [] };
+  ent.text = ent.text.trim() ? ent.text + ', ' + label : label;
+  ent.links.push({ taskId: task.id, sid: sub ? sub.id : null });
+  ent.done = false;
+  state.plans[ds][hour] = ent;
+  save();
+  renderToday();
+}
+
+/* 시간대 완료 체크 → 연결된 할 일 완료 + 완료 이력 반영 */
+function togglePlanDone(ds, h, done) {
+  if (!state.plans[ds]) state.plans[ds] = {};
+  const ent = planEntry(state.plans[ds], h);
+  if (!ent || !ent.text.trim()) return;
+  const nowIso = new Date().toISOString();
+  const hh = `${String(h).padStart(2, '0')}:00`;
+  if (done) {
+    ent.done = true;
+    ent.doneAt = nowIso;
+    let completedTask = false;
+    for (const l of ent.links) {
+      const t = state.tasks.find(x => x.id === l.taskId);
+      if (!t) continue;
+      if (l.sid) {
+        const s = (t.subtasks || []).find(x => x.id === l.sid);
+        if (s && !s.done) s.done = true;
+      } else if (!t.done) {
+        t.done = true;
+        t.completedAt = nowIso;
+        t.completionNote = `오늘 시간 계획(${hh})에서 완료 처리`;
+        completedTask = true;
+      }
+    }
+    if (!completedTask && !ent.histId) {
+      // 연결된 할 일이 없으면 계획 내용 그대로 완료 이력에 기록
+      const rec = {
+        id: uid(), title: ent.text.trim(),
+        important: false, urgent: false,
+        dueDate: ds, createdAt: nowIso,
+        done: true, completedAt: nowIso,
+        completionNote: `오늘 시간 계획(${hh})에서 완료`,
+        memo: '', subtasks: [], fromPlan: true
+      };
+      state.tasks.push(rec);
+      ent.histId = rec.id;
+    }
+  } else {
+    ent.done = false;
+    delete ent.doneAt;
+    if (ent.histId) {
+      state.tasks = state.tasks.filter(t => t.id !== ent.histId);
+      delete ent.histId;
+    }
+    for (const l of ent.links) {
+      const t = state.tasks.find(x => x.id === l.taskId);
+      if (!t) continue;
+      if (l.sid) {
+        const s = (t.subtasks || []).find(x => x.id === l.sid);
+        if (s) s.done = false;
+      } else if (t.done) {
+        t.done = false;
+        t.completedAt = null;
+        t.completionNote = '';
+      }
+    }
+  }
+  state.plans[ds][h] = ent;
+  save();
+  renderToday();
+  renderSidebarInfo();
+}
+
 function renderToday() {
   const ds = todayStr();
   const d = new Date();
@@ -558,10 +577,14 @@ function renderToday() {
   let html = '';
   for (let h = HOUR_START; h <= HOUR_END; h++) {
     const isNow = h === nowHour ? 'now' : '';
-    html += `<div class="time-row ${isNow}">
+    const ent = planEntry(plan, h);
+    const hasText = !!(ent && ent.text.trim());
+    html += `<div class="time-row ${isNow}" data-hour="${h}">
       <div class="time-label">${String(h).padStart(2, '0')}:00</div>
-      <input class="time-input ${selectedHour === h ? 'selected' : ''}" data-hour="${h}"
-             value="${esc(plan[h] || '')}" placeholder="">
+      <input type="checkbox" class="time-check" data-hour="${h}" title="완료 체크"
+             ${ent && ent.done ? 'checked' : ''} ${hasText ? '' : 'disabled'}>
+      <input class="time-input ${selectedHour === h ? 'selected' : ''} ${ent && ent.done ? 'done' : ''}" data-hour="${h}"
+             value="${esc(ent ? ent.text : '')}" placeholder="">
     </div>`;
   }
   document.getElementById('timeTable').innerHTML = html;
@@ -570,13 +593,41 @@ function renderToday() {
     inp.addEventListener('input', () => {
       const h = inp.dataset.hour;
       if (!state.plans[ds]) state.plans[ds] = {};
-      if (inp.value.trim()) state.plans[ds][h] = inp.value;
+      const ent = planEntry(state.plans[ds], h) || { text: '', done: false, links: [] };
+      ent.text = inp.value;
+      if (inp.value.trim()) state.plans[ds][h] = ent;
       else delete state.plans[ds][h];
+      const cb = inp.closest('.time-row').querySelector('.time-check');
+      cb.disabled = !inp.value.trim();
       save();
     });
     inp.addEventListener('focus', () => {
       selectedHour = Number(inp.dataset.hour);
       document.querySelectorAll('.time-input').forEach(i => i.classList.toggle('selected', i === inp));
+    });
+  });
+
+  document.querySelectorAll('.time-check').forEach(cb => {
+    cb.addEventListener('change', () => togglePlanDone(ds, Number(cb.dataset.hour), cb.checked));
+  });
+
+  // 드래그 앤 드롭 대상: 시간대 행
+  document.querySelectorAll('.time-row').forEach(row => {
+    row.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+      row.classList.add('drag-over');
+    });
+    row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
+    row.addEventListener('drop', e => {
+      e.preventDefault();
+      row.classList.remove('drag-over');
+      let data;
+      try { data = JSON.parse(e.dataTransfer.getData('text/plain')); } catch (err) { return; }
+      const task = state.tasks.find(t => t.id === data.id);
+      if (!task) return;
+      const sub = data.sid ? (task.subtasks || []).find(s => s.id === data.sid) : null;
+      insertIntoHour(ds, Number(row.dataset.hour), task, sub);
     });
   });
 
@@ -599,37 +650,33 @@ function renderToday() {
     poolWrap.innerHTML = `<div class="hint">오늘까지 할 일이 없습니다 🎉</div>`;
   } else {
     const subItemHTML = x =>
-      `<div class="pool-item ${quadOf(x.t)}" data-id="${x.t.id}" data-sid="${x.s.id}">📋 ${esc(x.s.text)} <span class="pool-due">${esc(x.t.title)}${x.s.due > ds ? ' · ' + fmtKorean(x.s.due) : ''}</span></div>`;
+      `<div class="pool-item ${quadOf(x.t)}" draggable="true" data-id="${x.t.id}" data-sid="${x.s.id}">📋 ${esc(x.s.text)} <span class="pool-due">${esc(x.t.title)}${x.s.due > ds ? ' · ' + fmtKorean(x.s.due) : ''}</span></div>`;
     const upcomingItems = [
       ...upcoming.map(t => ({ kind: 'task', date: t.dueDate, t })),
       ...subUpcoming.map(x => ({ kind: 'sub', date: x.s.due, t: x.t, s: x.s }))
     ].sort((a, b) => a.date.localeCompare(b.date));
     poolWrap.innerHTML =
       pool.map(t =>
-        `<div class="pool-item ${quadOf(t)}" data-id="${t.id}">${esc(t.title)}</div>`).join('') +
+        `<div class="pool-item ${quadOf(t)}" draggable="true" data-id="${t.id}">${esc(t.title)}</div>`).join('') +
       subToday.map(subItemHTML).join('') +
       (upcomingItems.length ? `<div class="pool-sub">다가오는 마감 (7일 이내)</div>` +
         upcomingItems.map(it => it.kind === 'task'
-          ? `<div class="pool-item ${quadOf(it.t)}" data-id="${it.t.id}">${esc(it.t.title)} <span class="pool-due">${fmtKorean(it.t.dueDate)}</span></div>`
+          ? `<div class="pool-item ${quadOf(it.t)}" draggable="true" data-id="${it.t.id}">${esc(it.t.title)} <span class="pool-due">${fmtKorean(it.t.dueDate)}</span></div>`
           : subItemHTML(it)).join('') : '');
     poolWrap.querySelectorAll('.pool-item').forEach(item => {
+      item.addEventListener('dragstart', e => {
+        e.dataTransfer.setData('text/plain', JSON.stringify({ id: item.dataset.id, sid: item.dataset.sid || null }));
+        e.dataTransfer.effectAllowed = 'copy';
+      });
       item.addEventListener('click', () => {
         const task = state.tasks.find(t => t.id === item.dataset.id);
         if (!task) return;
-        let label = task.title;
-        if (item.dataset.sid) {
-          const s = (task.subtasks || []).find(x => x.id === item.dataset.sid);
-          if (s) label = `${s.text} (${task.title})`;
-        }
+        const sub = item.dataset.sid ? (task.subtasks || []).find(x => x.id === item.dataset.sid) : null;
         if (selectedHour === null) {
-          alert('먼저 왼쪽에서 넣을 시간대 칸을 클릭해 주세요.');
+          alert('먼저 왼쪽에서 넣을 시간대 칸을 클릭하거나, 원하는 시간대로 드래그해 주세요.');
           return;
         }
-        if (!state.plans[ds]) state.plans[ds] = {};
-        const cur = state.plans[ds][selectedHour] || '';
-        state.plans[ds][selectedHour] = cur ? cur + ', ' + label : label;
-        save();
-        renderToday();
+        insertIntoHour(ds, selectedHour, task, sub);
       });
     });
   }
@@ -645,7 +692,22 @@ function occursToday(r, d) {
     const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
     return d.getDate() === Math.min(r.dayOfMonth, lastDay); // 31일 설정 + 30일까지인 달 → 말일에 실행
   }
+  if (r.repeat === 'yearly') {
+    if (d.getMonth() + 1 !== r.month) return false;
+    const lastDay = new Date(d.getFullYear(), r.month, 0).getDate();
+    return d.getDate() === Math.min(r.dayOfMonth, lastDay); // 2/29 설정 + 평년 → 2/28
+  }
   return false;
+}
+
+/* 매년 루틴: 다가오는(올해 또는 내년) 마감 날짜 */
+function yearlyDueDate(r, from) {
+  const mk = y => {
+    const lastDay = new Date(y, r.month, 0).getDate();
+    return fmtDate(new Date(y, r.month - 1, Math.min(r.dayOfMonth, lastDay)));
+  };
+  const cur = mk(from.getFullYear());
+  return cur >= fmtDate(from) ? cur : mk(from.getFullYear() + 1);
 }
 
 /* 해당 날짜에 예정된 루틴 (이미 할 일로 생성된 날은 제외 → 중복 표시 방지) */
@@ -659,33 +721,38 @@ function repeatDesc(r) {
   let base = '';
   if (r.repeat === 'daily') base = '매일';
   else if (r.repeat === 'weekly') base = '매주 ' + (r.days || []).slice().sort().map(i => DAY_NAMES[i]).join('·');
+  else if (r.repeat === 'yearly') base = `매년 ${r.month}월 ${r.dayOfMonth}일`;
   else base = `매월 ${r.dayOfMonth}일`;
   return `${base} ${r.time}`;
 }
 
-/* 주기가 된 루틴을 오늘의 할 일로 자동 등록 */
+/* 주기가 된 루틴을 할 일로 자동 등록 (매년 루틴은 다가오는 마감을 미리 등록) */
 function generateRoutineTasks() {
   const today = todayStr();
   let changed = false;
   for (const r of state.routines) {
-    if (!r.enabled || !occursToday(r) || r.lastDate === today) continue;
-    if (!state.tasks.some(t => t.routineId === r.id && t.dueDate === today)) {
+    if (!r.enabled) continue;
+    const isYearly = r.repeat === 'yearly';
+    const due = isYearly ? yearlyDueDate(r, new Date()) : today;
+    if (isYearly ? r.lastDate === due : (!occursToday(r) || r.lastDate === today)) continue;
+    if (!state.tasks.some(t => t.routineId === r.id && t.dueDate === due)) {
       state.tasks.push({
         id: uid(),
         title: r.title,
         important: r.important,
         urgent: r.urgent,
-        dueDate: today,
+        dueDate: due,
         createdAt: new Date().toISOString(),
         done: false,
         completedAt: null,
         completionNote: '',
         memo: '',
         subtasks: [],
-        routineId: r.id
+        routineId: r.id,
+        yearly: isYearly
       });
     }
-    r.lastDate = today;
+    r.lastDate = due;
     changed = true;
   }
   if (changed) save();
@@ -761,6 +828,7 @@ rDaysWrap.addEventListener('click', e => {
 document.getElementById('rRepeat').addEventListener('change', e => {
   rDaysWrap.classList.toggle('hidden', e.target.value !== 'weekly');
   document.getElementById('rDomWrap').classList.toggle('hidden', e.target.value !== 'monthly');
+  document.getElementById('rYearWrap').classList.toggle('hidden', e.target.value !== 'yearly');
 });
 
 document.getElementById('routineForm').addEventListener('submit', e => {
@@ -775,7 +843,10 @@ document.getElementById('routineForm').addEventListener('submit', e => {
     errEl.textContent = '매주 반복은 요일을 하나 이상 선택해 주세요.';
     return;
   }
-  const dayOfMonth = Math.min(31, Math.max(1, Number(document.getElementById('rDom').value) || 1));
+  const month = Math.min(12, Math.max(1, Number(document.getElementById('rMonth').value) || 1));
+  const dayOfMonth = repeat === 'yearly'
+    ? Math.min(31, Math.max(1, Number(document.getElementById('rYearDay').value) || 1))
+    : Math.min(31, Math.max(1, Number(document.getElementById('rDom').value) || 1));
 
   state.routines.push({
     id: uid(),
@@ -783,6 +854,7 @@ document.getElementById('routineForm').addEventListener('submit', e => {
     repeat,
     days,
     dayOfMonth,
+    month,
     time: document.getElementById('rTime').value || '09:00',
     important: document.getElementById('rImportant').value === '1',
     urgent: document.getElementById('rUrgent').value === '1',

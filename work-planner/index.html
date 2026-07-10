@@ -12,7 +12,6 @@
     <nav class="sidebar">
       <h1 class="logo">📋 업무 플래너</h1>
       <button class="nav-btn active" data-view="list">📝 할 일 목록</button>
-      <button class="nav-btn" data-view="yearly">📌 연간 업무</button>
       <button class="nav-btn" data-view="monthly">📅 월간 업무</button>
       <button class="nav-btn" data-view="weekly">🗓️ 주간 업무</button>
       <button class="nav-btn" data-view="daily">📆 일간 업무</button>
@@ -51,33 +50,6 @@
         </div>
 
         <div id="taskList"></div>
-      </section>
-
-      <!-- 연간 업무계획 -->
-      <section class="view hidden" id="view-yearly">
-        <div class="view-header">
-          <h2 id="yearlyTitle">연간 업무계획</h2>
-          <div class="nav-arrows">
-            <button class="btn" id="yearPrev">◀</button>
-            <button class="btn" id="yearNow">올해</button>
-            <button class="btn" id="yearNext">▶</button>
-          </div>
-        </div>
-        <form class="add-form" id="yearlyForm">
-          <input type="text" id="yTitle" placeholder="연간 업무 (예: 상반기 결산 보고)" required>
-          <input type="date" id="yDue" title="마감기한" required>
-          <select id="yImportant">
-            <option value="1">중요한 일</option>
-            <option value="0">덜 중요한 일</option>
-          </select>
-          <select id="yUrgent">
-            <option value="1">급한 일</option>
-            <option value="0" selected>천천히 해도 되는 일</option>
-          </select>
-          <button type="submit" class="btn primary">+ 등록</button>
-        </form>
-        <div class="hint" style="margin-bottom:12px">여기에 등록한 업무는 할 일 목록·월간/주간/일간 조회에 함께 나타나고, 마감 7일 전부터 오늘 계획에도 표시됩니다.</div>
-        <div id="yearlyList"></div>
       </section>
 
       <!-- 3. 월간 업무 -->
@@ -123,13 +95,13 @@
       <section class="view hidden" id="view-today">
         <div class="view-header">
           <h2 id="todayPlanTitle">오늘 시간대별 계획</h2>
-          <div class="hint">시간대 칸을 클릭해서 계획을 입력하세요. 자동 저장됩니다.</div>
+          <div class="hint">시간대 칸을 클릭해 입력하고, 끝낸 계획은 왼쪽 체크박스로 완료 처리하세요. 자동 저장됩니다.</div>
         </div>
         <div class="today-layout">
           <div class="time-table" id="timeTable"></div>
           <aside class="today-tasks">
             <h3>오늘 마감 할 일</h3>
-            <div class="hint">클릭하면 선택한 시간대에 넣습니다</div>
+            <div class="hint">원하는 시간대로 드래그하거나, 시간대 선택 후 클릭해서 넣으세요</div>
             <div id="todayTaskPool"></div>
           </aside>
         </div>
@@ -139,7 +111,7 @@
       <section class="view hidden" id="view-routine">
         <div class="view-header">
           <h2>루틴 업무</h2>
-          <div class="hint">등록한 루틴은 반복 주기에 맞춰 할 일 목록에 자동 추가되고, 지정한 시간에 알림을 보냅니다.</div>
+          <div class="hint">등록한 루틴은 반복 주기에 맞춰 할 일 목록에 자동 추가되고, 지정한 시간에 알림을 보냅니다. 매년 루틴은 지정한 날짜가 매년 마감으로 미리 등록됩니다.</div>
         </div>
         <form class="add-form" id="routineForm">
           <input type="text" id="rTitle" placeholder="루틴 업무 이름 (예: 일일 보고 작성)" required>
@@ -147,9 +119,11 @@
             <option value="daily">매일</option>
             <option value="weekly">매주</option>
             <option value="monthly">매월</option>
+            <option value="yearly">매년</option>
           </select>
           <span class="dow-picker hidden" id="rDays"></span>
           <span class="dom-picker hidden" id="rDomWrap"><input type="number" id="rDom" min="1" max="31" value="1"> 일</span>
+          <span class="dom-picker hidden" id="rYearWrap"><input type="number" id="rMonth" min="1" max="12" value="1"> 월 <input type="number" id="rYearDay" min="1" max="31" value="1"> 일</span>
           <input type="time" id="rTime" value="09:00" title="알림 시간">
           <select id="rImportant">
             <option value="1">중요한 일</option>
