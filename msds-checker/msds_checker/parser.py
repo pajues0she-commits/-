@@ -27,7 +27,8 @@ class Ingredient:
 @dataclass
 class MsdsRecord:
     path: str
-    year: int | None = None
+    year: int | None = None       # 기준연도 (등록 시 도입일자의 연도로 설정됨)
+    doc_year: int | None = None   # MSDS 문서 자체의 개정/작성 연도 (참고용)
     product: str = ""
     manufacturer: str = ""
     ingredients: list[Ingredient] = field(default_factory=list)
@@ -236,9 +237,14 @@ def parse_file(path: str) -> MsdsRecord:
         return rec
 
     sections = _split_sections(text)
-    rec.year, year_src = extract_year(text, path)
-    if rec.year is None:
-        rec.warnings.append("연도를 찾지 못했습니다. 목록에서 더블클릭해 직접 입력하세요.")
+    # 문서의 개정/작성 연도를 추출한다. 기준연도(year)는 등록 시 도입일자의
+    # 연도로 덮어써지며, 도입일자가 없을 때만 이 값이 기준연도로 쓰인다.
+    rec.doc_year, year_src = extract_year(text, path)
+    rec.year = rec.doc_year
+    if rec.doc_year is None:
+        rec.warnings.append(
+            "문서에서 연도를 찾지 못했습니다. 도입일자를 입력하면 그 연도가 기준연도가 됩니다."
+        )
     rec.product = extract_product(text, sections)
     rec.manufacturer = extract_manufacturer(text, sections)
     if not rec.manufacturer:

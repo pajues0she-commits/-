@@ -64,7 +64,11 @@ class App:
         ttk.Label(info, text="도입일자:").pack(side="left")
         self.intro_var = tk.StringVar(value=date.today().isoformat())
         ttk.Entry(info, textvariable=self.intro_var, width=12).pack(side="left", padx=(4, 4))
-        ttk.Label(info, text="(YYYY-MM-DD, 새로 추가되는 파일에 적용)").pack(side="left")
+        ttk.Label(info, text="(YYYY-MM-DD)").pack(side="left")
+        self.base_year_label = ttk.Label(info, font=("맑은 고딕", 10, "bold"))
+        self.base_year_label.pack(side="left", padx=(14, 0))
+        self.intro_var.trace_add("write", lambda *_: self._update_base_year_label())
+        self._update_base_year_label()
 
         toolbar = ttk.Frame(self.root, padding=(8, 8, 8, 4))
         toolbar.pack(fill="x")
@@ -82,24 +86,27 @@ class App:
         dnd_hint = " — 파일을 여기로 드래그해 추가" if _HAS_DND else ""
         top = ttk.LabelFrame(
             paned,
-            text=f"누적 관리 MSDS (연도·도입일자는 해당 칸 더블클릭으로 수정){dnd_hint}",
+            text="누적 관리 MSDS (기준연도 = 도입일자의 연도 · 도입일자/기준연도 칸 "
+                 f"더블클릭으로 수정){dnd_hint}",
         )
-        cols = ("intro", "year", "product", "manufacturer", "n_ing", "note")
+        cols = ("intro", "year", "docyear", "product", "manufacturer", "n_ing", "note")
         self.file_tree = ttk.Treeview(top, columns=cols, show="tree headings", height=7)
         self.file_tree.heading("#0", text="파일명")
         self.file_tree.heading("intro", text="도입일자")
-        self.file_tree.heading("year", text="연도")
+        self.file_tree.heading("year", text="기준연도")
+        self.file_tree.heading("docyear", text="MSDS연도")
         self.file_tree.heading("product", text="제품명")
         self.file_tree.heading("manufacturer", text="제조사")
         self.file_tree.heading("n_ing", text="성분 수")
         self.file_tree.heading("note", text="비고")
-        self.file_tree.column("#0", width=210, anchor="w")
+        self.file_tree.column("#0", width=200, anchor="w")
         self.file_tree.column("intro", width=90, anchor="center", stretch=False)
-        self.file_tree.column("year", width=55, anchor="center", stretch=False)
-        self.file_tree.column("product", width=140, anchor="w")
-        self.file_tree.column("manufacturer", width=170, anchor="w")
+        self.file_tree.column("year", width=70, anchor="center", stretch=False)
+        self.file_tree.column("docyear", width=70, anchor="center", stretch=False)
+        self.file_tree.column("product", width=130, anchor="w")
+        self.file_tree.column("manufacturer", width=160, anchor="w")
         self.file_tree.column("n_ing", width=55, anchor="center", stretch=False)
-        self.file_tree.column("note", width=210, anchor="w")
+        self.file_tree.column("note", width=200, anchor="w")
         self.file_tree.tag_configure("warn", foreground="#b45309")
         self.file_tree.bind("<Double-1>", self._edit_cell)
         fsb = ttk.Scrollbar(top, orient="vertical", command=self.file_tree.yview)
@@ -148,13 +155,29 @@ class App:
     def _set_status(self, msg: str) -> None:
         self.status.configure(text=msg)
 
+    def _update_base_year_label(self) -> None:
+        y = storage.intro_year(self.intro_var.get().strip())
+        if y is not None:
+            self.base_year_label.configure(text=f"→ 기준연도: {y}년", foreground="#1d4ed8")
+        else:
+            self.base_year_label.configure(
+                text="→ 기준연도: 도입일자를 입력하세요", foreground="#b45309"
+            )
+
     def _current_intro_date(self) -> str:
         s = self.intro_var.get().strip()
         if s and not _DATE_RE.match(s):
             messagebox.showwarning(
                 "도입일자 형식",
-                f"도입일자 '{s}'가 YYYY-MM-DD 형식이 아닙니다. 그대로 저장은 되지만 "
-                "정렬이 올바르지 않을 수 있습니다.",
+                f"도입일자 '{s}'가 YYYY-MM-DD 형식이 아닙니다.\n"
+                "도입일자의 연도가 기준연도로 인식되므로 형식이 틀리면 "
+                "기준연도를 정할 수 없습니다.",
+            )
+        elif not s:
+            messagebox.showwarning(
+                "도입일자 미입력",
+                "도입일자가 비어 있습니다. 도입일자의 연도가 기준연도로 인식되며, "
+                "비워 두면 MSDS 문서의 개정연도를 기준연도로 대신 사용합니다.",
             )
         return s
 
@@ -243,6 +266,7 @@ class App:
                 "", "end", iid=e.id, text=rec.filename, tags=tags,
                 values=(e.intro_date or "-",
                         rec.year if rec.year is not None else "?",
+                        rec.doc_year if rec.doc_year is not None else "-",
                         rec.product, rec.manufacturer,
                         len(rec.ingredients), note),
             )
@@ -255,10 +279,11 @@ class App:
         if entry is None:
             return
         column = self.file_tree.identify_column(event.x)
-        if column == "#1":  # 도입일자
+        if column in ("#1", "#2"):  # 도입일자 / 기준연도 (기준연도 = 도입일자의 연도)
             value = simpledialog.askstring(
                 "도입일자 수정",
-                f"{entry.record.filename}\n사업장 도입일자 (YYYY-MM-DD):",
+                f"{entry.record.filename}\n사업장 도입일자 (YYYY-MM-DD)\n"
+                "※ 도입일자의 연도가 기준연도로 인식됩니다:",
                 parent=self.root, initialvalue=entry.intro_date or date.today().isoformat(),
             )
             if value is None:
@@ -268,16 +293,9 @@ class App:
                 messagebox.showwarning("형식 오류", "YYYY-MM-DD 형식으로 입력하세요.")
                 return
             entry.intro_date = value
-        else:  # 그 외 칸: 기준 연도 수정
-            year = simpledialog.askinteger(
-                "연도 수정", f"{entry.record.filename}\n이 MSDS의 기준 연도:",
-                parent=self.root, initialvalue=entry.record.year or date.today().year,
-                minvalue=1900, maxvalue=2100,
-            )
-            if year is None:
-                return
-            entry.record.year = year
-            entry.record.warnings = [w for w in entry.record.warnings if "연도" not in w]
+            storage.apply_base_year(entry.record, value)
+        else:
+            return
         storage.save(self.history)
         self._refresh_file_list()
 

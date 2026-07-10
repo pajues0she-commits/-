@@ -48,8 +48,10 @@ def export_excel(
     ws["A2"] = f"작성부서: {department or '-'}"
     ws["A3"] = f"작성자: {author or '-'}"
     ws["A4"] = f"출력일: {date.today().isoformat()}"
+    ws["A5"] = "※ 기준연도 = 도입일자의 연도 (도입일자가 없으면 MSDS 문서의 개정연도)"
+    ws["A5"].font = Font(size=9, color="777777")
 
-    headers = ["No.", "도입일자", "파일명", "기준연도", "제품명", "제조사",
+    headers = ["No.", "도입일자", "파일명", "기준연도", "MSDS 문서연도", "제품명", "제조사",
                "성분 수", "성분 상세 (성분명/CAS/함유량)", "작성부서", "작성자", "등록일시"]
     header_row = 6
     for col, h in enumerate(headers, start=1):
@@ -72,16 +74,17 @@ def export_excel(
             ) if p)
             for ing in r.ingredients
         )
-        values = [i, e.intro_date, r.filename, r.year or "?", r.product,
+        values = [i, e.intro_date, r.filename, r.year or "?",
+                  r.doc_year or "-", r.product,
                   r.manufacturer, len(r.ingredients), detail,
                   e.department, e.author, e.added_at.replace("T", " ")]
         for col, v in enumerate(values, start=1):
             c = ws.cell(row=header_row + i, column=col, value=v)
             c.border = border
-            if col in (1, 2, 4, 7):
+            if col in (1, 2, 4, 5, 8):
                 c.alignment = center
 
-    widths = [5, 12, 26, 9, 18, 22, 8, 60, 12, 10, 19]
+    widths = [5, 12, 26, 9, 12, 18, 22, 8, 60, 12, 10, 19]
     for col, w in enumerate(widths, start=1):
         ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = w
     ws.freeze_panes = ws.cell(row=header_row + 1, column=1)

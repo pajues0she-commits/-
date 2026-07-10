@@ -9,12 +9,36 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 
 from .parser import Ingredient, MsdsRecord
+
+_INTRO_YEAR_RE = re.compile(r"^\s*((?:19|20)\d{2})")
+
+
+def intro_year(intro_date: str) -> int | None:
+    """도입일자(YYYY-MM-DD)에서 기준연도를 얻는다. 형식이 아니면 None."""
+    m = _INTRO_YEAR_RE.match(intro_date or "")
+    return int(m.group(1)) if m else None
+
+
+def apply_base_year(record: MsdsRecord, intro_date: str) -> None:
+    """도입일자의 연도를 기준연도로 설정한다.
+
+    도입일자가 없거나 연도를 읽을 수 없으면 MSDS 문서의 개정/작성 연도
+    (doc_year)를 그대로 기준연도로 사용한다.
+    """
+    y = intro_year(intro_date)
+    if y is not None:
+        record.year = y
+        # 도입일자로 기준연도가 정해졌으므로 연도 관련 경고는 해소됨
+        record.warnings = [w for w in record.warnings if "연도" not in w]
+    else:
+        record.year = record.doc_year
 
 
 def data_dir() -> str:
@@ -53,6 +77,7 @@ class HistoryEntry:
             "record": {
                 "path": r.path,
                 "year": r.year,
+                "doc_year": r.doc_year,
                 "product": r.product,
                 "manufacturer": r.manufacturer,
                 "ingredients": [
@@ -69,6 +94,8 @@ class HistoryEntry:
         record = MsdsRecord(
             path=rd.get("path", ""),
             year=rd.get("year"),
+            # 구버전 데이터에는 doc_year가 없으므로 기존 year를 문서 연도로 간주
+            doc_year=rd.get("doc_year", rd.get("year")),
             product=rd.get("product", ""),
             manufacturer=rd.get("manufacturer", ""),
             ingredients=[
@@ -148,7 +175,11 @@ def add_record(
     author: str = "",
     copy_file: bool = True,
 ) -> HistoryEntry:
-    """레코드를 누적 이력에 추가하고 저장한다. 원본 파일은 저장소로 복사."""
+    """레코드를 누적 이력에 추가하고 저장한다. 원본 파일은 저장소로 복사.
+
+    기준연도는 도입일자(intro_date)의 연도로 설정된다.
+    """
+    apply_base_year(record, intro_date)
     entry_id = uuid.uuid4().hex
     source = record.path
     if copy_file and os.path.exists(source):

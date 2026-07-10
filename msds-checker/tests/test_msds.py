@@ -41,7 +41,8 @@ class TestNormalizeCompany(unittest.TestCase):
 class TestParser(unittest.TestCase):
     def test_parse_2022(self):
         rec = parse_file(sample("MSDS_신나A_2022.txt"))
-        self.assertEqual(rec.year, 2022)  # 개정일(2022) > 작성일(2020) 우선
+        self.assertEqual(rec.doc_year, 2022)  # 개정일(2022) > 작성일(2020) 우선
+        self.assertEqual(rec.year, 2022)      # 등록 전에는 문서 연도가 기준연도
         self.assertEqual(rec.product, "신나 A-100")
         self.assertEqual(rec.manufacturer, "대한케미칼(주)")
         self.assertEqual([i.cas for i in rec.ingredients],
@@ -63,7 +64,7 @@ class TestParser(unittest.TestCase):
             path = f.name
         try:
             rec = parse_file(path)
-            self.assertEqual(rec.year, 2021)
+            self.assertEqual(rec.doc_year, 2021)
         finally:
             os.unlink(path)
 
@@ -181,6 +182,36 @@ class TestStorage(unittest.TestCase):
         self.assertEqual(storage.load().entries, [])
         self.assertFalse(os.path.exists(rec.path))
 
+    def test_base_year_follows_intro_date(self):
+        """기준연도는 도입일자의 연도. MSDS 문서 연도(개정일)와 달라도 도입일자 우선."""
+        from msds_checker import storage
+        history = storage.load()
+        rec = parse_file(sample("MSDS_신나A_2022.txt"))  # 문서 개정연도 2022
+        storage.add_record(
+            history, rec, intro_date="2025-01-10", copy_file=False,
+        )
+        self.assertEqual(rec.year, 2025)       # 기준연도 = 도입일자 연도
+        self.assertEqual(rec.doc_year, 2022)   # 문서 연도는 참고용으로 유지
+        loaded = storage.load()
+        self.assertEqual(loaded.entries[0].record.year, 2025)
+        self.assertEqual(loaded.entries[0].record.doc_year, 2022)
+
+    def test_base_year_falls_back_to_doc_year(self):
+        """도입일자가 없으면 문서 개정연도를 기준연도로 사용."""
+        from msds_checker import storage
+        history = storage.load()
+        rec = parse_file(sample("MSDS_신나A_2023.txt"))
+        storage.add_record(history, rec, intro_date="", copy_file=False)
+        self.assertEqual(rec.year, 2023)
+        self.assertEqual(rec.doc_year, 2023)
+
+    def test_intro_year_parsing(self):
+        from msds_checker.storage import intro_year
+        self.assertEqual(intro_year("2026-03-15"), 2026)
+        self.assertEqual(intro_year("1999-01-01"), 1999)
+        self.assertIsNone(intro_year(""))
+        self.assertIsNone(intro_year("3월 15일"))
+
 
 class TestExporter(unittest.TestCase):
     def setUp(self):
@@ -219,8 +250,10 @@ class TestExporter(unittest.TestCase):
         self.assertEqual(wb.sheetnames, ["누적 이력", "연도별 판정"])
         ws = wb["누적 이력"]
         self.assertEqual(ws["B7"].value, "2022-03-15")       # 첫 데이터 행 도입일자
-        self.assertEqual(ws["I7"].value, "안전보건팀")
-        self.assertEqual(ws["J7"].value, "홍길동")
+        self.assertEqual(ws["D7"].value, 2022)               # 기준연도 = 도입일자 연도
+        self.assertEqual(ws["E7"].value, 2022)               # MSDS 문서연도
+        self.assertEqual(ws["J7"].value, "안전보건팀")
+        self.assertEqual(ws["K7"].value, "홍길동")
         ws2 = wb["연도별 판정"]
         self.assertEqual(ws2["A5"].value, "제조사")
         self.assertEqual(ws2["D5"].value, "▲ 한국정밀화학 주식회사")
