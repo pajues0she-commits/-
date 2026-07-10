@@ -7,10 +7,10 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from . import __version__
-from .comparator import CHANGED, UNCHANGED, UNKNOWN, build_csv, build_report, compare_all
+from .comparator import (
+    MatrixRow, build_matrix, build_matrix_csv, build_report, compare_all,
+)
 from .parser import MsdsRecord, parse_file
-
-_VERDICT_TAG = {CHANGED: "changed", UNCHANGED: "unchanged", UNKNOWN: "unknown"}
 
 
 class App:
@@ -19,6 +19,8 @@ class App:
         self.records: list[MsdsRecord] = []
         self.comparisons = []
         self.warnings: list[str] = []
+        self.matrix_years: list[int] = []
+        self.matrix_rows: list[MatrixRow] = []
 
         root.title(f"MSDS 연도별 변경 판정 v{__version__}")
         root.geometry("980x680")
@@ -64,21 +66,13 @@ class App:
         fsb.pack(side="right", fill="y")
         paned.add(top, weight=1)
 
-        # 중단: 연도별 판정 요약
-        mid = ttk.LabelFrame(paned, text="연도별 판정 결과")
-        rcols = ("pair", "mfr", "mfr_detail", "ing")
-        self.result_tree = ttk.Treeview(mid, columns=rcols, show="headings", height=5)
-        self.result_tree.heading("pair", text="비교 구간")
-        self.result_tree.heading("mfr", text="제조사 변경")
-        self.result_tree.heading("mfr_detail", text="제조사 상세")
-        self.result_tree.heading("ing", text="성분 변경")
-        self.result_tree.column("pair", width=130, anchor="center", stretch=False)
-        self.result_tree.column("mfr", width=90, anchor="center", stretch=False)
-        self.result_tree.column("mfr_detail", width=340, anchor="w")
-        self.result_tree.column("ing", width=90, anchor="center", stretch=False)
+        # 중단: 연도×항목 변경 매트릭스
+        mid = ttk.LabelFrame(paned, text="연도별 판정 결과  (▲ = 직전 연도 대비 변경,  — = 해당 연도에 없음)")
+        self.result_tree = ttk.Treeview(mid, columns=(), show="tree headings", height=6)
+        self.result_tree.heading("#0", text="항목")
+        self.result_tree.column("#0", width=230, anchor="w")
         self.result_tree.tag_configure("changed", foreground="#b91c1c")
-        self.result_tree.tag_configure("unchanged", foreground="#15803d")
-        self.result_tree.tag_configure("unknown", foreground="#6b7280")
+        self.result_tree.tag_configure("mfr", font=("맑은 고딕", 10, "bold"))
         rsb = ttk.Scrollbar(mid, orient="vertical", command=self.result_tree.yview)
         self.result_tree.configure(yscrollcommand=rsb.set)
         self.result_tree.pack(side="left", fill="both", expand=True)
@@ -136,6 +130,8 @@ class App:
             return
         self.records = []
         self.comparisons = []
+        self.matrix_years = []
+        self.matrix_rows = []
         self._refresh_file_list()
         self._show_results()
 
@@ -173,26 +169,35 @@ class App:
             messagebox.showinfo("안내", "서로 다른 연도의 MSDS 파일을 2개 이상 추가하세요.")
             return
         self.comparisons, self.warnings = compare_all(self.records)
+        self.matrix_years, self.matrix_rows, _ = build_matrix(self.records)
         self._show_results()
-        n_changed = sum(
-            1 for c in self.comparisons
-            if CHANGED in (c.manufacturer_verdict, c.ingredient_verdict)
-        )
+        n_changed = sum(sum(r.changed) for r in self.matrix_rows)
         self._set_status(
-            f"판정 완료: 비교 구간 {len(self.comparisons)}개, 변경 감지 {n_changed}건."
+            f"판정 완료: {len(self.matrix_years)}개 연도 비교, 변경 {n_changed}건 감지 (▲ 표시)."
         )
 
     def _show_results(self) -> None:
         self.result_tree.delete(*self.result_tree.get_children())
-        for c in self.comparisons:
-            worst = CHANGED if CHANGED in (c.manufacturer_verdict, c.ingredient_verdict) else (
-                UNKNOWN if UNKNOWN in (c.manufacturer_verdict, c.ingredient_verdict) else UNCHANGED
-            )
+        years = getattr(self, "matrix_years", [])
+        cols = [str(y) for y in years]
+        self.result_tree.configure(columns=cols)
+        self.result_tree.heading("#0", text="항목")
+        self.result_tree.column("#0", width=230, anchor="w")
+        for c in cols:
+            self.result_tree.heading(c, text=f"{c}년")
+            self.result_tree.column(c, width=140, anchor="center")
+        for row in getattr(self, "matrix_rows", []):
+            values = [
+                f"▲ {v}" if ch else v
+                for v, ch in zip(row.values, row.changed)
+            ]
+            tags = []
+            if row.any_changed:
+                tags.append("changed")
+            if row.kind == "manufacturer":
+                tags.append("mfr")
             self.result_tree.insert(
-                "", "end", tags=(_VERDICT_TAG[worst],),
-                values=(f"{c.year_from} → {c.year_to}",
-                        c.manufacturer_verdict, c.manufacturer_detail,
-                        c.ingredient_verdict),
+                "", "end", text=row.label, values=values, tags=tuple(tags),
             )
         report = build_report(self.records, self.comparisons, self.warnings) \
             if self.records else ""
@@ -214,7 +219,7 @@ class App:
         if not path:
             return
         if path.lower().endswith(".csv"):
-            data = build_csv(self.comparisons)
+            data = build_matrix_csv(self.matrix_years, self.matrix_rows)
             with open(path, "w", encoding="utf-8-sig", newline="") as f:
                 f.write(data)
         else:

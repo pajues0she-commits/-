@@ -8,6 +8,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from msds_checker.comparator import (  # noqa: E402
     CHANGED, UNCHANGED, UNKNOWN, compare_all, build_report, build_csv,
+    build_matrix, build_matrix_csv,
 )
 from msds_checker.parser import (  # noqa: E402
     is_valid_cas, normalize_company, parse_file,
@@ -101,6 +102,36 @@ class TestComparator(unittest.TestCase):
         comps, warns = compare_all([parse_file(sample("MSDS_신나A_2022.txt"))])
         self.assertEqual(comps, [])
         self.assertTrue(any("2개 이상" in w for w in warns))
+
+    def test_matrix(self):
+        years, rows, _ = build_matrix(self.records)
+        self.assertEqual(years, [2022, 2023, 2024])
+        # 첫 행은 제조사, 2024년에만 변경 표시
+        mfr = rows[0]
+        self.assertEqual(mfr.label, "제조사")
+        self.assertEqual(mfr.values,
+                         ["대한케미칼(주)", "대한케미칼(주)", "한국정밀화학 주식회사"])
+        self.assertEqual(mfr.changed, [False, False, True])
+        by_label = {r.label: r for r in rows}
+        # 톨루엔: 2023년 함유량 변경
+        tol = by_label["톨루엔 (108-88-3)"]
+        self.assertEqual(tol.values, ["40 - 50", "30 - 40", "30 - 40"])
+        self.assertEqual(tol.changed, [False, True, False])
+        # 에탄올: 2022년 없음 → 2023년 추가
+        eth = by_label["에탄올 (64-17-5)"]
+        self.assertEqual(eth.values, ["—", "5 - 10", "5 - 10"])
+        self.assertEqual(eth.changed, [False, True, False])
+        # 크실렌: 변경 없음
+        xyl = by_label["크실렌 (1330-20-7)"]
+        self.assertFalse(xyl.any_changed)
+
+    def test_matrix_csv(self):
+        years, rows, _ = build_matrix(self.records)
+        csv_text = build_matrix_csv(years, rows)
+        lines = csv_text.strip().splitlines()
+        self.assertEqual(lines[0], "항목,2022년,2023년,2024년,변경 여부")
+        self.assertEqual(len(lines), 1 + len(rows))
+        self.assertIn("▲ 한국정밀화학 주식회사", csv_text)
 
     def test_report_and_csv(self):
         report = build_report(self.records, self.comparisons, self.warnings)

@@ -126,6 +126,76 @@ def compare_all(records: list[MsdsRecord]) -> tuple[list[YearComparison], list[s
     return comparisons, warnings
 
 
+# ---------------------------------------------------------------- 변경 매트릭스
+
+@dataclass
+class MatrixRow:
+    """연도별 매트릭스의 한 행. values/changed는 연도 오름차순."""
+    label: str            # "제조사" 또는 "성분명 (CAS)"
+    kind: str             # "manufacturer" | "ingredient"
+    values: list[str]     # 연도별 표시 값 ("—" = 해당 연도에 없음)
+    changed: list[bool]   # 직전 연도 대비 변경 여부 (첫 연도는 항상 False)
+
+    @property
+    def any_changed(self) -> bool:
+        return any(self.changed)
+
+
+def build_matrix(records: list[MsdsRecord]) -> tuple[list[int], list[MatrixRow], list[str]]:
+    """연도를 열로, 제조사·각 성분을 행으로 하는 변경 매트릭스를 만든다."""
+    grouped, warnings = group_by_year(records)
+    years = sorted(grouped)
+    rows: list[MatrixRow] = []
+    if not years:
+        return years, rows, warnings
+
+    # 제조사 행
+    mfr_values, mfr_changed = [], []
+    for i, y in enumerate(years):
+        name = grouped[y].manufacturer
+        mfr_values.append(name or "(추출 실패)")
+        if i == 0:
+            mfr_changed.append(False)
+        else:
+            prev = grouped[years[i - 1]].manufacturer
+            mfr_changed.append(
+                bool(prev and name)
+                and normalize_company(prev) != normalize_company(name)
+            )
+    rows.append(MatrixRow("제조사", "manufacturer", mfr_values, mfr_changed))
+
+    # 성분 행: 전 연도에 걸쳐 등장한 성분을 첫 등장 순서로 나열
+    order: list[str] = []
+    labels: dict[str, str] = {}
+    per_year: dict[str, dict[int, Ingredient]] = {}
+    for y in years:
+        for ing in grouped[y].ingredients:
+            key = ing.key()
+            if key not in labels:
+                order.append(key)
+                labels[key] = f"{ing.name or '(이름 미상)'}" + (f" ({ing.cas})" if ing.cas else "")
+            per_year.setdefault(key, {})[y] = ing
+
+    for key in order:
+        values, changed = [], []
+        for i, y in enumerate(years):
+            ing = per_year[key].get(y)
+            values.append((ing.content or "포함") if ing else "—")
+            if i == 0:
+                changed.append(False)
+                continue
+            prev = per_year[key].get(years[i - 1])
+            if (ing is None) != (prev is None):
+                changed.append(True)  # 추가 또는 삭제
+            elif ing and prev and ing.content and prev.content:
+                changed.append(_normalize_content(ing.content) != _normalize_content(prev.content))
+            else:
+                changed.append(False)
+        rows.append(MatrixRow(labels[key], "ingredient", values, changed))
+
+    return years, rows, warnings
+
+
 # ---------------------------------------------------------------- 보고서
 
 def _fmt_ing(i: Ingredient) -> str:
@@ -178,6 +248,20 @@ def build_report(records: list[MsdsRecord], comparisons: list[YearComparison],
             lines.append(f"  ⚠ {w}")
 
     return "\n".join(lines)
+
+
+def build_matrix_csv(years: list[int], rows: list[MatrixRow]) -> str:
+    """연도별 매트릭스를 엑셀용 CSV로. 변경된 칸은 '▲ ' 접두어."""
+    import csv
+    import io
+
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["항목"] + [f"{y}년" for y in years] + ["변경 여부"])
+    for r in rows:
+        cells = [f"▲ {v}" if ch else v for v, ch in zip(r.values, r.changed)]
+        w.writerow([r.label] + cells + ["변경" if r.any_changed else "변경없음"])
+    return buf.getvalue()
 
 
 def build_csv(comparisons: list[YearComparison]) -> str:
