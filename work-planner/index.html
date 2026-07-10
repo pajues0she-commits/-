@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>업무 플래너</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="layout">
+    <!-- 사이드바 메뉴 -->
+    <nav class="sidebar">
+      <h1 class="logo">📋 업무 플래너</h1>
+      <button class="nav-btn active" data-view="list">📝 할 일 목록</button>
+      <button class="nav-btn" data-view="monthly">📅 월간 업무</button>
+      <button class="nav-btn" data-view="weekly">🗓️ 주간 업무</button>
+      <button class="nav-btn" data-view="daily">📆 일간 업무</button>
+      <button class="nav-btn" data-view="today">⏰ 오늘 시간 계획</button>
+      <button class="nav-btn" data-view="history">✅ 완료 이력</button>
+      <div class="sidebar-footer" id="todayInfo"></div>
+    </nav>
+
+    <!-- 메인 영역 -->
+    <main class="main">
+
+      <!-- 1. 할 일 목록 -->
+      <section class="view" id="view-list">
+        <h2>할 일 목록</h2>
+        <form class="add-form" id="addForm">
+          <input type="text" id="inputTitle" placeholder="할 일을 입력하세요" required>
+          <select id="inputImportant">
+            <option value="1">중요한 일</option>
+            <option value="0">덜 중요한 일</option>
+          </select>
+          <select id="inputUrgent">
+            <option value="1">급한 일</option>
+            <option value="0" selected>천천히 해도 되는 일</option>
+          </select>
+          <input type="date" id="inputDue" title="마감일">
+          <button type="submit" class="btn primary">+ 추가</button>
+        </form>
+
+        <div class="filter-bar" id="filterBar">
+          <button class="chip active" data-filter="all">전체</button>
+          <button class="chip q1" data-filter="q1">🔴 중요＋급함</button>
+          <button class="chip q2" data-filter="q2">🟠 중요＋여유</button>
+          <button class="chip q3" data-filter="q3">🟡 덜중요＋급함</button>
+          <button class="chip q4" data-filter="q4">🟢 덜중요＋여유</button>
+        </div>
+
+        <div id="taskList"></div>
+      </section>
+
+      <!-- 3. 월간 업무 -->
+      <section class="view hidden" id="view-monthly">
+        <div class="view-header">
+          <h2 id="monthlyTitle">월간 업무</h2>
+          <div class="nav-arrows">
+            <button class="btn" id="monthPrev">◀</button>
+            <button class="btn" id="monthToday">오늘</button>
+            <button class="btn" id="monthNext">▶</button>
+          </div>
+        </div>
+        <div class="calendar" id="monthlyCalendar"></div>
+      </section>
+
+      <!-- 3. 주간 업무 -->
+      <section class="view hidden" id="view-weekly">
+        <div class="view-header">
+          <h2 id="weeklyTitle">주간 업무</h2>
+          <div class="nav-arrows">
+            <button class="btn" id="weekPrev">◀</button>
+            <button class="btn" id="weekToday">이번 주</button>
+            <button class="btn" id="weekNext">▶</button>
+          </div>
+        </div>
+        <div class="week-grid" id="weeklyGrid"></div>
+      </section>
+
+      <!-- 3. 일간 업무 -->
+      <section class="view hidden" id="view-daily">
+        <div class="view-header">
+          <h2 id="dailyTitle">일간 업무</h2>
+          <div class="nav-arrows">
+            <button class="btn" id="dayPrev">◀</button>
+            <button class="btn" id="dayToday">오늘</button>
+            <button class="btn" id="dayNext">▶</button>
+          </div>
+        </div>
+        <div id="dailyList"></div>
+      </section>
+
+      <!-- 4. 오늘 시간대별 계획 -->
+      <section class="view hidden" id="view-today">
+        <div class="view-header">
+          <h2 id="todayPlanTitle">오늘 시간대별 계획</h2>
+          <div class="hint">시간대 칸을 클릭해서 계획을 입력하세요. 자동 저장됩니다.</div>
+        </div>
+        <div class="today-layout">
+          <div class="time-table" id="timeTable"></div>
+          <aside class="today-tasks">
+            <h3>오늘 마감 할 일</h3>
+            <div class="hint">클릭하면 선택한 시간대에 넣습니다</div>
+            <div id="todayTaskPool"></div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- 5. 완료 이력 -->
+      <section class="view hidden" id="view-history">
+        <div class="view-header">
+          <h2>조치완료 이력</h2>
+          <input type="search" id="historySearch" placeholder="🔍 제목·조치내용 검색">
+        </div>
+        <div id="historyList"></div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- 완료 처리 모달 -->
+  <div class="modal-backdrop hidden" id="completeModal">
+    <div class="modal">
+      <h3>✅ 조치완료 처리</h3>
+      <p id="completeTaskTitle" class="modal-task-title"></p>
+      <label>조치 내용 (어떻게 처리했는지 기록)</label>
+      <textarea id="completeNote" rows="4" placeholder="예: 거래처에 회신 완료, 보고서 제출함 ..."></textarea>
+      <div class="modal-actions">
+        <button class="btn" id="completeCancel">취소</button>
+        <button class="btn primary" id="completeSave">완료 저장</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

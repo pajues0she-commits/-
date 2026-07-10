@@ -1,0 +1,29 @@
+{
+  "name": "work-planner",
+  "version": "1.0.0",
+  "description": "심플 업무 플래너 PC앱",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win --x64"
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.example.workplanner",
+    "productName": "업무 플래너",
+    "files": [
+      "main.js",
+      "index.html",
+      "style.css",
+      "app.js"
+    ],
+    "win": {
+      "target": "portable"
+    }
+  }
+}
