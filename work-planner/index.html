@@ -12,6 +12,7 @@
     <nav class="sidebar">
       <h1 class="logo">📋 업무 플래너</h1>
       <button class="nav-btn active" data-view="list">📝 할 일 목록</button>
+      <button class="nav-btn" data-view="yearly">📌 연간 업무</button>
       <button class="nav-btn" data-view="monthly">📅 월간 업무</button>
       <button class="nav-btn" data-view="weekly">🗓️ 주간 업무</button>
       <button class="nav-btn" data-view="daily">📆 일간 업무</button>
@@ -50,6 +51,33 @@
         </div>
 
         <div id="taskList"></div>
+      </section>
+
+      <!-- 연간 업무계획 -->
+      <section class="view hidden" id="view-yearly">
+        <div class="view-header">
+          <h2 id="yearlyTitle">연간 업무계획</h2>
+          <div class="nav-arrows">
+            <button class="btn" id="yearPrev">◀</button>
+            <button class="btn" id="yearNow">올해</button>
+            <button class="btn" id="yearNext">▶</button>
+          </div>
+        </div>
+        <form class="add-form" id="yearlyForm">
+          <input type="text" id="yTitle" placeholder="연간 업무 (예: 상반기 결산 보고)" required>
+          <input type="date" id="yDue" title="마감기한" required>
+          <select id="yImportant">
+            <option value="1">중요한 일</option>
+            <option value="0">덜 중요한 일</option>
+          </select>
+          <select id="yUrgent">
+            <option value="1">급한 일</option>
+            <option value="0" selected>천천히 해도 되는 일</option>
+          </select>
+          <button type="submit" class="btn primary">+ 등록</button>
+        </form>
+        <div class="hint" style="margin-bottom:12px">여기에 등록한 업무는 할 일 목록·월간/주간/일간 조회에 함께 나타나고, 마감 7일 전부터 오늘 계획에도 표시됩니다.</div>
+        <div id="yearlyList"></div>
       </section>
 
       <!-- 3. 월간 업무 -->
@@ -159,6 +187,25 @@
       <div class="modal-actions">
         <button class="btn" id="completeCancel">취소</button>
         <button class="btn primary" id="completeSave">완료 저장</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 세부 계획 모달 -->
+  <div class="modal-backdrop hidden" id="detailModal">
+    <div class="modal">
+      <h3>📋 세부 계획</h3>
+      <p id="detailTaskTitle" class="modal-task-title"></p>
+      <label for="detailMemo">메모</label>
+      <textarea id="detailMemo" rows="3" placeholder="업무 진행에 필요한 내용을 자유롭게 기록"></textarea>
+      <label>세부 항목 체크리스트</label>
+      <div id="subtaskList" class="subtask-list"></div>
+      <form id="subtaskForm" class="subtask-form">
+        <input type="text" id="subtaskInput" placeholder="세부 계획 추가 (예: 자료 조사)">
+        <button type="submit" class="btn">+ 추가</button>
+      </form>
+      <div class="modal-actions">
+        <button class="btn primary" id="detailClose">닫기 (자동 저장됨)</button>
       </div>
     </div>
   </div>

@@ -104,6 +104,7 @@ document.querySelectorAll('.nav-btn').forEach(btn => {
 function render() {
   renderSidebarInfo();
   if (currentView === 'list') renderList();
+  else if (currentView === 'yearly') renderYearly();
   else if (currentView === 'monthly') renderMonthly();
   else if (currentView === 'weekly') renderWeekly();
   else if (currentView === 'daily') renderDaily();
@@ -137,7 +138,9 @@ document.getElementById('addForm').addEventListener('submit', e => {
     createdAt: new Date().toISOString(),
     done: false,
     completedAt: null,
-    completionNote: ''
+    completionNote: '',
+    memo: '',
+    subtasks: []
   });
   save();
   document.getElementById('inputTitle').value = '';
@@ -158,6 +161,8 @@ function taskCardHTML(t, opts = {}) {
   const today = todayStr();
   const overdue = !t.done && t.dueDate < today;
   const dueLabel = t.dueDate === today ? '오늘' : fmtKorean(t.dueDate);
+  const subs = t.subtasks || [];
+  const subDone = subs.filter(s => s.done).length;
   return `
     <div class="task-card ${q}" data-id="${t.id}">
       <div class="task-main">
@@ -166,11 +171,14 @@ function taskCardHTML(t, opts = {}) {
           <span class="badge ${q}">${QUADS[q].badge}</span>
           <span class="${overdue ? 'overdue' : ''}">📅 ${dueLabel}${overdue ? ' (지남!)' : ''}</span>
           ${t.routineId ? '<span title="루틴 업무에서 자동 등록됨">🔁 루틴</span>' : ''}
+          ${t.yearly ? '<span title="연간 업무계획에 등록됨">📌 연간</span>' : ''}
+          ${subs.length ? `<span class="task-progress">📋 세부 ${subDone}/${subs.length}</span>` : ''}
         </div>
       </div>
       <div class="task-actions">
         ${opts.readonly ? '' : `
           <button class="btn primary" data-act="done" title="완료 처리">✓ 완료</button>
+          <button class="btn" data-act="detail" title="세부 계획">📋</button>
           <button class="btn" data-act="edit" title="수정">✎</button>
           <button class="btn danger" data-act="del" title="삭제">🗑</button>`}
       </div>
@@ -209,6 +217,8 @@ function handleCardAction(e) {
 
   if (btn.dataset.act === 'done') {
     openCompleteModal(task);
+  } else if (btn.dataset.act === 'detail') {
+    openDetailModal(task);
   } else if (btn.dataset.act === 'edit') {
     editTask(task);
   } else if (btn.dataset.act === 'del') {
@@ -271,6 +281,132 @@ completeModal.addEventListener('click', e => {
   }
 });
 
+/* ================= 세부 계획 모달 ================= */
+let detailTask = null;
+const detailModal = document.getElementById('detailModal');
+
+function openDetailModal(task) {
+  detailTask = task;
+  if (!Array.isArray(task.subtasks)) task.subtasks = [];
+  document.getElementById('detailTaskTitle').textContent = task.title;
+  document.getElementById('detailMemo').value = task.memo || '';
+  renderSubtasks();
+  detailModal.classList.remove('hidden');
+  document.getElementById('subtaskInput').focus();
+}
+function closeDetailModal() {
+  detailTask = null;
+  detailModal.classList.add('hidden');
+  save();
+  render();   // 카드의 세부 진행률(📋 n/n) 갱신
+}
+function renderSubtasks() {
+  const wrap = document.getElementById('subtaskList');
+  if (!detailTask.subtasks.length) {
+    wrap.innerHTML = '<div class="hint">아직 세부 항목이 없습니다. 아래에서 추가하세요.</div>';
+    return;
+  }
+  wrap.innerHTML = detailTask.subtasks.map(s => `
+    <div class="subtask-item ${s.done ? 'done' : ''}">
+      <input type="checkbox" data-sid="${s.id}" ${s.done ? 'checked' : ''}>
+      <span class="subtask-text">${esc(s.text)}</span>
+      <button type="button" class="subtask-del" data-sid="${s.id}" title="항목 삭제">✕</button>
+    </div>`).join('');
+}
+document.getElementById('subtaskList').addEventListener('change', e => {
+  const cb = e.target.closest('input[type="checkbox"]');
+  if (!cb || !detailTask) return;
+  const s = detailTask.subtasks.find(x => x.id === cb.dataset.sid);
+  if (s) { s.done = cb.checked; save(); renderSubtasks(); }
+});
+document.getElementById('subtaskList').addEventListener('click', e => {
+  const del = e.target.closest('.subtask-del');
+  if (!del || !detailTask) return;
+  detailTask.subtasks = detailTask.subtasks.filter(x => x.id !== del.dataset.sid);
+  save();
+  renderSubtasks();
+});
+document.getElementById('subtaskForm').addEventListener('submit', e => {
+  e.preventDefault();
+  if (!detailTask) return;
+  const text = document.getElementById('subtaskInput').value.trim();
+  if (!text) return;
+  detailTask.subtasks.push({ id: uid(), text, done: false });
+  document.getElementById('subtaskInput').value = '';
+  save();
+  renderSubtasks();
+});
+document.getElementById('detailMemo').addEventListener('input', e => {
+  if (detailTask) { detailTask.memo = e.target.value; save(); }
+});
+document.getElementById('detailClose').addEventListener('click', closeDetailModal);
+detailModal.addEventListener('click', e => { if (e.target === detailModal) closeDetailModal(); });
+
+/* ================= 연간 업무계획 ================= */
+let yearCursor = new Date().getFullYear();
+
+document.getElementById('yearPrev').addEventListener('click', () => { yearCursor--; renderYearly(); });
+document.getElementById('yearNext').addEventListener('click', () => { yearCursor++; renderYearly(); });
+document.getElementById('yearNow').addEventListener('click', () => { yearCursor = new Date().getFullYear(); renderYearly(); });
+
+document.getElementById('yearlyForm').addEventListener('submit', e => {
+  e.preventDefault();
+  const title = document.getElementById('yTitle').value.trim();
+  const due = document.getElementById('yDue').value;
+  if (!title || !due) return;
+  state.tasks.push({
+    id: uid(),
+    title,
+    important: document.getElementById('yImportant').value === '1',
+    urgent: document.getElementById('yUrgent').value === '1',
+    dueDate: due,
+    createdAt: new Date().toISOString(),
+    done: false,
+    completedAt: null,
+    completionNote: '',
+    memo: '',
+    subtasks: [],
+    yearly: true
+  });
+  save();
+  document.getElementById('yTitle').value = '';
+  yearCursor = Number(due.slice(0, 4));   // 등록한 연도로 이동해서 바로 확인
+  renderYearly();
+  renderSidebarInfo();
+});
+document.getElementById('yearlyList').addEventListener('click', handleCardAction);
+
+function renderYearly() {
+  document.getElementById('yearlyTitle').textContent = `${yearCursor}년 업무계획`;
+  const wrap = document.getElementById('yearlyList');
+  const prefix = String(yearCursor) + '-';
+  const yearTasks = state.tasks.filter(t => !t.routineId && t.dueDate.startsWith(prefix));
+  if (yearTasks.length === 0) {
+    wrap.innerHTML = `<div class="empty">${yearCursor}년에 등록된 업무가 없습니다.<br>위에서 마감기한과 함께 업무를 등록해 보세요.</div>`;
+    return;
+  }
+  let html = '';
+  for (let m = 1; m <= 12; m++) {
+    const mm = String(m).padStart(2, '0');
+    const monthTasks = yearTasks
+      .filter(t => t.dueDate.slice(5, 7) === mm)
+      .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+    if (monthTasks.length === 0) continue;
+    const doneCnt = monthTasks.filter(t => t.done).length;
+    html += `<div class="quad-group"><h3>${m}월 — ${monthTasks.length}건 (완료 ${doneCnt}건)</h3>`;
+    html += monthTasks.map(t => t.done
+      ? `<div class="task-card ${quadOf(t)}" style="opacity:.6" data-id="${t.id}">
+          <div class="task-main">
+            <div class="task-title" style="text-decoration:line-through">${esc(t.title)}</div>
+            <div class="task-meta"><span>완료: ${t.completedAt ? fmtDateTime(t.completedAt) : '-'}</span></div>
+          </div>
+        </div>`
+      : taskCardHTML(t)).join('');
+    html += `</div>`;
+  }
+  wrap.innerHTML = html;
+}
+
 /* ================= 3. 월간 ================= */
 let monthCursor = new Date();
 
@@ -295,11 +431,18 @@ function renderMonthly() {
     const isToday = ds === today ? 'today' : '';
     const dow = d.getDay() === 0 ? 'sun' : d.getDay() === 6 ? 'sat' : '';
     const dayTasks = tasksOn(ds).sort((a, b) => quadOf(a).localeCompare(quadOf(b)));
-    const shown = dayTasks.slice(0, 3);
-    const moreCnt = dayTasks.length - shown.length;
+    const dayRoutines = routinesOn(ds, d);
+    const items = [
+      ...dayTasks.map(t => ({ kind: 'task', v: t })),
+      ...dayRoutines.map(r => ({ kind: 'routine', v: r }))
+    ];
+    const shown = items.slice(0, 3);
+    const moreCnt = items.length - shown.length;
     html += `<div class="cal-cell ${other} ${isToday} ${dow}">
       <div class="cal-date">${d.getDate()}</div>
-      ${shown.map(t => `<div class="cal-task ${t.done ? 'done' : ''}" style="background:${QUAD_COLORS[quadOf(t)]}" title="${esc(t.title)}">${esc(t.title)}</div>`).join('')}
+      ${shown.map(it => it.kind === 'task'
+        ? `<div class="cal-task ${it.v.done ? 'done' : ''}" style="background:${QUAD_COLORS[quadOf(it.v)]}" title="${esc(it.v.title)}">${esc(it.v.title)}</div>`
+        : `<div class="cal-task routine" style="border-color:${QUAD_COLORS[quadOf(it.v)]}" title="${esc(repeatDesc(it.v))}">🔁 ${esc(it.v.title)}</div>`).join('')}
       ${moreCnt > 0 ? `<div class="cal-more">+${moreCnt}건 더</div>` : ''}
     </div>`;
   }
@@ -326,12 +469,15 @@ function renderWeekly() {
     const ds = fmtDate(d);
     const dow = d.getDay() === 0 ? 'sun' : d.getDay() === 6 ? 'sat' : '';
     const dayTasks = tasksOn(ds).sort((a, b) => quadOf(a).localeCompare(quadOf(b)));
+    const dayRoutines = routinesOn(ds, d);
     html += `<div class="week-col ${ds === today ? 'today' : ''} ${dow}">
       <div class="week-col-head">${d.getMonth() + 1}/${d.getDate()} (${DAY_NAMES[d.getDay()]})</div>
-      ${dayTasks.length === 0
+      ${dayTasks.length === 0 && dayRoutines.length === 0
         ? `<div class="hint" style="text-align:center;padding:12px 0">-</div>`
         : dayTasks.map(t => `
-          <div class="cal-task ${t.done ? 'done' : ''}" style="background:${QUAD_COLORS[quadOf(t)]};margin-bottom:4px;white-space:normal" title="${esc(t.title)}">${esc(t.title)}</div>`).join('')}
+          <div class="cal-task ${t.done ? 'done' : ''}" style="background:${QUAD_COLORS[quadOf(t)]};margin-bottom:4px;white-space:normal" title="${esc(t.title)}">${esc(t.title)}</div>`).join('') +
+          dayRoutines.map(r => `
+          <div class="cal-task routine" style="border-color:${QUAD_COLORS[quadOf(r)]};margin-bottom:4px;white-space:normal" title="${esc(repeatDesc(r))}">🔁 ${esc(r.title)}</div>`).join('')}
     </div>`;
   }
   document.getElementById('weeklyGrid').innerHTML = html;
@@ -351,7 +497,8 @@ function renderDaily() {
 
   const wrap = document.getElementById('dailyList');
   const dayTasks = tasksOn(ds).sort((a, b) => quadOf(a).localeCompare(quadOf(b)));
-  if (dayTasks.length === 0) {
+  const dayRoutines = routinesOn(ds, dayCursor);
+  if (dayTasks.length === 0 && dayRoutines.length === 0) {
     wrap.innerHTML = `<div class="empty">이 날짜에 등록된 업무가 없습니다.</div>`;
     return;
   }
@@ -365,6 +512,20 @@ function renderDaily() {
         <div class="task-main">
           <div class="task-title" style="text-decoration:line-through">${esc(t.title)}</div>
           <div class="task-meta"><span>완료: ${t.completedAt ? fmtDateTime(t.completedAt) : ''}</span></div>
+        </div>
+      </div>`).join('');
+    html += `</div>`;
+  }
+  if (dayRoutines.length > 0) {
+    html += `<div class="quad-group" style="margin-top:16px"><h3>🔁 이 날의 루틴 업무 — ${dayRoutines.length}건</h3>`;
+    html += dayRoutines.map(r => `
+      <div class="task-card ${quadOf(r)}">
+        <div class="task-main">
+          <div class="task-title">🔁 ${esc(r.title)}</div>
+          <div class="task-meta">
+            <span class="badge ${quadOf(r)}">${QUADS[quadOf(r)].badge}</span>
+            <span>⏰ ${esc(repeatDesc(r))}</span>
+          </div>
         </div>
       </div>`).join('');
     html += `</div>`;
@@ -410,14 +571,21 @@ function renderToday() {
     });
   });
 
-  // 오늘 마감 할 일 풀
+  // 오늘 마감 할 일 풀 + 다가오는 마감(연간 계획 등 7일 이내)
   const pool = activeTasks().filter(t => t.dueDate <= ds).sort((a, b) => quadOf(a).localeCompare(quadOf(b)));
+  const weekAhead = fmtDate(addDays(new Date(), 7));
+  const upcoming = activeTasks().filter(t => t.dueDate > ds && t.dueDate <= weekAhead)
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
   const poolWrap = document.getElementById('todayTaskPool');
-  if (pool.length === 0) {
+  if (pool.length === 0 && upcoming.length === 0) {
     poolWrap.innerHTML = `<div class="hint">오늘까지 할 일이 없습니다 🎉</div>`;
   } else {
-    poolWrap.innerHTML = pool.map(t =>
-      `<div class="pool-item ${quadOf(t)}" data-id="${t.id}">${esc(t.title)}</div>`).join('');
+    poolWrap.innerHTML =
+      pool.map(t =>
+        `<div class="pool-item ${quadOf(t)}" data-id="${t.id}">${esc(t.title)}</div>`).join('') +
+      (upcoming.length ? `<div class="pool-sub">다가오는 마감 (7일 이내)</div>` +
+        upcoming.map(t =>
+          `<div class="pool-item ${quadOf(t)}" data-id="${t.id}">${esc(t.title)} <span class="pool-due">${fmtKorean(t.dueDate)}</span></div>`).join('') : '');
     poolWrap.querySelectorAll('.pool-item').forEach(item => {
       item.addEventListener('click', () => {
         const task = state.tasks.find(t => t.id === item.dataset.id);
@@ -449,6 +617,13 @@ function occursToday(r, d) {
   return false;
 }
 
+/* 해당 날짜에 예정된 루틴 (이미 할 일로 생성된 날은 제외 → 중복 표시 방지) */
+function routinesOn(ds, d) {
+  return state.routines.filter(r =>
+    r.enabled && occursToday(r, d) &&
+    !state.tasks.some(t => t.routineId === r.id && t.dueDate === ds));
+}
+
 function repeatDesc(r) {
   let base = '';
   if (r.repeat === 'daily') base = '매일';
@@ -474,6 +649,8 @@ function generateRoutineTasks() {
         done: false,
         completedAt: null,
         completionNote: '',
+        memo: '',
+        subtasks: [],
         routineId: r.id
       });
     }

@@ -268,6 +268,28 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent-soft
 }
 .history-meta { font-size: 12px; color: var(--muted); margin-top: 6px; }
 
+/* ---------- 세부 계획 ---------- */
+.subtask-list { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
+.subtask-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px;
+}
+.subtask-item input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
+.subtask-item.done .subtask-text { text-decoration: line-through; color: var(--muted); }
+.subtask-text { flex: 1; font-size: 13px; word-break: break-all; }
+.subtask-del { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 2px 4px; }
+.subtask-del:hover { color: var(--q1); }
+.subtask-form { display: flex; gap: 6px; }
+.subtask-form input { flex: 1; }
+.task-progress { color: var(--accent); font-weight: 600; }
+
+/* ---------- 달력의 루틴 표시 ---------- */
+.cal-task.routine { background: transparent; border: 1px dashed; color: var(--text); }
+
+/* ---------- 오늘 계획: 다가오는 마감 ---------- */
+.pool-sub { font-size: 12px; font-weight: 700; color: var(--muted); margin: 12px 0 6px; }
+.pool-due { color: var(--muted); font-size: 11px; }
+
 /* ---------- 루틴 업무 ---------- */
 .dow-picker { display: flex; gap: 4px; align-items: center; }
 .dow-btn {
