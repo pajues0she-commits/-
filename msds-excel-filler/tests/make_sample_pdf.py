@@ -1,0 +1,101 @@
+# -*- coding: utf-8 -*-
+"""파서 테스트용 한글 MSDS 샘플 PDF 생성 (reportlab 내장 한글 CID 폰트 사용)."""
+import os
+
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+from reportlab.pdfgen import canvas
+
+SAMPLE = """물질안전보건자료 (MSDS)
+
+1. 화학제품과 회사에 관한 정보
+가. 제품명 : TOC Base Solution
+나. 제품의 권고 용도와 사용상의 제한 : 분석용 시약
+다. 공급자 정보 : 한국분석기기(주)
+
+2. 유해성·위험성
+가. 유해성·위험성 분류
+금속부식성 물질 : 구분1
+급성 독성(경피) : 구분4
+피부 부식성/피부 자극성 : 구분2
+나. 예방조치문구를 포함한 경고표지 항목
+○ 그림문자 : GHS05, GHS07
+○ 신호어 : 경고
+○ 유해·위험문구
+H290 금속을 부식시킬 수 있음
+H312 피부와 접촉하면 유해함
+H315 피부에 자극을 일으킴
+H335 호흡기계 자극을 일으킬 수 있음
+○ 예방조치문구
+예방 :
+P234 원래의 용기에만 보관하시오.
+P264 취급 후에는 취급 부위를 철저히 씻으시오.
+P280 보호장갑/보호의/보안경/안면보호구를 착용하시오.
+저장 :
+P406 내부식성 용기에 저장하시오.
+대응 :
+P312 불편함을 느끼면 의료기관(의사)의 진찰을 받으시오.
+
+3. 구성성분의 명칭 및 함유량
+수산화나트륨 : CAS 1310-73-2, 3.2 %
+
+4. 응급조치 요령
+가. 눈에 들어갔을 때
+○ 물질에 접촉된 눈은 즉시 20분 이상 흐르는 물에 충분히 씻으시오.
+○ 눈에 들어간 경우 긴급 의료조치를 받으시오.
+나. 피부에 접촉했을 때
+○ 오염된 의류를 벗고 다시 사용 전 세척하시오.
+○ 피부 자극이 나타나면 의학적인 조치, 조언을 받으시오.
+다. 흡입했을 때
+○ 신선한 공기가 있는 곳으로 옮기시오.
+○ 따뜻하게 하고 안정되게 해주시오.
+라. 먹었을 때
+○ 긴급 의료조치를 받으시오.
+○ 구강대구강법으로 인공호흡을 하지 말고 적절한 호흡의료장비를 이용하시오.
+
+5. 폭발·화재시 대처방법
+가. 적절한 (및 부적절한) 소화제
+○ 알콜 포말, 이산화탄소, 물분무
+나. 화학물질로부터 생기는 특정 유해성
+○ 가열 시 분해하여 부식성/독성 흄이 발생할 수 있음
+○ 금속과 접촉 시 가연성 수소가스를 생성할 수 있음
+
+6. 누출사고 시 대처방법
+다. 정화 또는 제거 방법
+○ 누출 시 불활성 물질(건조한 모래, 흙)로 흡수하여 화학폐기물 용기에 넣으시오.
+○ 수로, 하수구, 밀폐공간으로의 유입을 방지하시오.
+
+7. 취급 및 저장방법
+가. 안전취급요령 : 취급 후 철저히 씻을 것
+
+8. 노출방지 및 개인보호구
+라. 개인보호구
+○ 호흡기 보호 : 한국산업안전보건공단의 인증을 필한 호흡용 보호구를 착용하시오.
+○ 눈 보호 : 보안경과 보안면을 착용하시오.
+○ 손 보호 : 직접적인 화학물질의 손 접촉을 피할 수 있는 내화학성 보호장갑을 착용하시오.
+
+9. 물리화학적 특성
+가. 외관 : 무색 액체
+"""
+
+
+def make(path):
+    pdfmetrics.registerFont(UnicodeCIDFont("HYGothic-Medium"))
+    c = canvas.Canvas(path, pagesize=A4)
+    width, height = A4
+    y = height - 50
+    c.setFont("HYGothic-Medium", 10)
+    for line in SAMPLE.splitlines():
+        if y < 50:
+            c.showPage()
+            c.setFont("HYGothic-Medium", 10)
+            y = height - 50
+        c.drawString(40, y, line)
+        y -= 14
+    c.save()
+    print("wrote", path)
+
+
+if __name__ == "__main__":
+    make(os.path.join(os.path.dirname(os.path.abspath(__file__)), "sample_msds.pdf"))
