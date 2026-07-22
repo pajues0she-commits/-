@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MSDS PDF → 화학물질 작업공정별 관리 요령</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Malgun Gothic', '맑은 고딕', sans-serif; margin: 0;
+         background: #f4f6f8; color: #222; }
+  .top { background: #fff; border-bottom: 1px solid #ddd; padding: 18px 28px; }
+  .top h1 { margin: 0 0 6px; font-size: 22px; }
+  .top p { margin: 0; color: #666; font-size: 13px; }
+  .wrap { max-width: 1700px; margin: 0 auto; padding: 20px 28px 80px; }
+  .dropzone { border: 2px dashed #9db3c8; border-radius: 10px; background: #fff;
+              padding: 34px; text-align: center; color: #567; cursor: pointer;
+              font-size: 15px; transition: background .15s; }
+  .dropzone.drag { background: #e8f2fc; border-color: #3b82d0; }
+  .dropzone input { display: none; }
+  .card { background: #fff; border: 1px solid #ddd; border-radius: 10px;
+          margin-top: 20px; overflow: hidden; }
+  .card-head { display: flex; align-items: center; justify-content: space-between;
+               padding: 12px 18px; background: #eef3f8; border-bottom: 1px solid #ddd; }
+  .card-head b { font-size: 15px; }
+  .card-head button { border: none; background: #d9534f; color: #fff;
+                      border-radius: 6px; padding: 5px 12px; cursor: pointer; }
+  .card-body { display: grid; grid-template-columns: 1.05fr 1fr; gap: 22px;
+               padding: 18px; }
+  @media (max-width: 1100px) { .card-body { grid-template-columns: 1fr; } }
+  .warn { background: #fff6df; border: 1px solid #f0d48a; border-radius: 6px;
+          padding: 8px 12px; font-size: 12.5px; margin: 0 0 10px; color: #7a5c00; }
+  label.f { display: block; font-size: 12.5px; font-weight: bold; color: #345;
+            margin: 12px 0 4px; }
+  input[type=text], select, textarea {
+      width: 100%; border: 1px solid #c5cdd6; border-radius: 6px;
+      padding: 7px 9px; font-size: 13px; font-family: inherit; background: #fbfcfe; }
+  textarea { min-height: 92px; resize: vertical; line-height: 1.55; }
+  .row2 { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .pics { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pics label { display: flex; flex-direction: column; align-items: center;
+                border: 1.5px solid #d0d7df; border-radius: 8px; padding: 6px 7px 3px;
+                cursor: pointer; font-size: 10.5px; color: #456; background: #fff; }
+  .pics label.on { border-color: #e30613; background: #fff3f3; }
+  .pics img { width: 46px; height: 46px; }
+  .pics input { display: none; }
+  .prev-title { font-size: 13.5px; font-weight: bold; margin: 12px 0 6px; color: #345; }
+  .hint { font-size: 11.5px; color: #889; margin-top: 3px; }
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; background: #fff;
+         border-top: 1px solid #ccc; padding: 12px 28px; display: flex;
+         gap: 14px; align-items: center; box-shadow: 0 -2px 8px rgba(0,0,0,.06); }
+  .bar button { background: #1a7f37; color: #fff; font-size: 15px; font-weight: bold;
+                border: none; border-radius: 8px; padding: 11px 26px; cursor: pointer; }
+  .bar button:disabled { background: #aaa; cursor: not-allowed; }
+  .bar span { font-size: 13px; color: #555; }
+  /* ── 미리보기(엑셀 양식 재현) ── */
+  table.form { border-collapse: collapse; width: 100%; table-layout: fixed;
+               background: #fff; }
+  table.form td { border: 1px solid #000; padding: 4px 6px; font-size: 11px;
+                  vertical-align: middle; word-break: break-word; }
+  td.title { background: #FF0000; color: #fff; font-weight: bold; font-size: 19px;
+             text-align: center; height: 42px; }
+  td.hdr   { background: #FFFF00; font-weight: bold; text-align: center;
+             font-size: 13.5px; }
+  td.hdr2  { background: #FFFF00; font-weight: bold; text-align: center;
+             font-size: 12px; }
+  td.green { background: #D7E4BD; font-weight: bold; text-align: center;
+             font-size: 12px; }
+  td.pink  { background: #F2DCDB; font-weight: bold; text-align: center;
+             font-size: 12px; }
+  td.body  { text-align: left; }
+  td.center{ text-align: center; font-weight: bold; font-size: 12px; }
+  td.piccell { text-align: center; }
+  td.piccell img { width: 62px; height: 62px; margin: 2px 5px; vertical-align: middle; }
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>🧪 MSDS PDF → 화학물질 작업공정별 관리 요령</h1>
+  <p>MSDS PDF를 올리면 항목을 자동 추출합니다. 좌측에서 확인·수정하면 우측 미리보기에 바로 반영되고,
+     하단 버튼으로 엑셀 양식과 동일한 .xlsx 파일을 다운로드합니다. 모든 처리는 이 브라우저 안에서만
+     이루어지며 파일이 외부로 전송되지 않습니다.</p>
+</div>
+<div class="wrap">
+  <label class="dropzone" id="dz">
+    📄 여기를 클릭하거나 MSDS PDF 파일을 끌어다 놓으세요 (여러 개 가능, 최대 20개)
+    <input type="file" id="fileInput" accept="application/pdf" multiple>
+  </label>
+  <div id="cards"></div>
+</div>
+<div class="bar">
+  <button id="dl" disabled>📥 엑셀 파일 다운로드</button>
+  <span id="status">PDF를 업로드하면 버튼이 활성화됩니다.</span>
+</div>
+
+<!-- pdf.js 워커를 일반 스크립트로 로드하면 fake worker(메인 스레드)로 동작한다 -->
+<script>/*__PDFJS_WORKER__*/</script>
+<script>/*__PDFJS__*/</script>
+<script>/*__EXCELJS__*/</script>
+<script>/*__JSZIP__*/</script>
+<script>
+"use strict";
+/* ══════════════ 내장 자산 ══════════════ */
+const TEMPLATE_B64 = "__TEMPLATE_B64__";   // 빈 양식 시트 20장 (원본 서식 그대로)
+const GHS_IMG = __GHS_B64_JSON__;          // { GHS01: "b64", ... }
+const CMAPS = __CMAPS_B64_JSON__;          // 한국어 CID 폰트용 CMap (.bcmap)
+
+/* ══════════════ GHS 표준 데이터 (ghs_data.py와 동일) ══════════════ */
+const H_STATEMENTS = __H_STATEMENTS_JSON__;
+const PICTOGRAM_NAMES = { GHS01:"폭발성", GHS02:"인화성", GHS03:"산화성",
+  GHS04:"고압가스", GHS05:"부식성", GHS06:"급성독성", GHS07:"경고(자극성 등)",
+  GHS08:"건강유해성", GHS09:"수생환경유해성" };
+const PICTOGRAM_RULES = {
+  GHS01:["H200","H201","H202","H203","H204","H240","H241"],
+  GHS02:["H220","H221","H222","H223","H224","H225","H226","H228","H241","H242",
+         "H250","H251","H252","H260","H261"],
+  GHS03:["H270","H271","H272"],
+  GHS04:["H280","H281"],
+  GHS05:["H290","H314","H318"],
+  GHS06:["H300","H301","H310","H311","H330","H331"],
+  GHS07:["H302","H312","H315","H317","H319","H332","H335","H336","H420"],
+  GHS08:["H304","H334","H340","H341","H350","H351","H360","H361","H370","H371",
+         "H372","H373"],
+  GHS09:["H400","H410","H411"] };
+const DANGER_CODES = new Set(["H200","H201","H202","H203","H220","H222","H224",
+  "H225","H240","H241","H250","H260","H270","H271","H300","H301","H304","H310",
+  "H311","H314","H318","H330","H331","H334","H340","H350","H360","H370","H372"]);
+
+function pictogramsForCodes(codes){
+  const set = new Set(codes), found = [];
+  for (const pic of Object.keys(PICTOGRAM_RULES).sort())
+    if (PICTOGRAM_RULES[pic].some(c => set.has(c))) found.push(pic);
+  const inter = p => PICTOGRAM_RULES[p].filter(c => set.has(c));
+  if (found.includes("GHS06") && found.includes("GHS07") &&
+      inter("GHS07").every(c => ["H302","H312","H332"].includes(c)))
+    found.splice(found.indexOf("GHS07"), 1);
+  if (found.includes("GHS05") && found.includes("GHS07") &&
+      inter("GHS07").every(c => ["H315","H319"].includes(c)))
+    found.splice(found.indexOf("GHS07"), 1);
+  return found;
+}
+function signalWordForCodes(codes){
+  if (codes.some(c => DANGER_CODES.has(c))) return "위험";
+  if (codes.some(c => H_STATEMENTS[c])) return "경고";
+  return "";
+}
+
+/* ══════════════ PDF 텍스트 추출 (pdf.js, 줄 재구성) ══════════════ */
+// 내장 CMap 제공: 한글 CID 폰트(UniKS, KSCms 등) PDF의 텍스트 추출에 필요
+class InlineCMapReaderFactory {
+  constructor(){ }
+  async fetch({ name }){
+    const b64 = CMAPS[name];
+    if (!b64) throw new Error("CMap 없음: " + name);
+    return { cMapData: b64ToU8(b64),
+             compressionType: pdfjsLib.CMapCompressionType.BINARY };
+  }
+}
+async function extractText(arrayBuffer){
+  const pdf = await pdfjsLib.getDocument({
+    data: arrayBuffer, CMapReaderFactory: InlineCMapReaderFactory,
+    useSystemFonts: true }).promise;
+  const lines = [];
+  for (let p = 1; p <= pdf.numPages; p++){
+    const tc = await (await pdf.getPage(p)).getTextContent();
+    const items = tc.items.filter(it => it.str && it.str.trim() !== "")
+      .map(it => ({ x: it.transform[4], y: it.transform[5],
+                    w: it.width || 0, s: it.str }));
+    items.sort((a, b) => b.y - a.y || a.x - b.x);
+    let row = [], rowY = null;
+    const flush = () => {
+      if (!row.length) return;
+      row.sort((a, b) => a.x - b.x);
+      let line = "", endX = null;
+      for (const it of row){
+        if (endX !== null) line += (it.x - endX > 1.5) ? " " : "";
+        line += it.s; endX = it.x + it.w;
+      }
+      lines.push(line); row = [];
+    };
+    for (const it of items){
+      if (rowY === null || Math.abs(it.y - rowY) > 3){ flush(); rowY = it.y; }
+      row.push(it);
+    }
+    flush();
+  }
+  return lines.join("\n");
+}
+
+/* ══════════════ MSDS 파서 (msds_parser.py 이식) ══════════════ */
+const SECTION_KEYS = {
+  1:"(?:화학제품과\\s*회사|제품\\s*및\\s*회사|화학제품에\\s*관한)",
+  2:"유해성\\s*[·ㆍ.,]?\\s*위험성",
+  3:"구성\\s*성분|구성성분의\\s*명칭",
+  4:"응급조치\\s*요령",
+  5:"폭발\\s*[·ㆍ.]?\\s*화재\\s*시|화재\\s*시\\s*대처",
+  6:"누출\\s*사고\\s*시",
+  7:"취급\\s*및\\s*저장",
+  8:"노출\\s*방지\\s*및\\s*개인\\s*보호구|노출방지",
+  9:"물리\\s*화학적\\s*특성",
+  10:"안정성\\s*및\\s*반응성",
+  11:"독성에\\s*관한\\s*정보",
+  12:"환경에\\s*미치는\\s*영향",
+  13:"폐기\\s*시\\s*주의사항|폐기시",
+  14:"운송에\\s*필요한\\s*정보",
+  15:"법적\\s*규제\\s*현황",
+  16:"그\\s*밖의\\s*참고사항|기타\\s*참고사항" };
+
+function splitSections(text){
+  const hits = [];
+  for (const [num, pat] of Object.entries(SECTION_KEYS)){
+    const rx = new RegExp("^[^\\S\\n]*(?:제\\s*)?" + num +
+                          "\\s*[.)항]?\\s*(?:" + pat + ")", "m");
+    const m = rx.exec(text);
+    if (m) hits.push([m.index, Number(num)]);
+  }
+  hits.sort((a, b) => a[0] - b[0]);
+  const sections = {};
+  hits.forEach(([pos, num], i) => {
+    const end = i + 1 < hits.length ? hits[i + 1][0] : text.length;
+    sections[num] = text.slice(pos, end);
+  });
+  return sections;
+}
+
+function grabBlock(text, startPat, stopPats){
+  const m = new RegExp(startPat).exec(text);
+  if (!m) return "";
+  const rest = text.slice(m.index + m[0].length);
+  let end = rest.length;
+  for (const sp of stopPats){
+    const sm = new RegExp(sp, "m").exec(rest);
+    if (sm && sm.index < end) end = sm.index;
+  }
+  return rest.slice(0, end);
+}
+
+const BULLET_RX = /^[\s○●◦•·ㆍ\-–—▶▷►*∙:：,]+/;
+const NOISE_RX = /^(자료\s*없음|해당\s*없음|자료없음|해당없음|없음|N\/?A|-|페이지|page|\d+\s*\/\s*\d+)$/i;
+const MARKERS = ["○","●","◦","•","·","ㆍ","∙","-","–","▶","▷","►","*"];
+const SENT_END = ["음","함","됨","킴","임","짐","오","요","것",".",")","%"];
+
+function bulletize(block, dropCodes = true){
+  const items = [];
+  for (const raw of block.split("\n")){
+    const stripped = raw.trim();
+    const hasMarker = MARKERS.some(mk => stripped.startsWith(mk));
+    let line = stripped.replace(BULLET_RX, "").trim();
+    if (!line || NOISE_RX.test(line)) continue;
+    if (dropCodes){
+      line = line.replace(/^[HP]\d{3}(?:\s*\+\s*[HP]\d{3})*\s*[:.]?\s*/, "").trim();
+      if (!line) continue;
+    }
+    const last = items[items.length - 1];
+    if (last && !hasMarker && !SENT_END.some(e => last.endsWith(e)))
+      items[items.length - 1] = last + " " + line;
+    else items.push(line);
+  }
+  return items;
+}
+
+function parseMsds(text, sourceName){
+  const data = { sourceName, productName: "", signalWord: "", pictograms: [],
+    hazards: [], precautions: [], ppe: [], inhalation: [], skinEye: [],
+    ingestion: [], emergency: [], warnings: [] };
+  if (text.trim().length < 50){
+    data.warnings.push("PDF에서 텍스트를 추출하지 못했습니다. 스캔본(이미지) MSDS인 경우 " +
+      "OCR 처리된 PDF를 사용하거나 항목을 직접 입력해 주세요.");
+    return data;
+  }
+  let sections = splitSections(text);
+  if (!Object.keys(sections).length){
+    data.warnings.push("MSDS 표준 항목 헤더를 찾지 못해 전체 텍스트에서 키워드로 추출합니다.");
+    sections = { 0: text };
+  }
+  const whole = text;
+
+  // 1) 제품명
+  let m = /제품명\s*[:：]?\s*([^\n]+)/.exec(sections[1] || whole) ||
+          /제품명\s*[:：]?\s*([^\n]+)/.exec(whole);
+  if (m) data.productName = m[1].trim().replace(/^[:：·ㆍ\-\s]+/, "");
+  else data.warnings.push("제품명을 찾지 못했습니다.");
+
+  // 2) 유해성·위험성
+  const sec2 = sections[2] || whole;
+  const hCodes = [...new Set(sec2.match(/H\d{3}/g) || [])].sort();
+
+  const hzBlock = grabBlock(sec2, "유해\\s*[·ㆍ]?\\s*위험\\s*문구\\s*[:：]?",
+    ["예방\\s*조치\\s*문구", "신호어", "그림\\s*문자", "^\\s*[다라마]\\s*[.)]",
+     "기타\\s*유해성", "NFPA"]);
+  data.hazards = bulletize(hzBlock);
+  if (!data.hazards.length && hCodes.length){
+    data.hazards = hCodes.filter(c => H_STATEMENTS[c]).map(c => H_STATEMENTS[c]);
+    if (data.hazards.length)
+      data.warnings.push("유해·위험문구를 H-code로부터 표준 문구로 복원했습니다.");
+  }
+  if (!data.hazards.length) data.warnings.push("유해·위험문구를 찾지 못했습니다.");
+
+  m = /신호어\s*[:：]?\s*(위험|경고)/.exec(sec2) || /신호어\s*[:：]?\s*(위험|경고)/.exec(whole);
+  if (m) data.signalWord = m[1];
+  else if (hCodes.length){
+    data.signalWord = signalWordForCodes(hCodes);
+    data.warnings.push("신호어를 H-code로부터 추론했습니다.");
+  }
+
+  let pics = [...new Set(sec2.match(/GHS0[1-9]/g) || [])].sort();
+  if (!pics.length){
+    const picBlock = grabBlock(sec2, "그림\\s*문자\\s*[:：]?",
+      ["신호어", "유해\\s*[·ㆍ]?\\s*위험\\s*문구", "○"]);
+    const kwMap = [["폭발","GHS01"],["인화","GHS02"],["산화","GHS03"],
+      ["고압가스","GHS04"],["부식","GHS05"],["해골","GHS06"],["독성","GHS06"],
+      ["느낌표","GHS07"],["감탄","GHS07"],["건강유해","GHS08"],["환경","GHS09"]];
+    for (const [kw, code] of kwMap) if (picBlock.includes(kw)) pics.push(code);
+    pics = [...new Set(pics)].sort();
+  }
+  if (!pics.length && hCodes.length){
+    pics = pictogramsForCodes(hCodes);
+    if (pics.length)
+      data.warnings.push("그림문자를 H-code로부터 추론했습니다. 확인 후 수정하세요.");
+  }
+  data.pictograms = pics;
+
+  const precStops = ["대응\\s*[:：]", "저장\\s*[:：]", "폐기\\s*[:：]",
+                     "기타\\s*유해성", "^\\s*[다라마]\\s*[.)]", "NFPA"];
+  let prevBlock = grabBlock(sec2, "예방\\s*[:：]", precStops);
+  const storeBlock = grabBlock(sec2, "저장\\s*[:：]",
+                               precStops.filter(p => !p.includes("저장")));
+  if (!prevBlock)
+    prevBlock = grabBlock(sec2, "예방\\s*조치\\s*문구\\s*[:：]?",
+      ["기타\\s*유해성", "^\\s*[다라마]\\s*[.)]", "NFPA"]);
+  data.precautions = bulletize(prevBlock).concat(bulletize(storeBlock));
+  if (!data.precautions.length)
+    data.warnings.push("예방조치문구(취급주의 사항)를 찾지 못했습니다.");
+
+  // 4) 응급조치
+  const sec4 = sections[4] || whole;
+  const stops4 = ["^\\s*[가나다라마]\\s*[.)]", "눈에\\s*들어갔을\\s*때",
+    "피부에\\s*접촉", "흡입\\s*(?:했을|한|시)", "먹었을\\s*때", "삼켰을\\s*때",
+    "기타\\s*의사의|의사의\\s*주의사항|의료진의"];
+  const eye = bulletize(grabBlock(sec4, "눈에\\s*들어갔을\\s*때\\s*[:：]?", stops4));
+  const skin = bulletize(grabBlock(sec4, "피부에\\s*접촉(?:했을|한)?\\s*(?:때)?\\s*[:：]?", stops4));
+  data.inhalation = bulletize(grabBlock(sec4, "흡입\\s*(?:했을\\s*때|한\\s*경우|시)\\s*[:：]?", stops4));
+  data.skinEye = skin.concat(eye);
+  data.ingestion = bulletize(grabBlock(sec4, "(?:먹었을|삼켰을)\\s*때\\s*[:：]?", stops4));
+  if (!eye.length && !skin.length && !data.inhalation.length && !data.ingestion.length)
+    data.warnings.push("응급조치 요령(4항)을 찾지 못했습니다.");
+
+  // 5)+6) 응급대응
+  const sec5 = sections[5] || "", sec6 = sections[6] || "";
+  const emergency = [];
+  const ext = bulletize(grabBlock(sec5,
+    "(?:적절한\\s*(?:\\(및\\s*부적절한\\)?\\s*)?)?소화제\\s*[:：]?",
+    ["부적절한", "화학물질로부터", "특정\\s*유해성", "^\\s*[나다라]\\s*[.)]",
+     "소방대원|화재\\s*진압"]));
+  if (ext.length)
+    emergency.push("적절한 소화제 : " +
+      ext.slice(0, 3).map(x => x.replace(/[,.]+$/, "")).join(", "));
+  emergency.push(...bulletize(grabBlock(sec5,
+    "(?:화학물질로부터\\s*생기는\\s*)?특정\\s*유해성\\s*[:：]?",
+    ["^\\s*[다라]\\s*[.)]", "소방대원", "화재\\s*진압\\s*시"])).slice(0, 3));
+  emergency.push(...bulletize(grabBlock(sec6,
+    "정화\\s*(?:또는\\s*제거)?\\s*방법\\s*[:：]?",
+    ["^\\s*[가나다라]\\s*[.)]", "^\\s*7\\s*[.)]"])).slice(0, 4));
+  data.emergency = emergency;
+  if (!emergency.length)
+    data.warnings.push("응급대응(화재·누출 대처) 정보를 찾지 못했습니다.");
+
+  // 8) 보호구
+  const sec8 = sections[8] || whole;
+  const stops8 = ["호흡기\\s*보호", "눈\\s*보호", "손\\s*보호", "신체\\s*보호",
+    "^\\s*[가나다라마]\\s*[.)]", "^\\s*9\\s*[.)]", "위생상"];
+  const ppe = [];
+  const grab8 = pat => bulletize(grabBlock(sec8, pat, stops8)).join(" ");
+  const resp = grab8("호흡기\\s*보호\\s*[:：]?");
+  const eyeP = grab8("눈\\s*보호\\s*[:：]?");
+  const hand = grab8("손\\s*보호\\s*[:：]?");
+  const body = grab8("신체\\s*보호\\s*[:：]?");
+  if (resp) ppe.push("호흡기 보호 : " + resp);
+  if (eyeP) ppe.push("눈 보호 : " + eyeP);
+  if (hand) ppe.push("손 보호 : " + hand);
+  if (body) ppe.push("신체 보호 : " + body);
+  data.ppe = ppe;
+  if (!ppe.length) data.warnings.push("개인 보호구(8항)를 찾지 못했습니다.");
+
+  return data;
+}
+
+/* ══════════════ 미리보기 (preview.py 이식) ══════════════ */
+function esc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function splitTwo(items){
+  if (items.length <= 1) return [items, []];
+  const half = Math.ceil(items.length / 2);
+  return [items.slice(0, half), items.slice(half)];
+}
+function bulletsHtml(items){
+  const lines = items.filter(s => s.trim()).map(s => "▶ " + esc(s));
+  return lines.join("<br>") || "&nbsp;";
+}
+function previewHtml(rec){
+  let pics = [...new Set(rec.pictograms)].slice(0, 6)
+    .map(c => GHS_IMG[c] ? `<img src="data:image/png;base64,${GHS_IMG[c]}">` : "")
+    .join("");
+  pics = pics || "&nbsp;";
+  const twoCol = (items, h) => {
+    const [l, r] = splitTwo(items);
+    return `<tr><td colspan="3" class="body" style="height:${h}px">${bulletsHtml(l)}</td>
+            <td colspan="3" class="body" style="height:${h}px">${bulletsHtml(r)}</td></tr>`;
+  };
+  return `<table class="form">
+    <tr><td colspan="6" class="title">화학물질 작업공정별 관리 요령</td></tr>
+    <tr><td colspan="2" class="hdr">제품명</td>
+        <td colspan="3" rowspan="2" class="piccell">${pics}</td>
+        <td class="hdr2">신호어</td></tr>
+    <tr><td colspan="2" class="green" style="height:60px">${esc(rec.productName || "") || "&nbsp;"}</td>
+        <td class="center">${esc(rec.signalWord || "") || "&nbsp;"}</td></tr>
+    <tr><td colspan="6" class="hdr">건강 및 환경에 대한 유해성, 물리적 위험성</td></tr>
+    ${twoCol(rec.hazards, 56)}
+    <tr><td colspan="6" class="hdr">안전 및 보건상의 취급주의 사항</td></tr>
+    ${twoCol(rec.precautions, 56)}
+    <tr><td colspan="6" class="hdr">적절한 보호구</td></tr>
+    <tr><td colspan="6" class="body" style="height:56px">${bulletsHtml(rec.ppe)}</td></tr>
+    <tr><td colspan="6" class="hdr">응급조치 요령 및 사고 시 대처방법</td></tr>
+    <tr><td colspan="3" class="pink">흡입시</td><td colspan="3" class="pink">피부 또는 눈 접촉시</td></tr>
+    <tr><td colspan="3" class="body" style="height:76px">${bulletsHtml(rec.inhalation)}</td>
+        <td colspan="3" class="body" style="height:76px">${bulletsHtml(rec.skinEye)}</td></tr>
+    <tr><td colspan="3" class="pink">먹었을 때</td><td colspan="3" class="pink">응급대응</td></tr>
+    <tr><td colspan="3" class="body" style="height:76px">${bulletsHtml(rec.ingestion)}</td>
+        <td colspan="3" class="body" style="height:76px">${bulletsHtml(rec.emergency)}</td></tr>
+    <tr><td colspan="6" class="green">상세한 내용은 MSDS 원본을 참조하시길 바랍니다</td></tr>
+  </table>`;
+}
+
+/* ══════════════ UI ══════════════ */
+const state = new Map();   // id -> record
+let seq = 0;
+const $cards = document.getElementById("cards");
+const $dl = document.getElementById("dl");
+const $status = document.getElementById("status");
+const dz = document.getElementById("dz");
+const fi = document.getElementById("fileInput");
+
+dz.addEventListener("dragover", e => { e.preventDefault(); dz.classList.add("drag"); });
+dz.addEventListener("dragleave", () => dz.classList.remove("drag"));
+dz.addEventListener("drop", e => {
+  e.preventDefault(); dz.classList.remove("drag");
+  addFiles([...e.dataTransfer.files].filter(f => /\.pdf$/i.test(f.name)));
+});
+fi.addEventListener("change", () => { addFiles([...fi.files]); fi.value = ""; });
+
+async function addFiles(files){
+  for (const f of files){
+    if (state.size >= 20){ alert("한 번에 최대 20개까지 처리할 수 있습니다."); break; }
+    $status.textContent = `${f.name} 분석 중...`;
+    let rec;
+    try {
+      const text = await extractText(await f.arrayBuffer());
+      rec = parseMsds(text, f.name);
+    } catch (err){
+      rec = parseMsds("", f.name);
+      rec.warnings = [`PDF를 읽지 못했습니다: ${err.message || err}`];
+    }
+    const id = "r" + (++seq);
+    state.set(id, rec);
+    $cards.appendChild(buildCard(id, rec));
+    refreshPreview(id);
+  }
+  updateBar();
+}
+
+function field(id, key, label, hint){
+  return `<label class="f">${label}</label>
+    <textarea data-id="${id}" data-key="${key}">${esc(state.get(id)[key].join("\n"))}</textarea>
+    ${hint ? `<div class="hint">${hint}</div>` : ""}`;
+}
+
+function buildCard(id, rec){
+  const div = document.createElement("div");
+  div.className = "card"; div.id = id;
+  const warns = rec.warnings.map(w => `<div class="warn">⚠️ ${esc(w)}</div>`).join("");
+  const picBoxes = Object.entries(PICTOGRAM_NAMES).map(([code, nm]) => `
+    <label class="${rec.pictograms.includes(code) ? "on" : ""}">
+      <input type="checkbox" data-id="${id}" data-pic="${code}"
+             ${rec.pictograms.includes(code) ? "checked" : ""}>
+      <img src="data:image/png;base64,${GHS_IMG[code]}"><span>${code}<br>${nm}</span>
+    </label>`).join("");
+  div.innerHTML = `
+    <div class="card-head"><b>📄 ${esc(rec.sourceName)}</b>
+      <button data-del="${id}">삭제</button></div>
+    <div class="card-body">
+      <div>
+        ${warns}
+        <div class="row2">
+          <div><label class="f">제품명</label>
+            <input type="text" data-id="${id}" data-key="productName"
+                   value="${esc(rec.productName)}">
+            <div class="hint">괄호로 주성분·농도를 덧붙일 수 있습니다. 예: TOC Base Solution (수산화나트륨 3.2%)</div></div>
+          <div><label class="f">신호어</label>
+            <select data-id="${id}" data-key="signalWord">
+              <option value="위험" ${rec.signalWord === "위험" ? "selected" : ""}>위험</option>
+              <option value="경고" ${rec.signalWord === "경고" ? "selected" : ""}>경고</option>
+              <option value="" ${!rec.signalWord ? "selected" : ""}>(없음)</option>
+            </select></div>
+        </div>
+        <label class="f">GHS 그림문자</label>
+        <div class="pics">${picBoxes}</div>
+        <div class="cols">
+          <div>
+            ${field(id, "hazards", "유해·위험문구", "한 줄이 항목 하나가 되며 엑셀에는 '▶ '가 자동으로 붙습니다.")}
+            ${field(id, "ppe", "적절한 보호구")}
+            ${field(id, "inhalation", "응급조치 — 흡입 시")}
+            ${field(id, "ingestion", "응급조치 — 먹었을 때")}
+          </div>
+          <div>
+            ${field(id, "precautions", "안전·보건상의 취급주의 사항")}
+            ${field(id, "skinEye", "응급조치 — 피부·눈 접촉 시")}
+            ${field(id, "emergency", "응급대응 (소화제·화재·누출 대처)")}
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="prev-title">🔍 미리보기 (엑셀 양식과 동일)</div>
+        <div class="preview" data-prev="${id}"></div>
+      </div>
+    </div>`;
+  return div;
+}
+
+document.addEventListener("input", e => {
+  const el = e.target, id = el.dataset.id;
+  if (!id || !state.has(id)) return;
+  const rec = state.get(id);
+  if (el.dataset.pic){
+    const code = el.dataset.pic;
+    rec.pictograms = rec.pictograms.filter(c => c !== code);
+    if (el.checked) rec.pictograms.push(code);
+    rec.pictograms.sort();
+    el.closest("label").classList.toggle("on", el.checked);
+  } else if (el.dataset.key === "productName" || el.dataset.key === "signalWord"){
+    rec[el.dataset.key] = el.value.trim();
+  } else if (el.dataset.key){
+    rec[el.dataset.key] = el.value.split("\n").map(s => s.trim()).filter(Boolean);
+  }
+  refreshPreview(id);
+});
+document.addEventListener("click", e => {
+  const del = e.target.dataset && e.target.dataset.del;
+  if (del){ state.delete(del); document.getElementById(del).remove(); updateBar(); }
+});
+
+function refreshPreview(id){
+  const el = document.querySelector(`[data-prev="${id}"]`);
+  if (el) el.innerHTML = previewHtml(state.get(id));
+}
+function updateBar(){
+  $dl.disabled = state.size === 0;
+  $status.textContent = state.size
+    ? `물질 ${state.size}개 준비됨 — 내용 확인 후 다운로드하세요.`
+    : "PDF를 업로드하면 버튼이 활성화됩니다.";
+}
+
+/* ══════════════ 엑셀 생성 (excel_writer.py 이식) ══════════════ */
+function b64ToU8(b64){
+  const bin = atob(b64), u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  return u8;
+}
+const CELLS = { product:"A10", signal:"J10", hazardL:"A15", hazardR:"F15",
+  precL:"A17", precR:"F17", ppe:"A19", inhalation:"A22", skinEye:"F22",
+  ingestion:"A30", emergency:"F30" };
+const bullets = items => items.filter(s => s.trim()).map(s => "▶ " + s).join("\n");
+
+function sheetTitle(name, used){
+  let t = (name || "MSDS").replace(/[\\/*?\[\]:]/g, " ").trim().slice(0, 31) || "MSDS";
+  const base = t; let n = 2;
+  while (used.has(t)){ const sfx = ` (${n++})`; t = base.slice(0, 31 - sfx.length) + sfx; }
+  used.add(t); return t;
+}
+
+async function buildWorkbook(records){
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(b64ToU8(TEMPLATE_B64).buffer);
+  const used = new Set();
+  const imgIds = {};
+  records.forEach((rec, i) => {
+    const ws = wb.getWorksheet("Form" + (i + 1));
+    ws.name = sheetTitle(rec.productName || rec.sourceName, used);
+    const set = (cell, v) => { ws.getCell(cell).value = v; };
+    set(CELLS.product, rec.productName || "");
+    set(CELLS.signal, rec.signalWord || "");
+    let [l, r] = splitTwo(rec.hazards);
+    set(CELLS.hazardL, bullets(l)); set(CELLS.hazardR, bullets(r));
+    [l, r] = splitTwo(rec.precautions);
+    set(CELLS.precL, bullets(l)); set(CELLS.precR, bullets(r));
+    set(CELLS.ppe, bullets(rec.ppe));
+    set(CELLS.inhalation, bullets(rec.inhalation));
+    set(CELLS.skinEye, bullets(rec.skinEye));
+    set(CELLS.ingestion, bullets(rec.ingestion));
+    set(CELLS.emergency, bullets(rec.emergency));
+    const pics = [...new Set(rec.pictograms)].slice(0, 6);
+    const anchors = pics.length <= 3 ? [3, 5, 7] : [3, 4, 5, 6, 7, 8];
+    const size = pics.length <= 3 ? 105 : 68;   // 원본 그림 크기 1000125EMU ≈ 105px
+    pics.forEach((code, k) => {
+      if (!GHS_IMG[code]) return;
+      if (!(code in imgIds))
+        imgIds[code] = wb.addImage({ base64: GHS_IMG[code], extension: "png" });
+      ws.addImage(imgIds[code], { tl: { col: anchors[k], row: 6 },
+                                  ext: { width: size, height: size } });
+    });
+  });
+  // 남은 빈 양식 시트 제거
+  wb.worksheets.forEach(w => { if (/^Form\d+$/.test(w.name)) wb.removeWorksheet(w.id); });
+  const buf = await wb.xlsx.writeBuffer();
+  // ExcelJS가 글꼴 10.5pt를 10pt로 반올림하므로 styles.xml을 원복한다
+  const zip = await JSZip.loadAsync(buf);
+  const styles = await zip.file("xl/styles.xml").async("string");
+  zip.file("xl/styles.xml", styles.replace(/<sz val="10"\/>/g, '<sz val="10.5"/>'));
+  return zip.generateAsync({ type: "blob",
+    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    compression: "DEFLATE" });
+}
+
+$dl.addEventListener("click", async () => {
+  if (!state.size) return;
+  $dl.disabled = true; $status.textContent = "엑셀 파일 생성 중...";
+  try {
+    const blob = await buildWorkbook([...state.values()]);
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "화학물질_작업공정별_관리요령.xlsx";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+    $status.textContent = `완료 — 시트 ${state.size}개가 담긴 파일을 내려받았습니다.`;
+  } catch (err){
+    console.error(err);
+    $status.textContent = "생성 실패: " + (err.message || err);
+    alert("엑셀 생성 중 오류가 발생했습니다:\n" + (err.message || err));
+  }
+  $dl.disabled = false;
+});
+</script>
+</body>
+</html>

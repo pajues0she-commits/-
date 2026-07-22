@@ -1,0 +1,4 @@
+exceljs.min.js        exceljs 4.4.0        (npm, MIT)
+pdf.min.js            pdfjs-dist 3.11.174  (npm, Apache-2.0)
+pdf.worker.min.js     pdfjs-dist 3.11.174  (npm, Apache-2.0)
+jszip.min.js          jszip 3.10.1         (npm, MIT/GPLv3)

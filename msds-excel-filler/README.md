@@ -26,7 +26,20 @@ streamlit run app.py
    **우측에는 엑셀 양식과 동일한 모양의 미리보기**가 표시되며, 수정하는 즉시 반영됩니다.
 3. **엑셀 파일 생성 → 다운로드** 버튼으로 완성된 양식을 받습니다.
 
-## 사용법 2 — 명령행
+## 사용법 2 — 단일 HTML (설치 불필요)
+
+`standalone/MSDS_관리요령_작성기.html` 파일 하나를 브라우저(크롬·엣지)에서 열기만 하면
+됩니다. Python 설치가 필요 없고, 오프라인에서도 동작하며, PDF가 외부로 전송되지 않습니다.
+기능은 웹 앱과 동일합니다(자동 추출 → 좌측 편집/우측 미리보기 → xlsx 다운로드,
+한 파일당 최대 20개 물질).
+
+수정 후 다시 빌드하려면:
+
+```bash
+cd standalone && python build_html.py
+```
+
+## 사용법 3 — 명령행
 
 ```bash
 python cli.py msds1.pdf msds2.pdf -o 관리요령.xlsx
@@ -55,6 +68,10 @@ preview.py        # 엑셀 양식 모양의 HTML 미리보기 생성
 ghs_data.py       # GHS 표준 H-code 문구·그림문자·신호어 데이터
 assets/template.xlsx   # 원본과 동일한 빈 양식(시트 1장)
 assets/ghs/GHS0*.png   # GHS 그림문자 이미지
+standalone/MSDS_관리요령_작성기.html  # 설치 없이 쓰는 단일 HTML 버전(빌드 산출물)
+standalone/src/app.html               # 단일 HTML 소스
+standalone/build_html.py              # 단일 HTML 빌드 스크립트
+standalone/vendor/                    # 내장 라이브러리(pdf.js, ExcelJS, JSZip, 한국어 CMap)
 tests/            # 샘플 MSDS PDF 및 생성 스크립트
 ```
 
