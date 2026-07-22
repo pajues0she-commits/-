@@ -58,14 +58,16 @@ for name, data in st.session_state.parsed.items():
 
         with edit_col:
             c1, c2 = st.columns([2, 1])
-            product = c1.text_input("제품명", data.product_name, key=f"p_{name}",
+            product = c1.text_input("제품명 〔MSDS 1항 화학제품과 회사에 관한 정보〕",
+                                    data.product_name, key=f"p_{name}",
                                     help="괄호로 주성분·농도를 덧붙일 수 있습니다. 예: TOC Base Solution (수산화나트륨 3.2%)")
-            signal = c2.selectbox("신호어", ["위험", "경고", ""],
+            signal = c2.selectbox("신호어 〔MSDS 2항〕", ["위험", "경고", ""],
                                   index=["위험", "경고", ""].index(
                                       data.signal_word if data.signal_word in ("위험", "경고") else ""),
                                   key=f"s_{name}")
 
-            pics = st.multiselect("GHS 그림문자", _PIC_OPTIONS,
+            pics = st.multiselect("GHS 그림문자 〔MSDS 2항 유해성·위험성 — 경고표지 항목〕",
+                                  _PIC_OPTIONS,
                                   default=[_pic_label(c) for c in data.pictograms
                                            if c in PICTOGRAM_NAMES],
                                   key=f"g_{name}")
@@ -78,14 +80,14 @@ for name, data in st.session_state.parsed.items():
 
             col_l, col_r = st.columns(2)
             with col_l:
-                hazards = area("유해·위험문구 (건강·환경 유해성, 물리적 위험성)", data.hazards, "hz")
-                ppe = area("적절한 보호구", data.ppe, "ppe")
-                inhal = area("응급조치 — 흡입 시", data.inhalation, "in")
-                ingest = area("응급조치 — 먹었을 때", data.ingestion, "ig")
+                hazards = area("유해·위험문구 〔MSDS 2항 유해성·위험성〕", data.hazards, "hz")
+                ppe = area("적절한 보호구 〔MSDS 8항 노출방지 및 개인보호구〕", data.ppe, "ppe")
+                inhal = area("응급조치 — 흡입 시 〔MSDS 4항 응급조치 요령〕", data.inhalation, "in")
+                ingest = area("응급조치 — 먹었을 때 〔MSDS 4항 응급조치 요령〕", data.ingestion, "ig")
             with col_r:
-                precs = area("안전·보건상의 취급주의 사항", data.precautions, "pr")
-                skin = area("응급조치 — 피부·눈 접촉 시", data.skin_eye, "sk")
-                emerg = area("응급대응 (소화제·화재·누출 대처)", data.emergency, "em")
+                precs = area("안전·보건상의 취급주의 사항 〔MSDS 2항 예방조치문구〕", data.precautions, "pr")
+                skin = area("응급조치 — 피부·눈 접촉 시 〔MSDS 4항 응급조치 요령〕", data.skin_eye, "sk")
+                emerg = area("응급대응 (소화제·화재·누출 대처) 〔MSDS 5항 폭발·화재시 / 6항 누출사고 시〕", data.emergency, "em")
 
         rec = MsdsData(
             source_name=name,

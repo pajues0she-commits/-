@@ -31,6 +31,9 @@
           padding: 8px 12px; font-size: 12.5px; margin: 0 0 10px; color: #7a5c00; }
   label.f { display: block; font-size: 12.5px; font-weight: bold; color: #345;
             margin: 12px 0 4px; }
+  .ref { display: inline-block; background: #e7eef6; color: #35597e;
+         border-radius: 4px; padding: 1px 7px; font-size: 10.5px;
+         font-weight: normal; margin-left: 6px; vertical-align: 1px; }
   input[type=text], select, textarea {
       width: 100%; border: 1px solid #c5cdd6; border-radius: 6px;
       padding: 7px 9px; font-size: 13px; font-family: inherit; background: #fbfcfe; }
@@ -467,8 +470,8 @@ async function addFiles(files){
   updateBar();
 }
 
-function field(id, key, label, hint){
-  return `<label class="f">${label}</label>
+function field(id, key, label, ref, hint){
+  return `<label class="f">${label}<span class="ref">${ref}</span></label>
     <textarea data-id="${id}" data-key="${key}">${esc(state.get(id)[key].join("\n"))}</textarea>
     ${hint ? `<div class="hint">${hint}</div>` : ""}`;
 }
@@ -490,30 +493,31 @@ function buildCard(id, rec){
       <div>
         ${warns}
         <div class="row2">
-          <div><label class="f">제품명</label>
+          <div><label class="f">제품명<span class="ref">MSDS 1항 화학제품과 회사에 관한 정보</span></label>
             <input type="text" data-id="${id}" data-key="productName"
                    value="${esc(rec.productName)}">
             <div class="hint">괄호로 주성분·농도를 덧붙일 수 있습니다. 예: TOC Base Solution (수산화나트륨 3.2%)</div></div>
-          <div><label class="f">신호어</label>
+          <div><label class="f">신호어<span class="ref">MSDS 2항</span></label>
             <select data-id="${id}" data-key="signalWord">
               <option value="위험" ${rec.signalWord === "위험" ? "selected" : ""}>위험</option>
               <option value="경고" ${rec.signalWord === "경고" ? "selected" : ""}>경고</option>
               <option value="" ${!rec.signalWord ? "selected" : ""}>(없음)</option>
             </select></div>
         </div>
-        <label class="f">GHS 그림문자</label>
+        <label class="f">GHS 그림문자<span class="ref">MSDS 2항 유해성·위험성 — 경고표지 항목</span></label>
         <div class="pics">${picBoxes}</div>
         <div class="cols">
           <div>
-            ${field(id, "hazards", "유해·위험문구", "한 줄이 항목 하나가 되며 엑셀에는 '▶ '가 자동으로 붙습니다.")}
-            ${field(id, "ppe", "적절한 보호구")}
-            ${field(id, "inhalation", "응급조치 — 흡입 시")}
-            ${field(id, "ingestion", "응급조치 — 먹었을 때")}
+            ${field(id, "hazards", "유해·위험문구", "MSDS 2항 유해성·위험성",
+                    "한 줄이 항목 하나가 되며 엑셀에는 '▶ '가 자동으로 붙습니다.")}
+            ${field(id, "ppe", "적절한 보호구", "MSDS 8항 노출방지 및 개인보호구")}
+            ${field(id, "inhalation", "응급조치 — 흡입 시", "MSDS 4항 응급조치 요령")}
+            ${field(id, "ingestion", "응급조치 — 먹었을 때", "MSDS 4항 응급조치 요령")}
           </div>
           <div>
-            ${field(id, "precautions", "안전·보건상의 취급주의 사항")}
-            ${field(id, "skinEye", "응급조치 — 피부·눈 접촉 시")}
-            ${field(id, "emergency", "응급대응 (소화제·화재·누출 대처)")}
+            ${field(id, "precautions", "안전·보건상의 취급주의 사항", "MSDS 2항 예방조치문구")}
+            ${field(id, "skinEye", "응급조치 — 피부·눈 접촉 시", "MSDS 4항 응급조치 요령")}
+            ${field(id, "emergency", "응급대응 (소화제·화재·누출 대처)", "MSDS 5항 폭발·화재 / 6항 누출사고")}
           </div>
         </div>
       </div>

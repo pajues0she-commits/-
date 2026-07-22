@@ -80,13 +80,65 @@ P312 불편함을 느끼면 의료기관(의사)의 진찰을 받으시오.
 """
 
 
-def make(path):
+SAMPLE2 = """물질안전보건자료 (MSDS)
+
+1. 화학제품과 회사에 관한 정보
+가. 제품명 : TOC Acid Solution
+나. 제품의 권고 용도와 사용상의 제한 : 분석용 시약
+
+2. 유해성·위험성
+가. 유해성·위험성 분류
+피부 부식성/피부 자극성 : 구분1
+심한 눈 손상성/눈 자극성 : 구분1
+나. 예방조치문구를 포함한 경고표지 항목
+○ 그림문자 : GHS05
+○ 신호어 : 위험
+○ 유해·위험문구
+H314 피부에 심한 화상과 눈에 손상을 일으킴
+○ 예방조치문구
+예방 :
+P260 분진/흄/가스/미스트/증기/스프레이를 흡입하지 마시오.
+P280 보호장갑/보호의/보안경/안면보호구를 착용하시오.
+저장 :
+P405 잠금장치가 있는 저장장소에 저장하시오.
+
+4. 응급조치 요령
+가. 눈에 들어갔을 때
+○ 몇 분간 물로 조심해서 씻으시오.
+○ 가능하면 콘택트렌즈를 제거하시오. 계속 씻으시오.
+나. 피부에 접촉했을 때
+○ 오염된 모든 의류는 벗거나 제거하시오.
+○ 피부를 물로 씻으시오/샤워하시오.
+다. 흡입했을 때
+○ 신선한 공기가 있는 곳으로 옮기고 호흡하기 쉬운 자세로 안정을 취하시오.
+라. 먹었을 때
+○ 입을 씻어내시오. 토하게 하려 하지 마시오.
+
+5. 폭발·화재시 대처방법
+가. 적절한 (및 부적절한) 소화제
+○ 물분무, 이산화탄소
+나. 화학물질로부터 생기는 특정 유해성
+○ 가열 시 부식성 증기가 발생할 수 있음
+
+6. 누출사고 시 대처방법
+다. 정화 또는 제거 방법
+○ 중화제(소다회, 석회)로 중화 후 수거하시오.
+
+8. 노출방지 및 개인보호구
+라. 개인보호구
+○ 호흡기 보호 : 산성 가스용 방독마스크를 착용하시오.
+○ 눈 보호 : 보안경과 안면보호구를 착용하시오.
+○ 손 보호 : 내산성 보호장갑을 착용하시오.
+"""
+
+
+def make(path, text=SAMPLE):
     pdfmetrics.registerFont(UnicodeCIDFont("HYGothic-Medium"))
     c = canvas.Canvas(path, pagesize=A4)
     width, height = A4
     y = height - 50
     c.setFont("HYGothic-Medium", 10)
-    for line in SAMPLE.splitlines():
+    for line in text.splitlines():
         if y < 50:
             c.showPage()
             c.setFont("HYGothic-Medium", 10)
@@ -98,4 +150,6 @@ def make(path):
 
 
 if __name__ == "__main__":
-    make(os.path.join(os.path.dirname(os.path.abspath(__file__)), "sample_msds.pdf"))
+    here = os.path.dirname(os.path.abspath(__file__))
+    make(os.path.join(here, "sample_msds.pdf"))
+    make(os.path.join(here, "sample_msds_2.pdf"), SAMPLE2)
