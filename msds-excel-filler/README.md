@@ -22,7 +22,8 @@ streamlit run app.py
 브라우저가 열리면:
 
 1. MSDS PDF 파일을 업로드합니다 (여러 개 가능).
-2. 자동 추출된 제품명·신호어·그림문자·각 항목을 확인하고 필요하면 수정합니다.
+2. 좌측에서 자동 추출된 제품명·신호어·그림문자·각 항목을 확인·수정합니다.
+   **우측에는 엑셀 양식과 동일한 모양의 미리보기**가 표시되며, 수정하는 즉시 반영됩니다.
 3. **엑셀 파일 생성 → 다운로드** 버튼으로 완성된 양식을 받습니다.
 
 ## 사용법 2 — 명령행
@@ -50,6 +51,7 @@ app.py            # Streamlit 웹 앱
 cli.py            # 명령행 도구
 msds_parser.py    # MSDS PDF 파싱(항목 추출)
 excel_writer.py   # 양식 시트 복제·기입, 그림문자 삽입
+preview.py        # 엑셀 양식 모양의 HTML 미리보기 생성
 ghs_data.py       # GHS 표준 H-code 문구·그림문자·신호어 데이터
 assets/template.xlsx   # 원본과 동일한 빈 양식(시트 1장)
 assets/ghs/GHS0*.png   # GHS 그림문자 이미지

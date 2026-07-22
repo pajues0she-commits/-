@@ -4,13 +4,13 @@
 실행:  streamlit run app.py
 """
 import io
-import os
 
 import streamlit as st
 
 from ghs_data import PICTOGRAM_NAMES
 from msds_parser import MsdsData, parse_msds
-from excel_writer import build_workbook, GHS_DIR
+from excel_writer import build_workbook
+from preview import preview_html
 
 st.set_page_config(page_title="MSDS → 관리요령 엑셀 자동작성", page_icon="🧪",
                    layout="wide")
@@ -54,41 +54,38 @@ for name, data in st.session_state.parsed.items():
         for w in data.warnings:
             st.warning(w)
 
-        c1, c2 = st.columns([2, 1])
-        product = c1.text_input("제품명", data.product_name, key=f"p_{name}",
-                                help="괄호로 주성분·농도를 덧붙일 수 있습니다. 예: TOC Base Solution (수산화나트륨 3.2%)")
-        signal = c2.selectbox("신호어", ["위험", "경고", ""],
-                              index=["위험", "경고", ""].index(
-                                  data.signal_word if data.signal_word in ("위험", "경고") else ""),
-                              key=f"s_{name}")
+        edit_col, prev_col = st.columns([1.1, 1], gap="medium")
 
-        pics = st.multiselect("GHS 그림문자", _PIC_OPTIONS,
-                              default=[_pic_label(c) for c in data.pictograms
-                                       if c in PICTOGRAM_NAMES],
-                              key=f"g_{name}")
-        pic_codes = [p.split()[0] for p in pics]
-        if pic_codes:
-            cols = st.columns(9)
-            for i, code in enumerate(pic_codes[:9]):
-                path = os.path.join(GHS_DIR, f"{code}.png")
-                if os.path.exists(path):
-                    cols[i].image(path, width=70, caption=code)
+        with edit_col:
+            c1, c2 = st.columns([2, 1])
+            product = c1.text_input("제품명", data.product_name, key=f"p_{name}",
+                                    help="괄호로 주성분·농도를 덧붙일 수 있습니다. 예: TOC Base Solution (수산화나트륨 3.2%)")
+            signal = c2.selectbox("신호어", ["위험", "경고", ""],
+                                  index=["위험", "경고", ""].index(
+                                      data.signal_word if data.signal_word in ("위험", "경고") else ""),
+                                  key=f"s_{name}")
 
-        def area(label, items, key, height=110):
-            return st.text_area(label, "\n".join(items), key=f"{key}_{name}",
-                                height=height,
-                                help="한 줄이 항목 하나가 되며 엑셀에는 '▶ '가 자동으로 붙습니다.")
+            pics = st.multiselect("GHS 그림문자", _PIC_OPTIONS,
+                                  default=[_pic_label(c) for c in data.pictograms
+                                           if c in PICTOGRAM_NAMES],
+                                  key=f"g_{name}")
+            pic_codes = [p.split()[0] for p in pics]
 
-        col_l, col_r = st.columns(2)
-        with col_l:
-            hazards = area("유해·위험문구 (건강·환경 유해성, 물리적 위험성)", data.hazards, "hz")
-            ppe = area("적절한 보호구", data.ppe, "ppe")
-            inhal = area("응급조치 — 흡입 시", data.inhalation, "in")
-            ingest = area("응급조치 — 먹었을 때", data.ingestion, "ig")
-        with col_r:
-            precs = area("안전·보건상의 취급주의 사항", data.precautions, "pr")
-            skin = area("응급조치 — 피부·눈 접촉 시", data.skin_eye, "sk")
-            emerg = area("응급대응 (소화제·화재·누출 대처)", data.emergency, "em")
+            def area(label, items, key, height=110):
+                return st.text_area(label, "\n".join(items), key=f"{key}_{name}",
+                                    height=height,
+                                    help="한 줄이 항목 하나가 되며 엑셀에는 '▶ '가 자동으로 붙습니다.")
+
+            col_l, col_r = st.columns(2)
+            with col_l:
+                hazards = area("유해·위험문구 (건강·환경 유해성, 물리적 위험성)", data.hazards, "hz")
+                ppe = area("적절한 보호구", data.ppe, "ppe")
+                inhal = area("응급조치 — 흡입 시", data.inhalation, "in")
+                ingest = area("응급조치 — 먹었을 때", data.ingestion, "ig")
+            with col_r:
+                precs = area("안전·보건상의 취급주의 사항", data.precautions, "pr")
+                skin = area("응급조치 — 피부·눈 접촉 시", data.skin_eye, "sk")
+                emerg = area("응급대응 (소화제·화재·누출 대처)", data.emergency, "em")
 
         rec = MsdsData(
             source_name=name,
@@ -104,6 +101,10 @@ for name, data in st.session_state.parsed.items():
             emergency=[l.strip() for l in emerg.splitlines() if l.strip()],
         )
         records.append(rec)
+
+        with prev_col:
+            st.markdown("##### 🔍 미리보기 (엑셀 양식과 동일)")
+            st.markdown(preview_html(rec), unsafe_allow_html=True)
 
 if records:
     st.divider()

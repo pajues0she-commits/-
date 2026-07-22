@@ -35,7 +35,7 @@ def _bullets(items) -> str:
     return "\n".join("▶ " + s for s in items if s.strip())
 
 
-def _split_two(items):
+def split_two(items):
     """항목을 좌/우 칸으로 절반씩 나눈다 (원본 양식이 두 칸 구성이므로)."""
     if len(items) <= 1:
         return items, []
@@ -60,11 +60,11 @@ def fill_sheet(ws, data):
     ws[_CELLS["product"]] = data.product_name or ""
     ws[_CELLS["signal"]] = data.signal_word or ""
 
-    left, right = _split_two(data.hazards)
+    left, right = split_two(data.hazards)
     ws[_CELLS["hazard_l"]] = _bullets(left)
     ws[_CELLS["hazard_r"]] = _bullets(right)
 
-    left, right = _split_two(data.precautions)
+    left, right = split_two(data.precautions)
     ws[_CELLS["prec_l"]] = _bullets(left)
     ws[_CELLS["prec_r"]] = _bullets(right)
 
