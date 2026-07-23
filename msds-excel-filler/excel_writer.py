@@ -152,6 +152,11 @@ def build_workbook(records, template_path: str = TEMPLATE_PATH) -> bytes:
         fill_sheet(ws, data)
     wb.remove(template)
     wb.active = 0
+    # 원본 템플릿에서 물려받은 탭 표시 위치(firstSheet=31)가 시트 수보다
+    # 크면 엑셀이 파일 오류로 볼 수 있어 초기화한다
+    for view in wb.views or []:
+        view.firstSheet = 0
+        view.activeTab = 0
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()

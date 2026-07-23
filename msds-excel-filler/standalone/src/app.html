@@ -891,10 +891,12 @@ function autofitRows(ws, values){
   }
 }
 function pageFit(ws){
+  // fitToPage(sheetPr)와 인쇄영역(definedName)은 ExcelJS가 스키마에 어긋난
+  // XML을 만들어 엑셀이 "복구" 경고를 띄우므로, 여기서는 pageSetup 속성만
+  // 지정하고 나머지는 buildWorkbook의 zip 후처리에서 직접 쓴다.
   ws.pageSetup = Object.assign({}, ws.pageSetup, {
     paperSize: 9, orientation: "portrait",
-    fitToPage: true, fitToWidth: 1, fitToHeight: 1,
-    printArea: "A1:J37",
+    fitToWidth: 1, fitToHeight: 1,
   });
 }
 
@@ -945,6 +947,36 @@ async function buildWorkbook(records){
   const zip = await JSZip.loadAsync(buf);
   const styles = await zip.file("xl/styles.xml").async("string");
   zip.file("xl/styles.xml", styles.replace(/<sz val="10"\/>/g, '<sz val="10.5"/>'));
+
+  // fitToPage: <sheetPr>의 마지막 자식으로 <pageSetUpPr>를 넣는다
+  // (스키마 순서: tabColor → outlinePr → pageSetUpPr)
+  const sheetFiles = Object.keys(zip.files)
+    .filter(n => /^xl\/worksheets\/sheet\d+\.xml$/.test(n));
+  for (const name of sheetFiles){
+    let x = await zip.file(name).async("string");
+    x = x.replace(/<pageSetUpPr[^>]*\/>/g, "");
+    if (x.includes("</sheetPr>"))
+      x = x.replace("</sheetPr>", '<pageSetUpPr fitToPage="1"/></sheetPr>');
+    else if (/<sheetPr[^>]*\/>/.test(x))
+      x = x.replace(/<sheetPr([^>]*)\/>/,
+                    '<sheetPr$1><pageSetUpPr fitToPage="1"/></sheetPr>');
+    else
+      x = x.replace(/(<worksheet[^>]*>)/,
+                    '$1<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>');
+    zip.file(name, x);
+  }
+
+  // 인쇄 영역: 표준 절대참조($A$1:$J$37) definedName으로 직접 기록
+  let wbx = await zip.file("xl/workbook.xml").async("string");
+  wbx = wbx.replace(/<definedNames>[\s\S]*?<\/definedNames>/, "");
+  wbx = wbx.replace(/firstSheet="\d+"/, 'firstSheet="0"');
+  const sheetNames = [...wbx.matchAll(/<sheet [^>]*name="([^"]+)"/g)].map(m => m[1]);
+  const dn = sheetNames.map((n, i) =>
+    `<definedName name="_xlnm.Print_Area" localSheetId="${i}">` +
+    `&apos;${n.replace(/'/g, "''")}&apos;!$A$1:$J$37</definedName>`).join("");
+  wbx = wbx.replace("</sheets>", "</sheets><definedNames>" + dn + "</definedNames>");
+  zip.file("xl/workbook.xml", wbx);
+
   return zip.generateAsync({ type: "blob",
     mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     compression: "DEFLATE" });
