@@ -174,16 +174,19 @@
         <button id="sgAdd" type="button">＋ 직접 추가</button>
       </div>
       <div class="addrow" style="margin-top:8px;">
+        <button id="sgDataBtn" type="button">📁 메타데이터 파일 불러오기 (CSV·XLSX)</button>
         <input type="password" id="sgApiKey"
-               placeholder="공공데이터포털 API 인증키(serviceKey) — NCIS 자동 조회에 필요">
+               placeholder="공공데이터포털 API 인증키(serviceKey) — 데이터 파일이 없을 때 사용">
+        <input type="file" id="sgDataFile" accept=".csv,.xlsx,.xlsm,.txt" style="display:none">
       </div>
-      <div class="hint">「NCIS 자동 조회」는 공공데이터포털의 한국환경공단 화학물질(유독물
-        GHS) 조회 API(apis.data.go.kr/B552584/kecoapi/ncissbstn)로 물질명을 검색해
-        물질명·국제연합번호·그림문자를 표에 자동 입력합니다. data.go.kr에서 해당 서비스를
-        활용 신청해 발급받은 인증키를 입력하세요(이 파일에만 저장됨).
-        브라우저가 API 접속을 차단(CORS)하는 경우에는 「KREACH 검색」으로 열리는
-        화학물질정보처리시스템 화면의 내용을 <b>전체 선택(Ctrl+A)·복사(Ctrl+C)</b>해
-        아래 칸에 붙여 넣으면 같은 정보를 인식해 추가합니다.</div>
+      <div class="hint" id="sgDataInfo"></div>
+      <div class="hint">「NCIS 자동 조회」는 ① 공공데이터포털(data.go.kr)에서 내려받은
+        <b>메타데이터 파일(CSV·XLSX)</b>을 「메타데이터 파일 불러오기」로 올려 두면 그
+        데이터에서 물질명을 검색합니다 — 한 번 불러오면 이 브라우저에 저장되어 인증키·
+        인터넷 없이 동작합니다. ② 데이터 파일이 없으면 한국환경공단 화학물질(유독물 GHS)
+        조회 API(apis.data.go.kr/B552584/kecoapi/ncissbstn)를 인증키로 호출합니다.
+        브라우저가 API 접속을 차단(CORS)하면 조회 주소를 새 탭으로 열어 응답을 복사해
+        붙여 넣는 방법을 안내하며, 「KREACH 검색」 화면 내용을 붙여 넣어도 됩니다.</div>
       <div id="sgNcisResults"></div>
       <textarea id="sgPaste" placeholder="KREACH 검색 결과 화면 내용을 여기에 붙여넣기 (Ctrl+V) — 자동 인식되어 표에 추가됩니다"></textarea>
       <div class="hint" id="sgPasteMsg"></div>
@@ -1292,17 +1295,20 @@ function ncisFirstMatch(item, patterns, koreanOnly){
   return "";
 }
 function ncisExtract(item){
-  const name = ncisFirstMatch(item,
-      ["nm.*kor|kor.*nm", "sbstn.*nm|mttr.*nm|chem.*nm", "nm$|name"], true) ||
-    ncisFirstMatch(item, ["sbstn.*nm|mttr.*nm|chem.*nm", "nm$|name"], false);
+  // 영문 필드명(API)과 국문 열 이름(메타데이터 CSV/XLSX) 모두 지원
+  const NAME_PATS = ["물질\\s*명|국문\\s*명|화학물질명",
+                     "nm.*kor|kor.*nm", "sbstn.*nm|mttr.*nm|chem.*nm", "nm$|name"];
+  const name = ncisFirstMatch(item, NAME_PATS, true) ||
+               ncisFirstMatch(item, NAME_PATS, false);
   let un = "";
-  let m = /\b(\d{4})\b/.exec(ncisFirstMatch(item, ["un.?(no|num)", "^un$"], false));
+  let m = /\b(\d{4})\b/.exec(
+    ncisFirstMatch(item, ["유엔|국제\\s*연합|un.?(no|num)", "^un$"], false));
   if (m) un = m[1];
   const cas = ncisFirstMatch(item, ["cas"], false);
   const blob = Object.values(item).map(v => String(v ?? "")).join(" ");
   let pics = new Set(blob.match(/GHS0[1-9]/g) || []);
   if (!pics.size){
-    const pf = ncisFirstMatch(item, ["pctg|pictogram|grim|picto"], false);
+    const pf = ncisFirstMatch(item, ["그림\\s*문자|pctg|pictogram|grim|picto"], false);
     for (const [kw, code] of NCIS_PIC_KW)
       if (new RegExp(kw).test(pf)) pics.add(code);
   }
@@ -1353,6 +1359,114 @@ try { $sgApiKey.value = localStorage.getItem("ncisApiKey") || ""; } catch {}
 $sgApiKey.addEventListener("input", () => {
   try { localStorage.setItem("ncisApiKey", $sgApiKey.value); } catch {}
 });
+
+/* ── 메타데이터 파일(CSV/XLSX) 데이터셋 — 한 번 불러오면 브라우저에 저장 ── */
+let ncisDataset = null;
+try { ncisDataset = JSON.parse(localStorage.getItem("ncisDataset") || "null"); } catch {}
+const $sgDataInfo = document.getElementById("sgDataInfo");
+const $sgDataFile = document.getElementById("sgDataFile");
+function renderDataInfo(extra){
+  if (ncisDataset && ncisDataset.rows.length){
+    $sgDataInfo.innerHTML = `📚 데이터셋 사용 중: <b>${esc(ncisDataset.name)}</b>
+      (${ncisDataset.rows.length}건)${extra ? " — " + esc(extra) : ""}
+      <a href="#" id="sgDataDel">[삭제]</a>`;
+  } else $sgDataInfo.innerHTML = "";
+}
+function parseCsvText(text){
+  const rows = []; let row = [], field = "", inQ = false;
+  for (let i = 0; i < text.length; i++){
+    const ch = text[i];
+    if (inQ){
+      if (ch === '"'){
+        if (text[i + 1] === '"'){ field += '"'; i++; } else inQ = false;
+      } else field += ch;
+    } else if (ch === '"') inQ = true;
+    else if (ch === ",") { row.push(field); field = ""; }
+    else if (ch === "\n" || ch === "\r"){
+      if (ch === "\r" && text[i + 1] === "\n") i++;
+      row.push(field); field = "";
+      rows.push(row); row = [];
+    } else field += ch;
+  }
+  if (field !== "" || row.length){ row.push(field); rows.push(row); }
+  return rows;
+}
+function rowsToObjects(raw){
+  let headers = null; const out = [];
+  for (const r of raw){
+    const vals = r.map(v => String(v ?? "").trim());
+    if (!vals.some(Boolean)) continue;
+    if (!headers){                       // 첫 번째 내용 있는 행 = 열 이름
+      if (vals.filter(Boolean).length >= 2) headers = vals;
+      continue;
+    }
+    const d = {};
+    vals.forEach((v, i) => { if (headers[i] && v) d[headers[i]] = v; });
+    if (Object.keys(d).length) out.push(d);
+  }
+  return out;
+}
+function xlsxCellText(cell){
+  const v = cell.value;
+  if (v == null) return "";
+  if (typeof v === "object"){
+    if (v.richText) return v.richText.map(t => t.text).join("");
+    if (v.text !== undefined) return String(v.text);
+    if (v.result !== undefined) return String(v.result);
+    if (v instanceof Date) return v.toISOString().slice(0, 10);
+  }
+  return String(v);
+}
+async function loadDatasetFile(file){
+  if (/\.xls[xm]$/i.test(file.name)){
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(await file.arrayBuffer());
+    const raw = [];
+    wb.worksheets[0].eachRow({ includeEmpty: false }, row => {
+      const vals = [];
+      row.eachCell({ includeEmpty: true },
+        (cell, col) => { vals[col - 1] = xlsxCellText(cell); });
+      raw.push(vals);
+    });
+    return rowsToObjects(raw);
+  }
+  const buf = await file.arrayBuffer();
+  let text = new TextDecoder("utf-8").decode(buf);
+  if ((text.match(/�/g) || []).length > 2)      // 한글 CSV는 CP949인 경우가 많다
+    text = new TextDecoder("euc-kr").decode(buf);
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+  return rowsToObjects(parseCsvText(text));
+}
+document.getElementById("sgDataBtn").addEventListener("click", () => $sgDataFile.click());
+$sgDataFile.addEventListener("change", async () => {
+  const f = $sgDataFile.files[0];
+  $sgDataFile.value = "";
+  if (!f) return;
+  $sgDataInfo.textContent = "데이터 파일 읽는 중...";
+  try {
+    const rows = await loadDatasetFile(f);
+    if (!rows.length){
+      $sgDataInfo.textContent = "⚠️ 파일에서 표 형식 데이터를 찾지 못했습니다.";
+      return;
+    }
+    ncisDataset = { name: f.name, rows };
+    let saved = true;
+    try { localStorage.setItem("ncisDataset", JSON.stringify(ncisDataset)); }
+    catch { saved = false; try { localStorage.removeItem("ncisDataset"); } catch {} }
+    renderDataInfo(saved ? "" : "파일이 커서 이 창을 닫으면 다시 불러와야 합니다");
+  } catch (err){
+    $sgDataInfo.textContent = "⚠️ 파일을 읽지 못했습니다: " + (err.message || err);
+  }
+});
+$sgDataInfo.addEventListener("click", e => {
+  if (e.target.id === "sgDataDel"){
+    e.preventDefault();
+    ncisDataset = null;
+    try { localStorage.removeItem("ncisDataset"); } catch {}
+    renderDataInfo();
+  }
+});
+renderDataInfo();
 function renderNcisResults(err){
   let h = "";
   ncisResults.forEach((ent, i) => {
@@ -1369,8 +1483,16 @@ document.getElementById("sgNcis").addEventListener("click", async e => {
   const btn = e.currentTarget;
   const key = $sgApiKey.value.trim(), nm = $sgName.value.trim();
   ncisResults = [];
-  if (!key){ renderNcisResults("공공데이터포털 API 인증키(serviceKey)를 먼저 입력해 주세요."); return; }
   if (!nm){ renderNcisResults("조회할 화학물질명을 입력해 주세요."); return; }
+  // 메타데이터 파일이 있으면 그 데이터에서 검색 (인증키·인터넷 불필요)
+  if (ncisDataset && ncisDataset.rows.length){
+    const hits = ncisDataset.rows.filter(it => ncisContains(it, nm));
+    ncisResults = hits.slice(0, 20).map(ncisExtract);
+    renderNcisResults(ncisResults.length ? ""
+      : "데이터셋에서 해당 물질명을 찾지 못했습니다. 철자를 확인하거나 데이터 파일을 최신으로 교체해 보세요.");
+    return;
+  }
+  if (!key){ renderNcisResults("메타데이터 파일을 불러오거나 공공데이터포털 API 인증키(serviceKey)를 입력해 주세요."); return; }
   btn.disabled = true;
   renderNcisResults("");
   $sgNcisResults.innerHTML = '<div class="hint">NCIS 조회 중...</div>';

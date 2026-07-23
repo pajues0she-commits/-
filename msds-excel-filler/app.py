@@ -13,7 +13,8 @@ from msds_parser import MsdsData, parse_msds
 from excel_writer import build_workbook
 from preview import preview_html
 from ncis_api import (BASE_URL as NCIS_BASE_URL, _contains as _ncis_contains,
-                      extract_entry, parse_items, search_substance)
+                      extract_entry, load_dataset, parse_items, search_dataset,
+                      search_substance)
 from sign_writer import KREACH_URL, build_sign_svg, parse_kreach_text
 
 st.set_page_config(page_title="MSDS 자동 작성 도구", page_icon="🧪",
@@ -153,21 +154,44 @@ with tab_sign:
     if "manual_subs" not in st.session_state:
         st.session_state.manual_subs = []
 
-    # 화학물질 추가 ① — NCIS(공공데이터포털) 자동 조회
-    st.markdown("###### 화학물질 추가 ① — 물질명으로 NCIS 자동 조회")
+    # 화학물질 추가 ① — 물질명 자동 조회 (메타데이터 파일 우선, 없으면 API)
+    st.markdown("###### 화학물질 추가 ① — 물질명으로 자동 조회")
+    data_file = st.file_uploader(
+        "공공데이터포털 메타데이터 파일 (CSV/XLSX — 데이터 파일을 내려받아 한 번 올려 두면 "
+        "인증키·인터넷 없이 검색됩니다)", type=["csv", "xlsx", "txt"], key="ncis_file")
+    if data_file is not None and \
+            st.session_state.get("ncis_ds_name") != data_file.name:
+        try:
+            st.session_state.ncis_ds = load_dataset(data_file.name,
+                                                    data_file.getvalue())
+            st.session_state.ncis_ds_name = data_file.name
+        except Exception as e:
+            st.session_state.ncis_ds = []
+            st.error(f"데이터 파일을 읽지 못했습니다: {e}")
+    dataset = st.session_state.get("ncis_ds") or []
+    if dataset:
+        st.caption(f"📚 데이터셋 사용 중: {st.session_state.ncis_ds_name} "
+                   f"({len(dataset)}건)")
     api_key = st.text_input(
-        "공공데이터포털 API 인증키 (serviceKey)", type="password", key="ncis_key",
+        "공공데이터포털 API 인증키 (serviceKey — 데이터 파일이 없을 때 사용)",
+        type="password", key="ncis_key",
         help=f"{NCIS_BASE_URL} 서비스를 공공데이터포털(data.go.kr)에서 활용 신청 후 "
              "발급받은 인증키를 입력하세요.")
     s1, s2 = st.columns([3, 1])
     ncis_q = s1.text_input("화학물질명", key="ncis_q", placeholder="예: 황산, 톨루엔")
     if s2.button("🔎 자동 조회"):
-        if not api_key.strip():
-            st.session_state.ncis_results = []
-            st.session_state.ncis_err = "API 인증키를 먼저 입력해 주세요."
-        elif not ncis_q.strip():
+        if not ncis_q.strip():
             st.session_state.ncis_results = []
             st.session_state.ncis_err = "조회할 화학물질명을 입력해 주세요."
+        elif dataset:
+            found = search_dataset(dataset, ncis_q)
+            st.session_state.ncis_results = found
+            st.session_state.ncis_err = \
+                "" if found else "데이터셋에서 해당 물질명을 찾지 못했습니다."
+        elif not api_key.strip():
+            st.session_state.ncis_results = []
+            st.session_state.ncis_err = ("메타데이터 파일을 올리거나 API 인증키를 "
+                                         "입력해 주세요.")
         else:
             with st.spinner("NCIS 조회 중..."):
                 found, _url, err = search_substance(api_key, ncis_q)

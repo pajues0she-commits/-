@@ -127,24 +127,29 @@ def _first_match(item: dict, patterns, korean_only=False):
 
 
 def extract_entry(item: dict) -> dict:
-    """API 레코드 → 표지판 항목 {name, un, pictograms, cas, signal}."""
-    name = _first_match(item, [r"nm.*kor|kor.*nm", r"sbstn.*nm|mttr.*nm|chem.*nm",
+    """API 레코드/데이터 파일 행 → 표지판 항목 {name, un, pictograms, cas, signal}.
+
+    영문 필드명(API)과 국문 열 이름(메타데이터 CSV/XLSX) 모두 지원한다.
+    """
+    name = _first_match(item, [r"물질\s*명|국문\s*명|화학물질명",
+                               r"nm.*kor|kor.*nm", r"sbstn.*nm|mttr.*nm|chem.*nm",
                                r"(?<!e)nm$|name"], korean_only=True) or \
-        _first_match(item, [r"sbstn.*nm|mttr.*nm|chem.*nm", r"nm$|name"])
+        _first_match(item, [r"물질\s*명|국문\s*명|화학물질명",
+                            r"sbstn.*nm|mttr.*nm|chem.*nm", r"nm$|name"])
     un = ""
     m = re.search(r"\b(\d{4})\b",
-                  _first_match(item, [r"un.?(no|num)", r"^un$"]))
+                  _first_match(item, [r"유엔|국제\s*연합|un.?(no|num)", r"^un$"]))
     if m:
         un = m.group(1)
     cas = _first_match(item, [r"cas"])
-    signal = _first_match(item, [r"sgnl|signal|snal"])
+    signal = _first_match(item, [r"신호어|sgnl|signal|snal"])
     if signal and "위험" not in signal and "경고" not in signal:
         signal = ""
 
     blob = " ".join(str(v) for v in item.values())
     pics = set(re.findall(r"GHS0[1-9]", blob))
     if not pics:
-        pic_field = _first_match(item, [r"pctg|pictogram|grim|picto"])
+        pic_field = _first_match(item, [r"그림\s*문자|pctg|pictogram|grim|picto"])
         for kw, code in _PIC_KW:
             if re.search(kw, pic_field):
                 pics.add(code)
@@ -162,6 +167,64 @@ def _contains(item: dict, query: str) -> bool:
         if q in re.sub(r"\s+", "", str(v)).lower():
             return True
     return False
+
+
+def load_dataset(filename: str, data: bytes):
+    """공공데이터포털에서 내려받은 메타데이터 파일(CSV/XLSX) → 행 dict 목록.
+
+    첫 번째 비어 있지 않은 행을 열 이름으로 사용한다. CSV는 UTF-8(BOM)과
+    CP949(EUC-KR) 인코딩을 모두 지원한다.
+    """
+    rows = []
+    if re.search(r"\.xlsx?$|\.xlsm$", filename, re.I):
+        import io as _io
+
+        import openpyxl
+        wb = openpyxl.load_workbook(_io.BytesIO(data), read_only=True,
+                                    data_only=True)
+        ws = wb.worksheets[0]
+        headers = None
+        for row in ws.iter_rows(values_only=True):
+            vals = ["" if v is None else str(v).strip() for v in row]
+            if not any(vals):
+                continue
+            if headers is None:
+                if sum(1 for v in vals if v) >= 2:
+                    headers = vals
+                continue
+            d = {h: v for h, v in zip(headers, vals) if h and v}
+            if d:
+                rows.append(d)
+        wb.close()
+        return rows
+    # CSV / TXT
+    try:
+        text = data.decode("utf-8-sig")
+        if text.count("�") > 2:
+            raise UnicodeDecodeError("utf-8", b"", 0, 1, "replacement")
+    except UnicodeDecodeError:
+        text = data.decode("cp949", "replace")
+    import csv as _csv
+    import io as _io
+    headers = None
+    for row in _csv.reader(_io.StringIO(text)):
+        vals = [v.strip() for v in row]
+        if not any(vals):
+            continue
+        if headers is None:
+            if sum(1 for v in vals if v) >= 2:
+                headers = vals
+            continue
+        d = {h: v for h, v in zip(headers, vals) if h and v}
+        if d:
+            rows.append(d)
+    return rows
+
+
+def search_dataset(rows, name: str):
+    """불러온 메타데이터에서 물질명 부분일치 검색 → 표지판 항목 목록."""
+    hits = [r for r in rows if _contains(r, name)]
+    return [extract_entry(r) for r in hits[:20]]
 
 
 def search_substance(service_key: str, name: str, max_pages: int = 4):
