@@ -442,10 +442,17 @@ def parse_msds(pdf_source, source_name: str = "") -> MsdsData:
         [r"예방\s*조치\s*문구", r"신호어", r"그림\s*문자", _SUB_HEAD,
          r"기타\s*유해성", r"NFPA"])
     data.hazards = bulletize(hz_block)
-    if not data.hazards and _none_stated(hz_block):
+    if not h_codes:
+        # 2항 유해성·위험성에 H-code가 하나도 없으면 유해성이 없는 물질로
+        # 보아 '해당없음'으로 기재한다
+        if data.hazards and data.hazards != [NONE_TEXT]:
+            data.warnings.append(
+                "2항에 H-code가 없어 유해·위험문구를 '해당없음'으로 표기했습니다.")
+        data.hazards = [NONE_TEXT]
+    elif not data.hazards and _none_stated(hz_block):
         # 원문이 "없음/해당없음/내용없음/누락" 등으로 명시한 경우
         data.hazards = [NONE_TEXT]
-    elif not data.hazards and h_codes:
+    elif not data.hazards:
         data.hazards = [H_STATEMENTS[c] for c in h_codes if c in H_STATEMENTS]
         if data.hazards:
             data.warnings.append("유해·위험문구를 H-code로부터 표준 문구로 복원했습니다.")
