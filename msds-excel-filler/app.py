@@ -12,6 +12,7 @@ from ghs_data import PICTOGRAM_NAMES
 from msds_parser import MsdsData, parse_msds
 from excel_writer import build_workbook
 from preview import preview_html
+from ncis_api import BASE_URL as NCIS_BASE_URL, search_substance
 from sign_writer import KREACH_URL, build_sign_svg, parse_kreach_text
 
 st.set_page_config(page_title="MSDS 자동 작성 도구", page_icon="🧪",
@@ -148,14 +149,49 @@ with tab_sign:
                           help="상시 연락이 가능한 전화번호를 기재해야 합니다.")
     phone2 = c3.text_input("연락처 (보조, 선택)", key="sign_ph2")
 
-    # 화학물질 추가 — KREACH(화학물질정보처리시스템) 검색 활용
-    st.markdown(f"###### 화학물질 추가 — [🔍 KREACH 분류·표시 검색 열기]({KREACH_URL})")
-    st.caption("위 링크에서 물질을 검색한 뒤 결과·상세 화면 내용을 전체 선택(Ctrl+A)·"
-               "복사(Ctrl+C)해서 아래에 붙여 넣으면 물질명·국제연합번호·그림문자"
-               "(H코드 포함 시 자동 판정)를 인식해 표에 추가합니다. 보안 정책상 외부 "
-               "사이트의 정보를 직접 내려받을 수는 없어 복사–붙여넣기 방식을 사용합니다.")
     if "manual_subs" not in st.session_state:
         st.session_state.manual_subs = []
+
+    # 화학물질 추가 ① — NCIS(공공데이터포털) 자동 조회
+    st.markdown("###### 화학물질 추가 ① — 물질명으로 NCIS 자동 조회")
+    api_key = st.text_input(
+        "공공데이터포털 API 인증키 (serviceKey)", type="password", key="ncis_key",
+        help=f"{NCIS_BASE_URL} 서비스를 공공데이터포털(data.go.kr)에서 활용 신청 후 "
+             "발급받은 인증키를 입력하세요.")
+    s1, s2 = st.columns([3, 1])
+    ncis_q = s1.text_input("화학물질명", key="ncis_q", placeholder="예: 황산, 톨루엔")
+    if s2.button("🔎 자동 조회"):
+        if not api_key.strip():
+            st.session_state.ncis_results = []
+            st.session_state.ncis_err = "API 인증키를 먼저 입력해 주세요."
+        elif not ncis_q.strip():
+            st.session_state.ncis_results = []
+            st.session_state.ncis_err = "조회할 화학물질명을 입력해 주세요."
+        else:
+            with st.spinner("NCIS 조회 중..."):
+                found, _url, err = search_substance(api_key, ncis_q)
+            st.session_state.ncis_results = found
+            st.session_state.ncis_err = err
+    for i, ent in enumerate(st.session_state.get("ncis_results", [])):
+        r1, r2 = st.columns([5, 1])
+        r1.markdown(f"**{ent['name'] or '(이름 없음)'}**"
+                    f"{' (CAS ' + ent['cas'] + ')' if ent.get('cas') else ''} — "
+                    f"국제연합번호: {ent['un'] or '없음'} · "
+                    f"그림문자: {', '.join(ent['pictograms']) or '없음'}")
+        if r2.button("표에 추가", key=f"ncis_add_{i}"):
+            st.session_state.manual_subs.append(
+                {"name": ent["name"], "un": ent["un"],
+                 "pictograms": ent["pictograms"]})
+            st.session_state.ncis_results = []
+            st.rerun()
+    if st.session_state.get("ncis_err"):
+        st.warning(st.session_state.ncis_err)
+
+    # 화학물질 추가 ② — KREACH(화학물질정보처리시스템) 검색 활용
+    st.markdown(f"###### 화학물질 추가 ② — [🔍 KREACH 분류·표시 검색 열기]({KREACH_URL})")
+    st.caption("위 링크에서 물질을 검색한 뒤 결과·상세 화면 내용을 전체 선택(Ctrl+A)·"
+               "복사(Ctrl+C)해서 아래에 붙여 넣으면 물질명·국제연합번호·그림문자"
+               "(H코드 포함 시 자동 판정)를 인식해 표에 추가합니다.")
     with st.form("manual_add", clear_on_submit=True):
         a1, a2 = st.columns([2, 1])
         add_nm = a1.text_input("화학물질명")

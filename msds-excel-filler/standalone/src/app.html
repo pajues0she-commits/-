@@ -115,6 +115,12 @@
   .mpics input { display: none; }
   .mrow .mdel { border: none; background: #d9534f; color: #fff; border-radius: 6px;
                 padding: 5px 10px; cursor: pointer; }
+  .nrow { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center;
+          margin: 8px 0; border: 1px solid #cfe0d2; border-radius: 8px;
+          padding: 8px 10px; background: #f4faf5; font-size: 12.5px; }
+  .nrow button { border: none; background: #1a7f37; color: #fff; border-radius: 6px;
+                 padding: 6px 14px; cursor: pointer; font-weight: bold; }
+  .nerr { color: #a33; font-size: 12.5px; margin: 6px 2px; }
   .signbtns { display: flex; gap: 12px; margin: 16px 0; }
   .signbtns button { background: #1a5f9e; color: #fff; font-size: 14px; font-weight: bold;
                      border: none; border-radius: 8px; padding: 10px 20px; cursor: pointer; }
@@ -160,18 +166,25 @@
         <input type="text" id="sgPh2" placeholder="000-0000-0000"></div>
     </div>
     <div class="signadd">
-      <label class="f">화학물질 추가 — 화학물질정보처리시스템(KREACH) 검색 활용</label>
+      <label class="f">화학물질 추가 — 물질명으로 조회 (NCIS 자동 조회 / KREACH 검색)</label>
       <div class="addrow">
         <input type="text" id="sgName" placeholder="화학물질명 입력 (예: 황산, 톨루엔)">
-        <button id="sgKreach" type="button">🔍 KREACH 분류·표시 검색</button>
+        <button id="sgNcis" type="button">🔎 NCIS 자동 조회</button>
+        <button id="sgKreach" type="button">🔍 KREACH 검색</button>
         <button id="sgAdd" type="button">＋ 직접 추가</button>
       </div>
-      <div class="hint">「KREACH 분류·표시 검색」을 누르면 화학물질정보처리시스템
-        (kreach.mcee.go.kr)의 검색 화면이 새 탭으로 열리고 입력한 물질명이 클립보드에
-        복사됩니다. 검색 결과·상세 화면의 내용을 <b>전체 선택(Ctrl+A)·복사(Ctrl+C)</b>한 뒤
-        아래 칸에 붙여 넣으면 물질명·국제연합번호·그림문자(H코드 포함 시 자동 판정)를
-        인식해 표에 추가합니다. 브라우저 보안 정책(CORS)상 외부 사이트의 정보를 이 파일이
-        직접 내려받을 수는 없어 복사–붙여넣기 방식을 사용합니다.</div>
+      <div class="addrow" style="margin-top:8px;">
+        <input type="password" id="sgApiKey"
+               placeholder="공공데이터포털 API 인증키(serviceKey) — NCIS 자동 조회에 필요">
+      </div>
+      <div class="hint">「NCIS 자동 조회」는 공공데이터포털의 한국환경공단 화학물질(유독물
+        GHS) 조회 API(apis.data.go.kr/B552584/kecoapi/ncissbstn)로 물질명을 검색해
+        물질명·국제연합번호·그림문자를 표에 자동 입력합니다. data.go.kr에서 해당 서비스를
+        활용 신청해 발급받은 인증키를 입력하세요(이 파일에만 저장됨).
+        브라우저가 API 접속을 차단(CORS)하는 경우에는 「KREACH 검색」으로 열리는
+        화학물질정보처리시스템 화면의 내용을 <b>전체 선택(Ctrl+A)·복사(Ctrl+C)</b>해
+        아래 칸에 붙여 넣으면 같은 정보를 인식해 추가합니다.</div>
+      <div id="sgNcisResults"></div>
       <textarea id="sgPaste" placeholder="KREACH 검색 결과 화면 내용을 여기에 붙여넣기 (Ctrl+V) — 자동 인식되어 표에 추가됩니다"></textarea>
       <div class="hint" id="sgPasteMsg"></div>
     </div>
@@ -1197,6 +1210,194 @@ function parseKreachText(t){
   ent.pictograms = [...new Set(pics)].sort();
   return ent;
 }
+/* ── NCIS(공공데이터포털 한국환경공단) 자동 조회 — ncis_api.py 이식 ──
+   요청 파라미터·응답 필드명이 환경에 따라 다를 수 있어 방어적으로 동작한다:
+   검색 파라미터 후보를 순차 시도하고, 안 되면 전체 목록을 받아 이름으로
+   걸러 내며, 필드는 키 이름 패턴 매칭으로 추출한다. */
+const NCIS_BASE = "https://apis.data.go.kr/B552584/kecoapi/ncissbstn";
+const NCIS_NAME_PARAMS = ["sbstnNmKor", "mttrNmKor", "sbstnNm", "korNm",
+                          "chemNm", "srchWrd", "searchWord"];
+const NCIS_PIC_KW = [["폭발","GHS01"],["인화","GHS02"],["산화","GHS03"],
+  ["고압\\s*가스","GHS04"],["부식","GHS05"],["급성\\s*독성|해골","GHS06"],
+  ["느낌표|감탄","GHS07"],["건강\\s*유해|호흡기\\s*과민","GHS08"],
+  ["환경\\s*유해|수생","GHS09"]];
+
+function ncisUrl(key, params){
+  key = key.trim();
+  if (!key.includes("%")) key = encodeURIComponent(key);
+  const qs = Object.entries(params)
+    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
+  return `${NCIS_BASE}?serviceKey=${key}&${qs}`;
+}
+function ncisItemsFromJson(obj){
+  if (Array.isArray(obj)){
+    if (obj.length && obj.every(x => x && typeof x === "object" && !Array.isArray(x)))
+      return obj;
+    for (const x of obj){
+      const f = ncisItemsFromJson(x);
+      if (f.length) return f;
+    }
+  } else if (obj && typeof obj === "object"){
+    for (const k of ["items", "item", "list", "data", "body", "response"])
+      if (k in obj){
+        const f = ncisItemsFromJson(obj[k]);
+        if (f.length) return f;
+      }
+    for (const v of Object.values(obj)){
+      const f = ncisItemsFromJson(v);
+      if (f.length) return f;
+    }
+  }
+  return [];
+}
+function ncisParse(text){
+  const t = text.trim();
+  if (t.startsWith("{") || t.startsWith("[")){
+    let obj;
+    try { obj = JSON.parse(t); } catch { return { items: [], err: "응답 해석 실패" }; }
+    let err = "";
+    const m = /"(?:resultMsg|returnAuthMsg|errMsg)"\s*:\s*"([^"]+)"/.exec(t);
+    if (m && !/OK|NORMAL/i.test(m[1])) err = m[1];
+    return { items: ncisItemsFromJson(obj), err };
+  }
+  const doc = new DOMParser().parseFromString(t, "text/xml");
+  if (doc.querySelector("parsererror")) return { items: [], err: "응답 해석 실패" };
+  let err = "";
+  for (const tag of ["returnAuthMsg", "resultMsg", "errMsg", "returnReasonCode"]){
+    const el = doc.getElementsByTagName(tag)[0];
+    if (el && el.textContent && !/OK|NORMAL/i.test(el.textContent)){
+      err = el.textContent.trim(); break;
+    }
+  }
+  const items = [];
+  for (const it of doc.getElementsByTagName("item")){
+    const d = {};
+    for (const c of it.getElementsByTagName("*"))
+      if (c.children.length === 0 && c.textContent.trim())
+        d[c.tagName] = c.textContent.trim();
+    if (Object.keys(d).length) items.push(d);
+  }
+  return { items, err };
+}
+function ncisFirstMatch(item, patterns, koreanOnly){
+  for (const pat of patterns){
+    const rx = new RegExp(pat, "i");
+    for (const [k, v] of Object.entries(item)){
+      const s = String(v ?? "").trim();
+      if (!s || !rx.test(k)) continue;
+      if (koreanOnly && !/[가-힣]/.test(s)) continue;
+      return s;
+    }
+  }
+  return "";
+}
+function ncisExtract(item){
+  const name = ncisFirstMatch(item,
+      ["nm.*kor|kor.*nm", "sbstn.*nm|mttr.*nm|chem.*nm", "nm$|name"], true) ||
+    ncisFirstMatch(item, ["sbstn.*nm|mttr.*nm|chem.*nm", "nm$|name"], false);
+  let un = "";
+  let m = /\b(\d{4})\b/.exec(ncisFirstMatch(item, ["un.?(no|num)", "^un$"], false));
+  if (m) un = m[1];
+  const cas = ncisFirstMatch(item, ["cas"], false);
+  const blob = Object.values(item).map(v => String(v ?? "")).join(" ");
+  let pics = new Set(blob.match(/GHS0[1-9]/g) || []);
+  if (!pics.size){
+    const pf = ncisFirstMatch(item, ["pctg|pictogram|grim|picto"], false);
+    for (const [kw, code] of NCIS_PIC_KW)
+      if (new RegExp(kw).test(pf)) pics.add(code);
+  }
+  if (!pics.size){
+    const h = [...new Set(blob.match(/H\d{3}/g) || [])];
+    if (h.length) pics = new Set(pictogramsForCodes(h));
+  }
+  return { name, un, cas, pictograms: [...pics].sort() };
+}
+const ncisNorm = s => String(s).replace(/\s+/g, "").toLowerCase();
+function ncisContains(item, q){
+  q = ncisNorm(q);
+  return Object.values(item).some(v => ncisNorm(v).includes(q));
+}
+async function ncisFetch(url){
+  const resp = await fetch(url, { headers: { Accept: "application/json, application/xml;q=0.9" } });
+  return resp.text();
+}
+async function ncisSearch(key, name){
+  let lastErr = "";
+  for (const p of NCIS_NAME_PARAMS){
+    const url = ncisUrl(key, { pageNo: 1, numOfRows: 50, dataType: "JSON", [p]: name });
+    const { items, err } = ncisParse(await ncisFetch(url));
+    if (err){ lastErr = err; continue; }
+    if (items.length){
+      const hits = items.filter(it => ncisContains(it, name));
+      if (hits.length && (items.length < 50 || hits.length < items.length))
+        return { entries: hits.slice(0, 20).map(ncisExtract), err: "" };
+    }
+  }
+  const hits = [];
+  for (let page = 1; page <= 4; page++){
+    const url = ncisUrl(key, { pageNo: page, numOfRows: 500, dataType: "JSON" });
+    const { items, err } = ncisParse(await ncisFetch(url));
+    if (err && !items.length) return { entries: [], err: "API 오류: " + err };
+    if (!items.length) break;
+    hits.push(...items.filter(it => ncisContains(it, name)));
+    if (items.length < 500) break;
+  }
+  if (hits.length) return { entries: hits.slice(0, 20).map(ncisExtract), err: "" };
+  return { entries: [], err: lastErr || "검색 결과가 없습니다." };
+}
+
+const $sgApiKey = document.getElementById("sgApiKey");
+const $sgNcisResults = document.getElementById("sgNcisResults");
+let ncisResults = [];
+try { $sgApiKey.value = localStorage.getItem("ncisApiKey") || ""; } catch {}
+$sgApiKey.addEventListener("input", () => {
+  try { localStorage.setItem("ncisApiKey", $sgApiKey.value); } catch {}
+});
+function renderNcisResults(err){
+  let h = "";
+  ncisResults.forEach((ent, i) => {
+    h += `<div class="nrow"><div><b>${esc(ent.name || "(이름 없음)")}</b>
+      ${ent.cas ? " (CAS " + esc(ent.cas) + ")" : ""} —
+      국제연합번호: ${esc(ent.un || "없음")} ·
+      그림문자: ${esc(ent.pictograms.join(", ") || "없음")}</div>
+      <button type="button" data-nadd="${i}">표에 추가</button></div>`;
+  });
+  if (err) h += `<div class="nerr">⚠️ ${esc(err)}</div>`;
+  $sgNcisResults.innerHTML = h;
+}
+document.getElementById("sgNcis").addEventListener("click", async e => {
+  const btn = e.currentTarget;
+  const key = $sgApiKey.value.trim(), nm = $sgName.value.trim();
+  ncisResults = [];
+  if (!key){ renderNcisResults("공공데이터포털 API 인증키(serviceKey)를 먼저 입력해 주세요."); return; }
+  if (!nm){ renderNcisResults("조회할 화학물질명을 입력해 주세요."); return; }
+  btn.disabled = true;
+  renderNcisResults("");
+  $sgNcisResults.innerHTML = '<div class="hint">NCIS 조회 중...</div>';
+  try {
+    const { entries, err } = await ncisSearch(key, nm);
+    ncisResults = entries;
+    renderNcisResults(err);
+  } catch (err){
+    renderNcisResults(
+      "API에 접속하지 못했습니다: " + (err.message || err) +
+      " — 브라우저가 외부 API 접속을 차단(CORS)했거나 네트워크 문제일 수 있습니다. " +
+      "이 경우 「KREACH 검색」 후 결과를 복사해 아래 칸에 붙여 넣어 주세요.");
+  }
+  btn.disabled = false;
+});
+$sgNcisResults.addEventListener("click", e => {
+  const i = e.target.dataset && e.target.dataset.nadd;
+  if (i === undefined) return;
+  const ent = ncisResults[Number(i)];
+  if (!ent) return;
+  addManualEntry(ent);
+  ncisResults.splice(Number(i), 1);
+  renderNcisResults("");
+  $sgPasteMsg.textContent = `표에 추가했습니다 — 물질명: ${ent.name || "(직접 입력 필요)"}, ` +
+    `국제연합번호: ${ent.un || "없음"}, 그림문자: ${ent.pictograms.join(", ") || "없음"}`;
+});
+
 document.getElementById("sgKreach").addEventListener("click", () => {
   const nm = $sgName.value.trim();
   if (nm && navigator.clipboard)
