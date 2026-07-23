@@ -806,6 +806,47 @@ const CELLS = { product:"A10", signal:"J10", hazardL:"A15", hazardR:"F15",
   ingestion:"A30", emergency:"F30" };
 const bullets = items => items.filter(s => s.trim()).map(s => "▶ " + s).join("\n");
 
+/* 행 높이 자동 조절: 내용이 길면 블록 마지막 행을 늘려 글자가 가려지지
+   않게 한다. 인쇄는 fitToPage(가로·세로 1페이지)라 시트(탭)마다 항상
+   A4 한 장에 맞춰 출력된다. (excel_writer.py와 동일 로직) */
+const LINE_PT = 14.2, BLOCK_PAD = 6, HALF_CAP = 44, FULL_CAP = 90;
+const HEIGHT_BLOCKS = [   // [시작행, 끝행, 폭(문자단위), 값 키들]
+  [15, 15, HALF_CAP, ["hazardL", "hazardR"]],
+  [17, 17, HALF_CAP, ["precL", "precR"]],
+  [19, 19, FULL_CAP, ["ppe"]],
+  [22, 28, HALF_CAP, ["inhalation", "skinEye"]],
+  [30, 36, HALF_CAP, ["ingestion", "emergency"]],
+];
+function textLines(text, cap){
+  let total = 0;
+  for (const line of text.split("\n")){
+    let w = 0;
+    for (const ch of line) w += ch.codePointAt(0) > 0x2E80 ? 1.9 : 1.0;
+    total += Math.max(1, Math.ceil(w / cap));
+  }
+  return total;
+}
+function autofitRows(ws, values){
+  for (const [r0, r1, cap, keys] of HEIGHT_BLOCKS){
+    const lines = Math.max(0, ...keys.map(k => values[k] ? textLines(values[k], cap) : 0));
+    if (!lines) continue;
+    const needed = lines * LINE_PT + BLOCK_PAD;
+    let current = 0;
+    for (let r = r0; r <= r1; r++) current += ws.getRow(r).height || 16.5;
+    if (needed > current){
+      const last = ws.getRow(r1);
+      last.height = (last.height || 16.5) + (needed - current);
+    }
+  }
+}
+function pageFit(ws){
+  ws.pageSetup = Object.assign({}, ws.pageSetup, {
+    paperSize: 9, orientation: "portrait",
+    fitToPage: true, fitToWidth: 1, fitToHeight: 1,
+    printArea: "A1:J37",
+  });
+}
+
 function sheetTitle(name, used){
   let t = (name || "MSDS").replace(/[\\/*?\[\]:]/g, " ").trim().slice(0, 31) || "MSDS";
   const base = t; let n = 2;
@@ -821,18 +862,20 @@ async function buildWorkbook(records){
   records.forEach((rec, i) => {
     const ws = wb.getWorksheet("Form" + (i + 1));
     ws.name = sheetTitle(rec.productName || rec.sourceName, used);
-    const set = (cell, v) => { ws.getCell(cell).value = v; };
-    set(CELLS.product, rec.productName || "");
-    set(CELLS.signal, rec.signalWord || "");
     let [l, r] = splitTwo(rec.hazards);
-    set(CELLS.hazardL, bullets(l)); set(CELLS.hazardR, bullets(r));
-    [l, r] = splitTwo(rec.precautions);
-    set(CELLS.precL, bullets(l)); set(CELLS.precR, bullets(r));
-    set(CELLS.ppe, bullets(rec.ppe));
-    set(CELLS.inhalation, bullets(rec.inhalation));
-    set(CELLS.skinEye, bullets(rec.skinEye));
-    set(CELLS.ingestion, bullets(rec.ingestion));
-    set(CELLS.emergency, bullets(rec.emergency));
+    let [pl, pr] = splitTwo(rec.precautions);
+    const values = {
+      product: rec.productName || "", signal: rec.signalWord || "",
+      hazardL: bullets(l), hazardR: bullets(r),
+      precL: bullets(pl), precR: bullets(pr),
+      ppe: bullets(rec.ppe),
+      inhalation: bullets(rec.inhalation), skinEye: bullets(rec.skinEye),
+      ingestion: bullets(rec.ingestion), emergency: bullets(rec.emergency),
+    };
+    for (const [key, cell] of Object.entries(CELLS))
+      ws.getCell(cell).value = values[key];
+    autofitRows(ws, values);
+    pageFit(ws);
     const pics = [...new Set(rec.pictograms)].slice(0, 6);
     const anchors = pics.length <= 3 ? [3, 5, 7] : [3, 4, 5, 6, 7, 8];
     const size = pics.length <= 3 ? 105 : 68;   // 원본 그림 크기 1000125EMU ≈ 105px
