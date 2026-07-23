@@ -191,11 +191,13 @@ async function extractText(arrayBuffer){
 }
 
 /* ══════════════ MSDS 파서 (msds_parser.py 이식) ══════════════ */
+// "4. 제목" / "제4항" / "항 4: 제목"(Merck 등) / "SECTION 4"를 모두 인식하고,
+// 소항목은 가나다(가. 나.)와 영문자(a. b.) 표기를 지원한다.
 const SECTION_KEYS = {
   1:"(?:화학제품과\\s*회사|제품\\s*및\\s*회사|화학제품에\\s*관한)",
-  2:"유해성\\s*[·ㆍ.,]?\\s*위험성",
+  2:"유해성\\s*[·ㆍ.,]?\\s*위험성|위험\\s*[·ㆍ.,]?\\s*유해성",
   3:"구성\\s*성분|구성성분의\\s*명칭",
-  4:"응급조치\\s*요령",
+  4:"응급\\s*조치\\s*요령",
   5:"폭발\\s*[·ㆍ.]?\\s*화재\\s*시|화재\\s*시\\s*대처",
   6:"누출\\s*사고\\s*시",
   7:"취급\\s*및\\s*저장",
@@ -209,11 +211,28 @@ const SECTION_KEYS = {
   15:"법적\\s*규제\\s*현황",
   16:"그\\s*밖의\\s*참고사항|기타\\s*참고사항" };
 
+// 가나다 또는 a. b. c. 형식의 소항목 헤더
+const SUB_HEAD = "^\\s*(?:[가나다라마바사]|[a-hA-H])\\s*[.)]\\s";
+const FOOTER_RX = /쪽\s*\d+\s*\/\s*\d+|^\s*page\s*\d+|^\s*-?\s*\d+\s*\/\s*\d+\s*-?\s*$/i;
+
+// 페이지 푸터와 3회 이상 반복되는 상용구(회사 푸터 등)를 제거한다
+function cleanText(text){
+  const lines = text.split("\n");
+  const counts = new Map();
+  for (const l of lines){
+    const t = l.trim();
+    if (t.length > 10) counts.set(t, (counts.get(t) || 0) + 1);
+  }
+  return lines.filter(l => (counts.get(l.trim()) || 0) < 3 && !FOOTER_RX.test(l))
+              .join("\n");
+}
+
 function splitSections(text){
   const hits = [];
   for (const [num, pat] of Object.entries(SECTION_KEYS)){
-    const rx = new RegExp("^[^\\S\\n]*(?:제\\s*)?" + num +
-                          "\\s*[.)항]?\\s*(?:" + pat + ")", "m");
+    const rx = new RegExp(
+      "^[^\\S\\n]*(?:제\\s*|항\\s*|SECTION\\s*|섹션\\s*)?" + num +
+      "\\s*[.):：항]?\\s*[:：]?\\s*(?:" + pat + ")", "mi");
     const m = rx.exec(text);
     if (m) hits.push([m.index, Number(num)]);
   }
@@ -227,7 +246,7 @@ function splitSections(text){
 }
 
 function grabBlock(text, startPat, stopPats){
-  const m = new RegExp(startPat).exec(text);
+  const m = new RegExp(startPat, "m").exec(text);
   if (!m) return "";
   const rest = text.slice(m.index + m[0].length);
   let end = rest.length;
@@ -262,6 +281,24 @@ function bulletize(block, dropCodes = true){
   return items;
 }
 
+// 응급조치 내용이 라벨을 다시 반복하는 형식("눈에 들어갔을 때: 다량의 물로...") 정리
+const RESTATED_RX = new RegExp(
+  "^(?:눈에\\s*들어갔을\\s*때|눈에\\s*묻으면|피부에\\s*접촉(?:했을|된|한)?\\s*(?:때|경우)?|" +
+  "피부(?:\\s*\\(또는\\s*머리카락\\))?에\\s*묻으면|흡입(?:했을\\s*때|한\\s*경우|하면)|" +
+  "먹었을\\s*때|삼켰을\\s*때|삼켰다면)\\s*[:：]\\s*");
+
+// 한 줄에 여러 문장이 몰린 항목을 문장 단위로 나눈다 (응급조치용)
+function sentences(items){
+  const out = [];
+  for (let it of items){
+    it = it.replace(RESTATED_RX, "").trim();
+    if (!it) continue;
+    for (const p of it.split(/(?<=[.!?])\s+(?=[가-힣A-Z(])/))
+      if (p.trim()) out.push(p.trim());
+  }
+  return out;
+}
+
 function parseMsds(text, sourceName){
   const data = { sourceName, productName: "", signalWord: "", pictograms: [],
     hazards: [], precautions: [], ppe: [], inhalation: [], skinEye: [],
@@ -271,6 +308,7 @@ function parseMsds(text, sourceName){
       "OCR 처리된 PDF를 사용하거나 항목을 직접 입력해 주세요.");
     return data;
   }
+  text = cleanText(text);
   let sections = splitSections(text);
   if (!Object.keys(sections).length){
     data.warnings.push("MSDS 표준 항목 헤더를 찾지 못해 전체 텍스트에서 키워드로 추출합니다.");
@@ -289,7 +327,7 @@ function parseMsds(text, sourceName){
   const hCodes = [...new Set(sec2.match(/H\d{3}/g) || [])].sort();
 
   const hzBlock = grabBlock(sec2, "유해\\s*[·ㆍ]?\\s*위험\\s*문구\\s*[:：]?",
-    ["예방\\s*조치\\s*문구", "신호어", "그림\\s*문자", "^\\s*[다라마]\\s*[.)]",
+    ["예방\\s*조치\\s*문구", "신호어", "그림\\s*문자", SUB_HEAD,
      "기타\\s*유해성", "NFPA"]);
   data.hazards = bulletize(hzBlock);
   if (!data.hazards.length && hCodes.length){
@@ -323,28 +361,37 @@ function parseMsds(text, sourceName){
   }
   data.pictograms = pics;
 
-  const precStops = ["대응\\s*[:：]", "저장\\s*[:：]", "폐기\\s*[:：]",
-                     "기타\\s*유해성", "^\\s*[다라마]\\s*[.)]", "NFPA"];
-  let prevBlock = grabBlock(sec2, "예방\\s*[:：]", precStops);
-  const storeBlock = grabBlock(sec2, "저장\\s*[:：]",
+  // 라벨은 "예방 :" 또는 줄 단독 "예방"(Merck) 형식 모두 지원
+  const precStops = ["^\\s*대응\\s*[:：]?[ \\t]*$", "대응\\s*[:：]",
+                     "^\\s*저장\\s*[:：]?[ \\t]*$", "저장\\s*[:：]",
+                     "^\\s*폐기\\s*[:：]?[ \\t]*$", "폐기\\s*[:：]",
+                     "기타\\s*유해성", SUB_HEAD, "NFPA"];
+  let prevBlock = grabBlock(sec2, "(?:예방\\s*[:：]|^\\s*예방[ \\t]*$)", precStops);
+  const storeBlock = grabBlock(sec2, "(?:저장\\s*[:：]|^\\s*저장[ \\t]*$)",
                                precStops.filter(p => !p.includes("저장")));
   if (!prevBlock)
     prevBlock = grabBlock(sec2, "예방\\s*조치\\s*문구\\s*[:：]?",
-      ["기타\\s*유해성", "^\\s*[다라마]\\s*[.)]", "NFPA"]);
+      ["기타\\s*유해성", SUB_HEAD, "NFPA"]);
   data.precautions = bulletize(prevBlock).concat(bulletize(storeBlock));
   if (!data.precautions.length)
     data.warnings.push("예방조치문구(취급주의 사항)를 찾지 못했습니다.");
 
-  // 4) 응급조치
+  // 4) 응급조치 — 자기 라벨은 정지 조건에서 빼서 본문이 라벨을 반복하는 형식도 지원
   const sec4 = sections[4] || whole;
-  const stops4 = ["^\\s*[가나다라마]\\s*[.)]", "눈에\\s*들어갔을\\s*때",
-    "피부에\\s*접촉", "흡입\\s*(?:했을|한|시)", "먹었을\\s*때", "삼켰을\\s*때",
-    "기타\\s*의사의|의사의\\s*주의사항|의료진의"];
-  const eye = bulletize(grabBlock(sec4, "눈에\\s*들어갔을\\s*때\\s*[:：]?", stops4));
-  const skin = bulletize(grabBlock(sec4, "피부에\\s*접촉(?:했을|한)?\\s*(?:때)?\\s*[:：]?", stops4));
-  data.inhalation = bulletize(grabBlock(sec4, "흡입\\s*(?:했을\\s*때|한\\s*경우|시)\\s*[:：]?", stops4));
+  const aidStops = { eye: "눈에\\s*들어갔을\\s*때", skin: "피부에\\s*접촉",
+    inhale: "흡입\\s*(?:했을|한|시)", ingest: "(?:먹었을|삼켰을)\\s*때" };
+  const aidCommon = [SUB_HEAD, "가장\\s*중요한", "일반적인\\s*조치",
+    "기타\\s*의사의|의사의\\s*주의사항|의료진의", "급성\\s*증상"];
+  const aid = (key, startPat) => {
+    const stops = Object.entries(aidStops)
+      .filter(([k]) => k !== key).map(([, p]) => p).concat(aidCommon);
+    return sentences(bulletize(grabBlock(sec4, startPat, stops)));
+  };
+  const eye = aid("eye", "눈에\\s*들어갔을\\s*때\\s*[:：]?");
+  const skin = aid("skin", "피부에\\s*접촉(?:했을|한)?\\s*(?:때)?\\s*[:：]?");
+  data.inhalation = aid("inhale", "흡입\\s*(?:했을\\s*때|한\\s*경우|시)\\s*[:：]?");
   data.skinEye = skin.concat(eye);
-  data.ingestion = bulletize(grabBlock(sec4, "(?:먹었을|삼켰을)\\s*때\\s*[:：]?", stops4));
+  data.ingestion = aid("ingest", "(?:먹었을|삼켰을)\\s*때\\s*[:：]?");
   if (!eye.length && !skin.length && !data.inhalation.length && !data.ingestion.length)
     data.warnings.push("응급조치 요령(4항)을 찾지 못했습니다.");
 
@@ -353,31 +400,41 @@ function parseMsds(text, sourceName){
   const emergency = [];
   const ext = bulletize(grabBlock(sec5,
     "(?:적절한\\s*(?:\\(및\\s*부적절한\\)?\\s*)?)?소화제\\s*[:：]?",
-    ["부적절한", "화학물질로부터", "특정\\s*유해성", "^\\s*[나다라]\\s*[.)]",
-     "소방대원|화재\\s*진압"]));
+    ["부적절한", "안전상의\\s*이유로", "사용해서는\\s*안되는",
+     "화학물질로부터", "특정\\s*유해성", SUB_HEAD,
+     "소방대원|화재\\s*진압", "그\\s*밖의"]));
   if (ext.length)
     emergency.push("적절한 소화제 : " +
       ext.slice(0, 3).map(x => x.replace(/[,.]+$/, "")).join(", "));
-  emergency.push(...bulletize(grabBlock(sec5,
+  emergency.push(...sentences(bulletize(grabBlock(sec5,
     "(?:화학물질로부터\\s*생기는\\s*)?특정\\s*유해성\\s*[:：]?",
-    ["^\\s*[다라]\\s*[.)]", "소방대원", "화재\\s*진압\\s*시"])).slice(0, 3));
-  emergency.push(...bulletize(grabBlock(sec6,
+    [SUB_HEAD, "소방대원", "화재\\s*진압\\s*시", "그\\s*밖의"]))).slice(0, 3));
+  emergency.push(...sentences(bulletize(grabBlock(sec6,
     "정화\\s*(?:또는\\s*제거)?\\s*방법\\s*[:：]?",
-    ["^\\s*[가나다라]\\s*[.)]", "^\\s*7\\s*[.)]"])).slice(0, 4));
+    [SUB_HEAD, "^\\s*(?:제\\s*|항\\s*)?7\\s*[.):：]"]))).slice(0, 4));
   data.emergency = emergency;
   if (!emergency.length)
     data.warnings.push("응급대응(화재·누출 대처) 정보를 찾지 못했습니다.");
 
-  // 8) 보호구
+  // 8) 보호구 — 정지 조건은 "라벨만 있는 줄"에만 걸리게 해서
+  // 본문 속 "눈 보호용 도구" 같은 표현에 잘리지 않도록 한다
   const sec8 = sections[8] || whole;
-  const stops8 = ["호흡기\\s*보호", "눈\\s*보호", "손\\s*보호", "신체\\s*보호",
-    "^\\s*[가나다라마]\\s*[.)]", "^\\s*9\\s*[.)]", "위생상"];
+  const ppeLabels = { resp: "호흡기\\s*보호", eye: "눈\\s*보호",
+    hand: "손\\s*보호", body: "신체\\s*보호",
+    full: "전체\\s*보호", splash: "튐\\s*보호" };
+  const ppeCommon = ["위생상", SUB_HEAD, "^\\s*(?:제\\s*|항\\s*)?9\\s*[.):：]"];
   const ppe = [];
-  const grab8 = pat => bulletize(grabBlock(sec8, pat, stops8)).join(" ");
-  const resp = grab8("호흡기\\s*보호\\s*[:：]?");
-  const eyeP = grab8("눈\\s*보호\\s*[:：]?");
-  const hand = grab8("손\\s*보호\\s*[:：]?");
-  const body = grab8("신체\\s*보호\\s*[:：]?");
+  const grab8 = key => {
+    const stops = Object.entries(ppeLabels)
+      .filter(([k]) => k !== key)
+      .map(([, p]) => "^\\s*" + p + "\\s*[:：]?[ \\t]*$").concat(ppeCommon);
+    const pat = "(?:" + ppeLabels[key] + "\\s*[:：]|^\\s*" + ppeLabels[key] + "[ \\t]*$)";
+    return bulletize(grabBlock(sec8, pat, stops)).join(" ");
+  };
+  const resp = grab8("resp");
+  const eyeP = grab8("eye");
+  const hand = grab8("hand");
+  const body = grab8("body");
   if (resp) ppe.push("호흡기 보호 : " + resp);
   if (eyeP) ppe.push("눈 보호 : " + eyeP);
   if (hand) ppe.push("손 보호 : " + hand);
