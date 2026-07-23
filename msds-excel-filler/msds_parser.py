@@ -9,10 +9,117 @@
 import re
 from collections import Counter
 from dataclasses import dataclass, field
+from io import BytesIO
 
 import pdfplumber
 
 from ghs_data import (H_STATEMENTS, pictograms_for_codes, signal_word_for_codes)
+from ko_spacing import fix_spacing_all
+
+# ── 난독화된 Arial Unicode MS(CID) 폰트 복원 ────────────────────────────
+# 일부 MSDS 생성 프로그램(DR-Software 구버전 등)은 ToUnicode 없이
+# "WinCharSetFFFF" CMap + cmap 테이블이 제거된 Arial Unicode MS 서브셋을
+# 내장한다. 이 경우 pdfminer는 한글을 전부 버린다. 다행히 원본 폰트의
+# 글리프 배치가 한글 음절(U+AC00~D7A3) 구간에서 선형(GID 38325부터)이라
+# CIDToGIDMap만 있으면 유니코드를 복원할 수 있다.
+_AUMS_HANGUL_GID0 = 38325            # GID of U+AC00 '가' in Arial Unicode MS
+_AUMS_EXTRA = {3564: "∙"}       # '∙' 등 개별 확인된 글리프
+
+
+def _aums_gid_to_char(gid: int):
+    if _AUMS_HANGUL_GID0 <= gid < _AUMS_HANGUL_GID0 + 11172:
+        return chr(0xAC00 + gid - _AUMS_HANGUL_GID0)
+    return _AUMS_EXTRA.get(gid)
+
+
+_CIDRANGE_RX = re.compile(
+    rb"<([0-9a-fA-F]{2,8})>\s*<([0-9a-fA-F]{2,8})>\s*(\d+)")
+_CIDCHAR_RX = re.compile(rb"<([0-9a-fA-F]{2,8})>\s*(\d+)")
+
+
+def _parse_embedded_cmap(data: bytes):
+    """내장 CMap 스트림에서 code→CID 매핑을 읽는다 (2바이트 코드 가정)."""
+    from pdfminer.cmapdb import FileCMap
+    cm = FileCMap()
+    d = cm.code2cid
+
+    def put(code, cid):
+        d.setdefault(code >> 8, {})[code & 0xFF] = cid
+
+    pos = 0
+    while True:
+        s = data.find(b"begincidrange", pos)
+        if s < 0:
+            break
+        e = data.find(b"endcidrange", s)
+        if e < 0:
+            break
+        for m in _CIDRANGE_RX.finditer(data[s:e]):
+            lo, hi, cid = (int(m.group(1), 16), int(m.group(2), 16),
+                           int(m.group(3)))
+            for i in range(hi - lo + 1):
+                put(lo + i, cid + i)
+        pos = e + 1
+    pos = 0
+    while True:
+        s = data.find(b"begincidchar", pos)
+        if s < 0:
+            break
+        e = data.find(b"endcidchar", s)
+        if e < 0:
+            break
+        for m in _CIDCHAR_RX.finditer(data[s:e]):
+            put(int(m.group(1), 16), int(m.group(2)))
+        pos = e + 1
+    return cm if d else None
+
+
+def _install_font_fallback():
+    from pdfminer import pdffont as _pf
+    from pdfminer.pdftypes import resolve1, stream_value
+    from pdfminer.cmapdb import FileUnicodeMap
+
+    if getattr(_pf.PDFCIDFont, "_msds_patched", False):
+        return
+    orig_init = _pf.PDFCIDFont.__init__
+
+    def patched(self, rsrcmgr, spec, strict=False):
+        orig_init(self, rsrcmgr, spec, strict)
+        if "ArialUnicodeMS" not in str(getattr(self, "basefont", "")):
+            return
+        try:
+            # 1) pdfminer는 이름 있는 CMap만 찾는다. Encoding이 내장 CMap
+            #    스트림이면 (code→CID 매핑이 비어 한글이 전부 사라짐) 직접 파싱.
+            enc = resolve1(spec.get("Encoding"))
+            if hasattr(enc, "get_data") and not getattr(self.cmap, "code2cid", None):
+                cm = _parse_embedded_cmap(stream_value(enc).get_data())
+                if cm is not None:
+                    self.cmap = cm
+            # 2) ToUnicode가 없으면 CIDToGIDMap + 글리프 배치 규칙으로 복원.
+            has_map = getattr(self, "unicode_map", None) and \
+                getattr(self.unicode_map, "cid2unichr", None)
+            if has_map:
+                return
+            c2g_obj = resolve1(spec.get("CIDToGIDMap"))
+            if not hasattr(c2g_obj, "get_data"):
+                return
+            c2g = stream_value(c2g_obj).get_data()
+            um = FileUnicodeMap()
+            for cid in range(len(c2g) // 2):
+                gid = (c2g[2 * cid] << 8) | c2g[2 * cid + 1]
+                ch = _aums_gid_to_char(gid)
+                if ch:
+                    um.cid2unichr[cid] = ch
+            if um.cid2unichr:
+                self.unicode_map = um
+        except Exception:
+            pass
+
+    _pf.PDFCIDFont.__init__ = patched
+    _pf.PDFCIDFont._msds_patched = True
+
+
+_install_font_fallback()
 
 
 @dataclass
@@ -31,15 +138,49 @@ class MsdsData:
     warnings: list = field(default_factory=list)         # 파싱 경고 메시지
 
 
+def _drop_overprint(page, tol=1.5):
+    """가짜 볼드(같은 글자를 미세하게 어긋나게 겹쳐 찍기) 중복 글자를 제거한다.
+
+    pdfplumber의 dedupe_chars는 좌표를 tolerance 단위로 반올림해 비교하기
+    때문에 경계에 걸친 중복(0.24pt 어긋난 4중 인쇄 등)을 놓친다.
+    여기서는 실제 거리로 비교한다.
+    """
+    buckets = {}
+    for c in page.chars:
+        t = c.get("text")
+        bx, by = int(c["x0"] // tol), int(c["top"] // tol)
+        dup = False
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for (x, y) in buckets.get((t, bx + dx, by + dy), ()):
+                    if abs(x - c["x0"]) <= tol and abs(y - c["top"]) <= tol:
+                        dup = True
+                        break
+                if dup:
+                    break
+            if dup:
+                break
+        if dup:
+            c["_overprint_dup"] = True
+        else:
+            buckets.setdefault((t, bx, by), []).append((c["x0"], c["top"]))
+    return page.filter(
+        lambda o: o.get("object_type") != "char" or not o.get("_overprint_dup"))
+
+
 def extract_text(pdf_source) -> str:
     """PDF 전체 텍스트를 추출한다. pdf_source는 경로 또는 파일 객체.
 
-    페이지 경계는 \f(폼피드)로 표시한다 — clean_text가 페이지 수 기반으로
+    페이지 경계는 \\f(폼피드)로 표시한다 — clean_text가 페이지 수 기반으로
     반복 머리글/바닥글을 걸러내는 데 쓴다.
     """
     pages = []
     with pdfplumber.open(pdf_source) as pdf:
         for page in pdf.pages:
+            try:
+                page = _drop_overprint(page)
+            except Exception:
+                pass
             pages.append(page.extract_text() or "")
     return "\n\f\n".join(pages)
 
@@ -300,7 +441,8 @@ def parse_msds(pdf_source, source_name: str = "") -> MsdsData:
     ext = bulletize(grab_block(
         sec5, r"(?:적절한\s*(?:\(및\s*부적절한\)?\s*)?)?소화제\s*[:：]?",
         [r"부적절한", r"안전상의\s*이유로", r"사용해서는\s*안되는",
-         r"화학물질로부터", r"특[정별]\s*유해성", _SUB_HEAD,
+         r"화학물질로부터", r"^\s*[·ㆍ○\-]*\s*본\s*화학물질",
+         r"특[정별]\s*유해성", _SUB_HEAD,
          r"소방대원|소방관|화재\s*진압", r"그\s*밖의"]))
     # "· 소화제" 밑에 "· 적절한 소화제: ..."가 다시 오는 형식(라벨 중복) 정리
     ext = [x for x in (re.sub(r"^(?:적절한\s*)?소화제\s*[:：]\s*", "", x).strip()
@@ -363,5 +505,10 @@ def parse_msds(pdf_source, source_name: str = "") -> MsdsData:
     data.ppe = ppe
     if not ppe:
         data.warnings.append("개인 보호구(8항)를 찾지 못했습니다.")
+
+    # 띄어쓰기 자동 교정 (글자 사이 공백·붙은 문장 이상이 있는 줄만, 글자 불변)
+    for f in ("hazards", "precautions", "ppe", "inhalation",
+              "skin_eye", "ingestion", "emergency"):
+        setattr(data, f, fix_spacing_all(getattr(data, f)))
 
     return data

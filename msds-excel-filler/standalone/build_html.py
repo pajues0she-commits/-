@@ -17,6 +17,7 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
 
 from ghs_data import H_STATEMENTS  # noqa: E402
+import ko_spacing  # noqa: E402
 
 VENDOR = os.path.join(HERE, "vendor")
 OUT = os.path.join(HERE, "MSDS_관리요령_작성기.html")
@@ -81,6 +82,12 @@ def main():
     html = html.replace("__CMAPS_B64_JSON__", json.dumps(cmaps))
     html = html.replace("__H_STATEMENTS_JSON__",
                         json.dumps(H_STATEMENTS, ensure_ascii=False))
+    html = html.replace("__KO_DICT_JSON__", json.dumps({
+        "nouns": ko_spacing.NOUNS,
+        "funcs": ko_spacing.FUNCS,
+        "aux": sorted(ko_spacing.AUX_ATTACH),
+        "particles": ko_spacing.PARTICLES,
+    }, ensure_ascii=False))
 
     with open(OUT, "w", encoding="utf-8") as f:
         f.write(html)

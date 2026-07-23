@@ -64,7 +64,8 @@ python cli.py msds1.pdf msds2.pdf -o 관리요령.xlsx
 ```
 app.py            # Streamlit 웹 앱
 cli.py            # 명령행 도구
-msds_parser.py    # MSDS PDF 파싱(항목 추출)
+msds_parser.py    # MSDS PDF 파싱(항목 추출, 난독화 폰트 복원 포함)
+ko_spacing.py     # 한글 띄어쓰기 자동 교정(MSDS 도메인 사전)
 excel_writer.py   # 양식 시트 복제·기입, 그림문자 삽입
 preview.py        # 엑셀 양식 모양의 HTML 미리보기 생성
 ghs_data.py       # GHS 표준 H-code 문구·그림문자·신호어 데이터
@@ -81,6 +82,12 @@ tests/            # 샘플 MSDS PDF 및 생성 스크립트
 
 - **스캔본(이미지) PDF**는 텍스트를 추출할 수 없습니다. OCR 처리된 PDF를 사용하거나
   웹 앱에서 항목을 직접 입력해 주세요.
+- 일부 MSDS 생성 프로그램(구버전 DR-Software 등)이 만든 PDF는 한글 폰트가
+  난독화되어 일반 도구로는 텍스트가 추출되지 않습니다. 이 프로그램은 폰트의
+  글리프 배치(Arial Unicode MS)를 역산해 한글을 복원합니다.
+- 원문의 띄어쓰기가 깨진 문서("신 선 한 공 기", "즉시물로씻는다")는 MSDS
+  도메인 사전 기반으로 띄어쓰기를 자동 교정합니다(`ko_spacing.py`).
+  글자 자체는 바꾸지 않으며, 이상이 감지된 구간에만 적용됩니다.
 - 고용노동부 고시 16개 항목 형식의 국문 MSDS에 최적화되어 있습니다. 형식이 다른
   문서도 키워드 기반으로 최대한 추출하며, 실패한 항목은 경고로 표시됩니다.
 - GHS 그림문자 9종은 모두 UN GHS 표준 도안입니다. GHS05·07·08·09는 원본 양식에

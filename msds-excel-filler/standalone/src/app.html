@@ -110,6 +110,98 @@ const CMAPS = __CMAPS_B64_JSON__;          // 한국어 CID 폰트용 CMap (.bcm
 
 /* ══════════════ GHS 표준 데이터 (ghs_data.py와 동일) ══════════════ */
 const H_STATEMENTS = __H_STATEMENTS_JSON__;
+
+/* ══════════════ 띄어쓰기 자동 교정 (ko_spacing.py 이식) ══════════════
+   이상이 감지된 한글 구간만 도메인 사전으로 다시 띄어 쓴다.
+   글자 자체는 바꾸지 않는다 — 공백만 넣거나 뺀다. */
+const KO_DICT = __KO_DICT_JSON__;
+const KO_NOUNS = new Set(KO_DICT.nouns);
+const KO_AUX = new Set(KO_DICT.aux);
+const KO_PARTICLES = new Set(KO_DICT.particles);
+const KO_FUNCS = new Set([...KO_DICT.funcs, ...KO_DICT.aux]);
+const KO_ALL = new Set([...KO_DICT.nouns, ...KO_DICT.funcs,
+                        ...KO_DICT.aux, ...KO_DICT.particles]);
+const KO_MAXLEN = Math.max(...[...KO_ALL].map(w => w.length));
+const KO_VERB_END = /(?:한다|된다|는다|니다|시오|십시오|하라|할것|말것)\.?$/;
+const KO_RUN_RX = /[가-힣][가-힣 ]*[가-힣]|[가-힣]/g;
+
+function koSegment(chunk){
+  const n = chunk.length, INF = Infinity;
+  const cost = new Array(n + 1).fill(INF), back = new Array(n + 1);
+  cost[0] = 0;
+  for (let i = 1; i <= n; i++){
+    for (let j = Math.max(0, i - KO_MAXLEN); j < i; j++){
+      if (KO_ALL.has(chunk.slice(j, i)) && cost[j] + 1 < cost[i]){
+        cost[i] = cost[j] + 1; back[i] = [j, true];
+      }
+    }
+    if (cost[i - 1] + 2.5 < cost[i]){
+      cost[i] = cost[i - 1] + 2.5; back[i] = [i - 1, false];
+    }
+  }
+  const toks = [];
+  for (let i = n; i > 0;){
+    const [j, known] = back[i];
+    toks.push([chunk.slice(j, i), known]); i = j;
+  }
+  toks.reverse();
+  const merged = [];
+  for (const [t, k] of toks){
+    if (!k && merged.length && !merged[merged.length - 1][1])
+      merged[merged.length - 1][0] += t;
+    else merged.push([t, k]);
+  }
+  const knownChars = merged.reduce((a, [t, k]) => a + (k ? t.length : 0), 0);
+  return [merged, n ? knownChars / n : 0];
+}
+
+function koRespace(tokens){
+  const out = [], bare = [];
+  for (const [tok, known] of tokens){
+    if (known && KO_PARTICLES.has(tok) && out.length){
+      out[out.length - 1] += tok; bare[bare.length - 1] = false;
+    } else if (known && KO_AUX.has(tok) && out.length && bare[bare.length - 1]){
+      out[out.length - 1] += tok; bare[bare.length - 1] = false;
+    } else {
+      out.push(tok); bare.push(known && KO_NOUNS.has(tok));
+    }
+  }
+  return out.join(" ");
+}
+
+function koAnomalous(run){
+  const parts = run.split(" ");
+  let consec = 0, best = 0;
+  for (const p of parts){
+    consec = p.length === 1 ? consec + 1 : 0;
+    best = Math.max(best, consec);
+  }
+  if (best >= 3) return "spread";                        // "신 선 한 공 기"
+  if (parts.length > 1 && parts[parts.length - 1] === "다") return "spread";
+  for (const p of parts)
+    if (p.length >= 7 && KO_VERB_END.test(p)) return "glued";  // "즉시물로씻는다"
+  if (!run.includes(" ") && run.length >= 6) return "maybe_glued";
+  return null;
+}
+
+function fixSpacing(text){
+  if (!text || !/[가-힣]/.test(text)) return text;
+  return text.replace(KO_RUN_RX, run => {
+    const kind = koAnomalous(run);
+    if (!kind) return run;
+    const chunk = run.replace(/ /g, "");
+    const [tokens, coverage] = koSegment(chunk);
+    if (kind === "spread"){
+      if (coverage >= 0.65) return koRespace(tokens);
+      return tokens.length === 1 ? chunk : run;
+    }
+    const need = kind === "glued" ? 0.85 : 1.0;
+    const hasFunc = tokens.some(([t, k]) => k && KO_FUNCS.has(t));
+    if (coverage >= need && hasFunc && tokens.length > 1)
+      return koRespace(tokens);
+    return run;
+  });
+}
 const PICTOGRAM_NAMES = { GHS01:"폭발성", GHS02:"인화성", GHS03:"산화성",
   GHS04:"고압가스", GHS05:"부식성", GHS06:"급성독성", GHS07:"경고(자극성 등)",
   GHS08:"건강유해성", GHS09:"수생환경유해성" };
@@ -159,6 +251,47 @@ class InlineCMapReaderFactory {
              compressionType: pdfjsLib.CMapCompressionType.BINARY };
   }
 }
+/* 난독화된 Arial Unicode MS(WinCharSetFFFF) 폰트 복원.
+   일부 MSDS 생성기(구버전 DR-Software 등)는 ToUnicode 없이 cmap이 제거된
+   폰트를 쓰기 때문에 pdf.js가 원시 코드값을 그대로 문자로 내보낸다.
+   이 문서 계열에서는 코드값 == 원본 폰트의 글리프 번호(GID)이고, 한글
+   음절(U+AC00~)이 GID 38325부터 선형 배치라 되돌릴 수 있다. */
+const AUMS_GID0 = 38325, AUMS_GID_END = 38325 + 11172;
+const AUMS_EXTRA = { 3564: "∙" };
+function fixObfuscatedFonts(items){
+  // 폰트별로: 한글 시작(U+AC00=44032)보다 낮은 GID 구간 문자가 여럿 나오면
+  // 그 폰트는 난독화된 것으로 보고 전체를 변환한다.
+  const byFont = new Map();
+  for (const it of items){
+    let n = 0;
+    for (const ch of it.s){
+      const cp = ch.codePointAt(0);
+      if (cp >= AUMS_GID0 && cp < 0xAC00) n++;
+    }
+    byFont.set(it.font, (byFont.get(it.font) || 0) + n);
+  }
+  for (const it of items){
+    if ((byFont.get(it.font) || 0) < 3) continue;
+    it.s = [...it.s].map(ch => {
+      const cp = ch.codePointAt(0);
+      if (cp >= AUMS_GID0 && cp < AUMS_GID_END)
+        return String.fromCharCode(0xAC00 + cp - AUMS_GID0);
+      return AUMS_EXTRA[cp] || ch;
+    }).join("");
+  }
+}
+// 가짜 볼드(같은 글자를 미세하게 어긋나게 겹쳐 찍기) 중복 제거
+function dropOverprint(items){
+  const kept = [];
+  return items.filter(it => {
+    for (const k of kept){
+      if (k.s === it.s && Math.abs(k.x - it.x) <= 1.5 &&
+          Math.abs(k.y - it.y) <= 1.5) return false;
+    }
+    kept.push(it);
+    return true;
+  });
+}
 async function extractText(arrayBuffer){
   const pdf = await pdfjsLib.getDocument({
     data: arrayBuffer, CMapReaderFactory: InlineCMapReaderFactory,
@@ -167,9 +300,13 @@ async function extractText(arrayBuffer){
   for (let p = 1; p <= pdf.numPages; p++){
     if (p > 1) lines.push("\f");   // 페이지 경계 표시 (cleanText가 사용)
     const tc = await (await pdf.getPage(p)).getTextContent();
-    const items = tc.items.filter(it => it.str && it.str.trim() !== "")
+    let items = tc.items.filter(it => it.str && it.str.trim() !== "")
       .map(it => ({ x: it.transform[4], y: it.transform[5],
-                    w: it.width || 0, s: it.str }));
+                    w: it.width || 0, font: it.fontName,
+                    // 겹쳐찍기 4벌이 한 아이템으로 합쳐진 경우("변변변변") 정리
+                    s: it.str.replace(/([ᄀ-퟿])\1{2,}/g, "$1") }));
+    fixObfuscatedFonts(items);
+    items = dropOverprint(items);
     items.sort((a, b) => b.y - a.y || a.x - b.x);
     let row = [], rowY = null;
     const flush = () => {
@@ -421,7 +558,8 @@ function parseMsds(text, sourceName){
   let ext = bulletize(grabBlock(sec5,
     "(?:적절한\\s*(?:\\(및\\s*부적절한\\)?\\s*)?)?소화제\\s*[:：]?",
     ["부적절한", "안전상의\\s*이유로", "사용해서는\\s*안되는",
-     "화학물질로부터", "특[정별]\\s*유해성", SUB_HEAD,
+     "화학물질로부터", "^\\s*[·ㆍ○\\-]*\\s*본\\s*화학물질",
+     "특[정별]\\s*유해성", SUB_HEAD,
      "소방대원|소방관|화재\\s*진압", "그\\s*밖의"]));
   // "· 소화제" 밑에 "· 적절한 소화제: ..."가 다시 오는 형식(라벨 중복) 정리
   ext = ext.map(x => x.replace(/^(?:적절한\s*)?소화제\s*[:：]\s*/, "").trim())
@@ -474,6 +612,11 @@ function parseMsds(text, sourceName){
   if (body) ppe.push("신체 보호 : " + body);
   data.ppe = ppe;
   if (!ppe.length) data.warnings.push("개인 보호구(8항)를 찾지 못했습니다.");
+
+  // 띄어쓰기 자동 교정 (이상이 있는 줄만, 글자 불변)
+  for (const f of ["hazards", "precautions", "ppe", "inhalation",
+                   "skinEye", "ingestion", "emergency"])
+    data[f] = data[f].map(fixSpacing);
 
   return data;
 }
