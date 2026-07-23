@@ -309,6 +309,71 @@ _RESTATED_RX = re.compile(
     r"먹었을\s*때|삼켰을\s*때|삼켰다면)\s*[:：]\s*")
 
 
+# ── 항목 수 제한·중복 병합 ───────────────────────────────────────────────
+# 양식 가독성을 위해 취급주의는 최대 8개, 응급조치·응급대응은 각 5개로
+# 한정한다. 같은 내용을 반복하는 항목은 병합(더 자세한 쪽 유지)하거나
+# 삭제한다.
+MAX_PRECAUTIONS = 8
+MAX_AID = 5
+
+_NORM_RX = re.compile(r"[\s.,·ㆍ:：;/()\[\]▶\-–—!?'\"%]+")
+
+
+def _norm_item(s: str) -> str:
+    return _NORM_RX.sub("", s).lower()
+
+
+def _bigram_sim(a: str, b: str) -> float:
+    """2-gram 포함 유사도 (짧은 쪽 기준)."""
+    A = {a[i:i + 2] for i in range(len(a) - 1)}
+    B = {b[i:i + 2] for i in range(len(b) - 1)}
+    if not A or not B:
+        return 0.0
+    return len(A & B) / min(len(A), len(B))
+
+
+def dedupe_merge(items: list) -> list:
+    """중복·유사 항목을 병합한다. 포함 관계면 더 자세한 문장을 남긴다."""
+    kept = []
+    for it in items:
+        n = _norm_item(it)
+        if not n:
+            continue
+        merged = False
+        for i, k in enumerate(kept):
+            kn = _norm_item(k)
+            if n == kn or n in kn:
+                merged = True                    # 이미 포함된 내용
+                break
+            if kn in n or (_bigram_sim(n, kn) >= 0.75 and len(it) > len(k)):
+                kept[i] = it                     # 더 자세한 문장으로 대체
+                merged = True
+                break
+            if _bigram_sim(n, kn) >= 0.75:
+                merged = True
+                break
+        if not merged:
+            kept.append(it)
+    return kept
+
+
+# 취급주의에서 우선순위가 낮은 "대응(사고 후)" 성격의 문구 — 응급조치 칸과
+# 중복되므로 8개를 넘길 때 먼저 제외한다.
+_RESPONSE_RX = re.compile(
+    r"삼켰|묻으면|흡입하면|접촉\s*시|들어갔|연락|의사|의료|병원|센터|진찰|"
+    r"처치|증상이|토하|헹구|불편함|입을\s*씻|(?:라벨|취급\s*설명서)\s*참조")
+
+
+def curate_precautions(items: list) -> list:
+    items = dedupe_merge(items)
+    if len(items) <= MAX_PRECAUTIONS:
+        return items
+    scored = sorted(enumerate(items),
+                    key=lambda p: (bool(_RESPONSE_RX.search(p[1])), p[0]))
+    keep_idx = sorted(i for i, _ in scored[:MAX_PRECAUTIONS])
+    return [items[i] for i in keep_idx]
+
+
 def _sentences(items: list) -> list:
     """한 줄에 여러 문장이 몰린 항목을 문장 단위로 나눈다 (응급조치용)."""
     out = []
@@ -510,5 +575,11 @@ def parse_msds(pdf_source, source_name: str = "") -> MsdsData:
     for f in ("hazards", "precautions", "ppe", "inhalation",
               "skin_eye", "ingestion", "emergency"):
         setattr(data, f, fix_spacing_all(getattr(data, f)))
+
+    # 항목 수 제한: 취급주의 8개, 응급조치·응급대응 각 5개 (중복은 병합·삭제)
+    data.hazards = dedupe_merge(data.hazards)
+    data.precautions = curate_precautions(data.precautions)
+    for f in ("inhalation", "skin_eye", "ingestion", "emergency"):
+        setattr(data, f, dedupe_merge(getattr(data, f))[:MAX_AID])
 
     return data

@@ -435,6 +435,51 @@ function bulletize(block, dropCodes = true){
   return items;
 }
 
+/* 항목 수 제한·중복 병합 (msds_parser.py와 동일):
+   취급주의 최대 8개, 응급조치·응급대응 각 5개. 유사 항목은 병합·삭제. */
+const MAX_PRECAUTIONS = 8, MAX_AID = 5;
+const NORM_RX = /[\s.,·ㆍ:：;/()\[\]▶\-–—!?'"%]+/g;
+const normItem = s => s.replace(NORM_RX, "").toLowerCase();
+function bigramSim(a, b){
+  const A = new Set(), B = new Set();
+  for (let i = 0; i < a.length - 1; i++) A.add(a.slice(i, i + 2));
+  for (let i = 0; i < b.length - 1; i++) B.add(b.slice(i, i + 2));
+  if (!A.size || !B.size) return 0;
+  let inter = 0;
+  for (const g of A) if (B.has(g)) inter++;
+  return inter / Math.min(A.size, B.size);
+}
+function dedupeMerge(items){
+  const kept = [];
+  for (const it of items){
+    const n = normItem(it);
+    if (!n) continue;
+    let merged = false;
+    for (let i = 0; i < kept.length; i++){
+      const kn = normItem(kept[i]);
+      if (n === kn || kn.includes(n)){ merged = true; break; }
+      if (n.includes(kn) || (bigramSim(n, kn) >= 0.75 && it.length > kept[i].length)){
+        kept[i] = it; merged = true; break;      // 더 자세한 문장으로 대체
+      }
+      if (bigramSim(n, kn) >= 0.75){ merged = true; break; }
+    }
+    if (!merged) kept.push(it);
+  }
+  return kept;
+}
+// 취급주의에서 우선순위가 낮은 "대응(사고 후)" 성격 문구 — 8개 초과 시 먼저 제외
+const RESPONSE_RX = new RegExp(
+  "삼켰|묻으면|흡입하면|접촉\\s*시|들어갔|연락|의사|의료|병원|센터|진찰|" +
+  "처치|증상이|토하|헹구|불편함|입을\\s*씻|(?:라벨|취급\\s*설명서)\\s*참조");
+function curatePrecautions(items){
+  items = dedupeMerge(items);
+  if (items.length <= MAX_PRECAUTIONS) return items;
+  const order = items.map((t, i) => [RESPONSE_RX.test(t) ? 1 : 0, i])
+    .sort((a, b) => a[0] - b[0] || a[1] - b[1])
+    .slice(0, MAX_PRECAUTIONS).map(p => p[1]).sort((a, b) => a - b);
+  return order.map(i => items[i]);
+}
+
 // 응급조치 내용이 라벨을 다시 반복하는 형식("눈에 들어갔을 때: 다량의 물로...") 정리
 const RESTATED_RX = new RegExp(
   "^(?:눈에\\s*들어갔을\\s*때|눈에\\s*묻으면|피부에\\s*접촉(?:했을|된|한)?\\s*(?:때|경우)?|" +
@@ -617,6 +662,12 @@ function parseMsds(text, sourceName){
   for (const f of ["hazards", "precautions", "ppe", "inhalation",
                    "skinEye", "ingestion", "emergency"])
     data[f] = data[f].map(fixSpacing);
+
+  // 항목 수 제한: 취급주의 8개, 응급조치·응급대응 각 5개 (중복은 병합·삭제)
+  data.hazards = dedupeMerge(data.hazards);
+  data.precautions = curatePrecautions(data.precautions);
+  for (const f of ["inhalation", "skinEye", "ingestion", "emergency"])
+    data[f] = dedupeMerge(data[f]).slice(0, MAX_AID);
 
   return data;
 }
