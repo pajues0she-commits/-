@@ -12,15 +12,15 @@ from ghs_data import PICTOGRAM_NAMES
 from msds_parser import MsdsData, parse_msds
 from excel_writer import build_workbook
 from preview import preview_html
-from sign_writer import build_sign_svg
+from sign_writer import KREACH_URL, build_sign_svg, parse_kreach_text
 
 st.set_page_config(page_title="MSDS 자동 작성 도구", page_icon="🧪",
                    layout="wide")
 
 st.title("🧪 MSDS 자동 작성 도구")
-st.caption("MSDS PDF를 업로드하면 항목을 자동 추출합니다. 업로드한 물질은 아래 두 메뉴 "
-           "모두에서 사용됩니다 — ① 화학물질 작업공정별 관리요령(엑셀), "
-           "② 유해화학물질 규격표지(화학물질관리법 시행규칙 별표 2).")
+st.caption("「화학물질 작업공정별 관리요령」 메뉴에서 MSDS PDF를 업로드하면 항목을 자동 "
+           "추출해 엑셀 양식을 만들고, 올린 물질은 「유해화학물질 규격표지」(화학물질관리법 "
+           "시행규칙 별표 2) 메뉴에도 함께 반영됩니다.")
 
 _PIC_OPTIONS = [f"{code} {name}" for code, name in PICTOGRAM_NAMES.items()]
 
@@ -29,8 +29,12 @@ def _pic_label(code: str) -> str:
     return f"{code} {PICTOGRAM_NAMES.get(code, '')}"
 
 
-uploaded = st.file_uploader("MSDS PDF 업로드 (여러 파일 가능)", type=["pdf"],
-                            accept_multiple_files=True)
+tab_manage, tab_sign = st.tabs(
+    ["📋 화학물질 작업공정별 관리요령", "🚧 유해화학물질 규격표지"])
+
+with tab_manage:
+    uploaded = st.file_uploader("MSDS PDF 업로드 (여러 파일 가능)", type=["pdf"],
+                                accept_multiple_files=True)
 
 if "parsed" not in st.session_state:
     st.session_state.parsed = {}
@@ -49,9 +53,6 @@ for f in uploaded or []:
 for name in list(st.session_state.parsed):
     if name not in current_names:
         del st.session_state.parsed[name]
-
-tab_manage, tab_sign = st.tabs(
-    ["📋 화학물질 작업공정별 관리요령", "🚧 유해화학물질 규격표지"])
 
 records = []
 for name, data in st.session_state.parsed.items():
@@ -147,9 +148,35 @@ with tab_sign:
                           help="상시 연락이 가능한 전화번호를 기재해야 합니다.")
     phone2 = c3.text_input("연락처 (보조, 선택)", key="sign_ph2")
 
+    # 화학물질 추가 — KREACH(화학물질정보처리시스템) 검색 활용
+    st.markdown(f"###### 화학물질 추가 — [🔍 KREACH 분류·표시 검색 열기]({KREACH_URL})")
+    st.caption("위 링크에서 물질을 검색한 뒤 결과·상세 화면 내용을 전체 선택(Ctrl+A)·"
+               "복사(Ctrl+C)해서 아래에 붙여 넣으면 물질명·국제연합번호·그림문자"
+               "(H코드 포함 시 자동 판정)를 인식해 표에 추가합니다. 보안 정책상 외부 "
+               "사이트의 정보를 직접 내려받을 수는 없어 복사–붙여넣기 방식을 사용합니다.")
+    if "manual_subs" not in st.session_state:
+        st.session_state.manual_subs = []
+    with st.form("manual_add", clear_on_submit=True):
+        a1, a2 = st.columns([2, 1])
+        add_nm = a1.text_input("화학물질명")
+        add_un = a2.text_input("국제연합번호(UN No.)")
+        add_pics = st.multiselect("그림문자", _PIC_OPTIONS)
+        add_paste = st.text_area("KREACH 검색 결과 붙여넣기 (선택 — 붙여 넣으면 자동 인식)",
+                                 height=90)
+        if st.form_submit_button("＋ 물질 추가"):
+            ent = (parse_kreach_text(add_paste)
+                   if add_paste.strip() else {"name": "", "un": "", "pictograms": []})
+            ent["name"] = add_nm.strip() or ent["name"]
+            ent["un"] = add_un.strip() or ent["un"]
+            ent["pictograms"] = [p.split()[0] for p in add_pics] or ent["pictograms"]
+            if ent["name"] or ent["un"] or ent["pictograms"]:
+                st.session_state.manual_subs.append(ent)
+            else:
+                st.warning("물질 정보를 인식하지 못했습니다. 물질명을 입력해 주세요.")
+
     entries = []
     if records:
-        st.markdown("###### 물질별 기재 내용 〔국제연합번호: MSDS 14항 운송에 필요한 정보〕")
+        st.markdown("###### MSDS에서 불러온 물질 〔국제연합번호: MSDS 14항 운송에 필요한 정보〕")
         for i, rec in enumerate(records):
             e1, e2 = st.columns([2, 1])
             nm = e1.text_input("물질명", rec.product_name,
@@ -157,8 +184,19 @@ with tab_sign:
             un = e2.text_input("국제연합번호(UN No.)", rec.un_number,
                                key=f"sign_un_{rec.source_name}")
             entries.append({"name": nm, "un": un, "pictograms": rec.pictograms})
-    else:
-        st.info("MSDS PDF를 업로드하면 물질명·국제연합번호·그림문자가 표에 자동으로 채워집니다.")
+    if st.session_state.manual_subs:
+        st.markdown("###### 직접 추가한 물질")
+        for i, ent in enumerate(list(st.session_state.manual_subs)):
+            e1, e2 = st.columns([5, 1])
+            e1.markdown(f"**{ent['name'] or '(물질명 미입력)'}** — "
+                        f"국제연합번호: {ent['un'] or '없음'} · "
+                        f"그림문자: {', '.join(ent['pictograms']) or '없음'}")
+            if e2.button("삭제", key=f"sign_del_{i}"):
+                st.session_state.manual_subs.pop(i)
+                st.rerun()
+        entries += st.session_state.manual_subs
+    if not entries:
+        st.info("MSDS PDF를 업로드하거나 위에서 물질을 직접 추가하면 표에 채워집니다.")
 
     svg = build_sign_svg(entries, manager, phone, phone2)
     st.download_button("⬇️ 표지판 시안 다운로드 (SVG, 실측 75×50cm+표)", svg,

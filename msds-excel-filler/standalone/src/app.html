@@ -12,7 +12,7 @@
   .top h1 { margin: 0 0 6px; font-size: 22px; }
   .top p { margin: 0; color: #666; font-size: 13px; }
   .wrap { max-width: 1700px; margin: 0 auto; padding: 20px 28px 80px; }
-  .dropzone { border: 2px dashed #9db3c8; border-radius: 10px; background: #fff;
+  .dropzone { display: block; border: 2px dashed #9db3c8; border-radius: 10px; background: #fff;
               padding: 34px; text-align: center; color: #567; cursor: pointer;
               font-size: 15px; transition: background .15s; }
   .dropzone.drag { background: #e8f2fc; border-color: #3b82d0; }
@@ -94,6 +94,27 @@
   .unrow { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; align-items: center;
            margin-top: 8px; }
   .unrow .nm { font-size: 13px; color: #234; font-weight: bold; word-break: break-all; }
+  .signadd { border: 1px solid #d8e2ec; border-radius: 8px; background: #f8fafc;
+             padding: 10px 14px 14px; margin-top: 14px; }
+  .addrow { display: flex; gap: 8px; }
+  .addrow input { flex: 1; }
+  .addrow button { border: none; border-radius: 7px; padding: 8px 16px; cursor: pointer;
+                   font-family: inherit; font-size: 13px; font-weight: bold;
+                   background: #35597e; color: #fff; white-space: nowrap; }
+  #sgAdd { background: #1a7f37; }
+  #sgPaste { min-height: 64px; margin-top: 8px; }
+  #sgPasteMsg:not(:empty) { color: #1a7f37; font-weight: bold; }
+  .mrow { display: grid; grid-template-columns: 2fr 1fr auto auto; gap: 10px;
+          align-items: center; margin-top: 8px; border: 1px solid #e2e8ef;
+          border-radius: 8px; padding: 8px 10px; background: #fff; }
+  .mpics { display: flex; gap: 3px; flex-wrap: wrap; }
+  .mpics label { border: 1.5px solid #d0d7df; border-radius: 6px; padding: 2px;
+                 cursor: pointer; line-height: 0; background: #fff; }
+  .mpics label.on { border-color: #e30613; background: #fff3f3; }
+  .mpics img { width: 30px; height: 30px; }
+  .mpics input { display: none; }
+  .mrow .mdel { border: none; background: #d9534f; color: #fff; border-radius: 6px;
+                padding: 5px 10px; cursor: pointer; }
   .signbtns { display: flex; gap: 12px; margin: 16px 0; }
   .signbtns button { background: #1a5f9e; color: #fff; font-size: 14px; font-weight: bold;
                      border: none; border-radius: 8px; padding: 10px 20px; cursor: pointer; }
@@ -105,21 +126,21 @@
 <body>
 <div class="top">
   <h1>🧪 MSDS 자동 작성 도구</h1>
-  <p>MSDS PDF를 올리면 항목을 자동 추출하며, 업로드한 물질은 아래 두 메뉴 모두에서 사용됩니다 —
-     ① <b>화학물질 작업공정별 관리요령</b>(엑셀 양식 자동 작성)
-     ② <b>유해화학물질 규격표지</b>(화학물질관리법 시행규칙 별표 2 표지판 시안).
+  <p>① <b>화학물질 작업공정별 관리요령</b> 메뉴에서 MSDS PDF를 올리면 항목을 자동 추출해
+     엑셀 양식을 만들고, 올린 물질은 ② <b>유해화학물질 규격표지</b>(화학물질관리법 시행규칙
+     별표 2 표지판 시안) 메뉴에도 함께 반영됩니다.
      모든 처리는 이 브라우저 안에서만 이루어지며 파일이 외부로 전송되지 않습니다.</p>
 </div>
 <div class="wrap">
-  <label class="dropzone" id="dz">
-    📄 여기를 클릭하거나 MSDS PDF 파일을 끌어다 놓으세요 (여러 개 가능, 최대 20개)
-    <input type="file" id="fileInput" accept="application/pdf" multiple>
-  </label>
   <div class="tabs">
     <button id="tabBtnManage" class="on">📋 화학물질 작업공정별 관리요령</button>
     <button id="tabBtnSign">🚧 유해화학물질 규격표지</button>
   </div>
   <div id="tabManage" class="tabpanel">
+    <label class="dropzone" id="dz" style="margin-top:14px;">
+      📄 여기를 클릭하거나 MSDS PDF 파일을 끌어다 놓으세요 (여러 개 가능, 최대 20개)
+      <input type="file" id="fileInput" accept="application/pdf" multiple>
+    </label>
     <div id="cards"></div>
     <p class="hint" id="manageHint" style="margin:14px 4px;">MSDS PDF를 업로드하면 여기에서
       추출 결과를 확인·수정하고 하단 버튼으로 엑셀 파일을 다운로드할 수 있습니다.</p>
@@ -138,6 +159,23 @@
       <div><label class="f">연락처 (보조, 선택)</label>
         <input type="text" id="sgPh2" placeholder="000-0000-0000"></div>
     </div>
+    <div class="signadd">
+      <label class="f">화학물질 추가 — 화학물질정보처리시스템(KREACH) 검색 활용</label>
+      <div class="addrow">
+        <input type="text" id="sgName" placeholder="화학물질명 입력 (예: 황산, 톨루엔)">
+        <button id="sgKreach" type="button">🔍 KREACH 분류·표시 검색</button>
+        <button id="sgAdd" type="button">＋ 직접 추가</button>
+      </div>
+      <div class="hint">「KREACH 분류·표시 검색」을 누르면 화학물질정보처리시스템
+        (kreach.mcee.go.kr)의 검색 화면이 새 탭으로 열리고 입력한 물질명이 클립보드에
+        복사됩니다. 검색 결과·상세 화면의 내용을 <b>전체 선택(Ctrl+A)·복사(Ctrl+C)</b>한 뒤
+        아래 칸에 붙여 넣으면 물질명·국제연합번호·그림문자(H코드 포함 시 자동 판정)를
+        인식해 표에 추가합니다. 브라우저 보안 정책(CORS)상 외부 사이트의 정보를 이 파일이
+        직접 내려받을 수는 없어 복사–붙여넣기 방식을 사용합니다.</div>
+      <textarea id="sgPaste" placeholder="KREACH 검색 결과 화면 내용을 여기에 붙여넣기 (Ctrl+V) — 자동 인식되어 표에 추가됩니다"></textarea>
+      <div class="hint" id="sgPasteMsg"></div>
+    </div>
+    <div id="sgManual"></div>
     <div id="sgUnList"></div>
     <div class="signbtns">
       <button id="sgSvg">⬇️ SVG 다운로드 (실측 75×50cm+표)</button>
@@ -1072,9 +1110,14 @@ const $sgPh2 = document.getElementById("sgPh2");
 const $sgUnList = document.getElementById("sgUnList");
 const $signPrev = document.getElementById("signPrev");
 
+/* 직접 추가·KREACH 붙여넣기로 만든 물질 (MSDS 업로드 물질과 표에 함께 표시) */
+const manual = new Map();   // id -> {name, un, pictograms}
+let mseq = 0;
+
 function signEntries(){
-  return [...state.values()].map(r => ({
+  const fromMsds = [...state.values()].map(r => ({
     name: r.productName || "", un: r.unNumber || "", pictograms: r.pictograms }));
+  return fromMsds.concat([...manual.values()]);
 }
 function renderSign(){
   $signPrev.innerHTML = buildSignSvg(signEntries(),
@@ -1082,11 +1125,11 @@ function renderSign(){
 }
 function rebuildUnList(){
   if (!state.size){
-    $sgUnList.innerHTML = '<p class="hint" style="margin:14px 4px;">MSDS PDF를 업로드하면 ' +
-      '물질명·국제연합번호·그림문자가 표에 자동으로 채워집니다.</p>';
+    $sgUnList.innerHTML = '<p class="hint" style="margin:14px 4px;">「화학물질 작업공정별 ' +
+      '관리요령」 메뉴에서 MSDS PDF를 업로드하면 그 물질들도 표에 자동으로 채워집니다.</p>';
     return;
   }
-  let h = '<label class="f">물질별 국제연합번호<span class="ref">MSDS 14항 운송에 필요한 정보</span></label>';
+  let h = '<label class="f">MSDS에서 불러온 물질 — 국제연합번호<span class="ref">MSDS 14항 운송에 필요한 정보</span></label>';
   for (const [id, rec] of state){
     h += `<div class="unrow"><div class="nm" data-unlabel="${id}">📄 ${esc(rec.productName || rec.sourceName)}</div>
       <input type="text" data-un="${id}" value="${esc(rec.unNumber || "")}"
@@ -1096,6 +1139,113 @@ function rebuildUnList(){
 }
 for (const el of [$sgMgr, $sgPh1, $sgPh2])
   el.addEventListener("input", renderSign);
+
+/* ── 물질 직접 추가 + KREACH(화학물질정보처리시스템) 검색 연동 ── */
+const $sgManual = document.getElementById("sgManual");
+const $sgName = document.getElementById("sgName");
+const $sgPaste = document.getElementById("sgPaste");
+const $sgPasteMsg = document.getElementById("sgPasteMsg");
+const KREACH_URL = "https://kreach.mcee.go.kr/repwrt/ghs/ghsList.do";
+
+function rebuildManualList(){
+  let h = manual.size
+    ? '<label class="f">직접 추가한 물질 — 그림문자를 눌러 켜고 끕니다</label>' : "";
+  for (const [id, ent] of manual){
+    const pics = Object.keys(PICTOGRAM_NAMES).map(code => `
+      <label class="${ent.pictograms.includes(code) ? "on" : ""}"
+             title="${code} ${PICTOGRAM_NAMES[code]}">
+        <input type="checkbox" data-mpic="${id}" data-code="${code}"
+               ${ent.pictograms.includes(code) ? "checked" : ""}>
+        <img src="data:image/png;base64,${GHS_IMG[code]}"></label>`).join("");
+    h += `<div class="mrow">
+      <input type="text" data-mnm="${id}" value="${esc(ent.name)}" placeholder="물질명">
+      <input type="text" data-mun="${id}" value="${esc(ent.un)}" placeholder="국제연합번호">
+      <div class="mpics">${pics}</div>
+      <button class="mdel" data-mdel="${id}" type="button">삭제</button></div>`;
+  }
+  $sgManual.innerHTML = h;
+}
+function addManualEntry(ent){
+  manual.set("m" + (++mseq), {
+    name: ent.name || "", un: ent.un || "",
+    pictograms: [...new Set(ent.pictograms || [])].sort() });
+  rebuildManualList();
+  renderSign();
+}
+/* KREACH 검색/상세 화면에서 복사한 텍스트에서 물질명·UN번호·그림문자를 인식 */
+function parseKreachText(t){
+  const ent = { name: "", un: "", pictograms: [] };
+  let m = /(?:물질\s*명(?:칭)?|국문\s*명(?:칭)?|화학물질명)\s*[:：]?\s*([^\n\t|]+)/.exec(t);
+  if (m) ent.name = m[1].trim().replace(/\s{2,}.*$/, "");
+  m = /(?:UN|유엔|국제\s*연합)\s*(?:번호|No\.?)?\s*[:：]?\s*(\d{4})(?!\d)/i.exec(t);
+  if (m) ent.un = m[1];
+  let pics = [...new Set(t.match(/GHS0[1-9]/g) || [])];
+  if (!pics.length){
+    const hCodes = [...new Set(t.match(/H\d{3}/g) || [])];
+    if (hCodes.length) pics = pictogramsForCodes(hCodes);
+  }
+  if (!pics.length){
+    // 그림문자 명칭 표기(예: "부식성 물질", "인화성") 인식
+    const kwMap = [["폭발성","GHS01"],["인화성","GHS02"],["산화성","GHS03"],
+      ["고압\\s*가스","GHS04"],["부식성","GHS05"],["급성\\s*독성","GHS06"],
+      ["해골","GHS06"],["느낌표","GHS07"],["감탄부호","GHS07"],
+      ["호흡기\\s*과민성","GHS08"],["건강\\s*유해성","GHS08"],["환경\\s*유해성","GHS09"],
+      ["수생\\s*환경","GHS09"]];
+    for (const [kw, code] of kwMap)
+      if (new RegExp(kw).test(t)) pics.push(code);
+  }
+  ent.pictograms = [...new Set(pics)].sort();
+  return ent;
+}
+document.getElementById("sgKreach").addEventListener("click", () => {
+  const nm = $sgName.value.trim();
+  if (nm && navigator.clipboard)
+    navigator.clipboard.writeText(nm).catch(() => {});
+  window.open(KREACH_URL, "_blank");
+  $sgPasteMsg.textContent = nm
+    ? `"${nm}" 이(가) 클립보드에 복사되었습니다 — KREACH 검색창에 붙여넣어 검색한 뒤, 결과 내용을 복사해 오세요.`
+    : "";
+});
+document.getElementById("sgAdd").addEventListener("click", () => {
+  addManualEntry({ name: $sgName.value.trim() });
+  $sgName.value = "";
+});
+$sgPaste.addEventListener("paste", () => {
+  setTimeout(() => {
+    const t = $sgPaste.value.trim();
+    if (!t) return;
+    const ent = parseKreachText(t);
+    if (!ent.name) ent.name = $sgName.value.trim();
+    if (!ent.name && !ent.un && !ent.pictograms.length){
+      $sgPasteMsg.textContent = "붙여넣은 내용에서 물질 정보를 인식하지 못했습니다. 물질명을 직접 입력해 주세요.";
+      return;
+    }
+    addManualEntry(ent);
+    $sgPaste.value = "";
+    $sgName.value = "";
+    $sgPasteMsg.textContent = `표에 추가했습니다 — 물질명: ${ent.name || "(직접 입력 필요)"}, ` +
+      `국제연합번호: ${ent.un || "없음"}, 그림문자: ${ent.pictograms.join(", ") || "없음"}`;
+  }, 0);
+});
+$sgManual.addEventListener("input", e => {
+  const el = e.target;
+  if (el.dataset.mnm && manual.has(el.dataset.mnm))
+    manual.get(el.dataset.mnm).name = el.value.trim();
+  else if (el.dataset.mun && manual.has(el.dataset.mun))
+    manual.get(el.dataset.mun).un = el.value.trim();
+  else if (el.dataset.mpic && manual.has(el.dataset.mpic)){
+    const ent = manual.get(el.dataset.mpic), code = el.dataset.code;
+    ent.pictograms = ent.pictograms.filter(c => c !== code);
+    if (el.checked) ent.pictograms.push(code);
+    ent.pictograms.sort();
+    el.closest("label").classList.toggle("on", el.checked);
+  } else return;
+  renderSign();
+});
+$sgManual.addEventListener("click", e => {
+  const id = e.target.dataset && e.target.dataset.mdel;
+  if (id){ manual.delete(id); rebuildManualList(); renderSign(); }
+});
 
 /* ── 메뉴 전환 ── */
 const $btnManage = document.getElementById("tabBtnManage");

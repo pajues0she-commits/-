@@ -19,9 +19,14 @@ SVG 좌표 단위는 mm(1단위 = 1mm)이고 문서 크기를 cm로 지정하므
 import base64
 import html
 import os
+import re
 from functools import lru_cache
 
 from excel_writer import GHS_DIR
+from ghs_data import pictograms_for_codes
+
+# 화학물질정보처리시스템(KREACH) 분류·표시 검색 화면
+KREACH_URL = "https://kreach.mcee.go.kr/repwrt/ghs/ghsList.do"
 
 # 별표 2 규격 (mm)
 A_MM = 500.0            # a = 50cm
@@ -39,6 +44,39 @@ def _pic_b64(code: str) -> str:
         return ""
     with open(path, "rb") as f:
         return base64.b64encode(f.read()).decode()
+
+
+def parse_kreach_text(text: str) -> dict:
+    """KREACH 검색/상세 화면에서 복사한 텍스트에서 표지 기재 정보를 인식한다.
+
+    반환: {"name": 물질명, "un": 국제연합번호, "pictograms": [GHS 코드]}
+    (브라우저 보안 정책상 외부 사이트를 직접 조회할 수 없어, 사용자가
+    복사해 온 텍스트를 파싱하는 방식으로 연동한다.)
+    """
+    ent = {"name": "", "un": "", "pictograms": []}
+    m = re.search(r"(?:물질\s*명(?:칭)?|국문\s*명(?:칭)?|화학물질명)\s*[:：]?\s*([^\n\t|]+)",
+                  text)
+    if m:
+        ent["name"] = re.sub(r"\s{2,}.*$", "", m.group(1).strip())
+    m = re.search(r"(?:UN|유엔|국제\s*연합)\s*(?:번호|No\.?)?\s*[:：]?\s*(\d{4})(?!\d)",
+                  text, re.I)
+    if m:
+        ent["un"] = m.group(1)
+    pics = sorted(set(re.findall(r"GHS0[1-9]", text)))
+    if not pics:
+        h_codes = sorted(set(re.findall(r"H\d{3}", text)))
+        if h_codes:
+            pics = pictograms_for_codes(h_codes)
+    if not pics:
+        kw_map = [(r"폭발성", "GHS01"), (r"인화성", "GHS02"), (r"산화성", "GHS03"),
+                  (r"고압\s*가스", "GHS04"), (r"부식성", "GHS05"),
+                  (r"급성\s*독성", "GHS06"), (r"해골", "GHS06"),
+                  (r"느낌표", "GHS07"), (r"감탄부호", "GHS07"),
+                  (r"호흡기\s*과민성", "GHS08"), (r"건강\s*유해성", "GHS08"),
+                  (r"환경\s*유해성", "GHS09"), (r"수생\s*환경", "GHS09")]
+        pics = [code for kw, code in kw_map if re.search(kw, text)]
+    ent["pictograms"] = sorted(set(pics))
+    return ent
 
 
 def _text_units(s: str) -> float:
