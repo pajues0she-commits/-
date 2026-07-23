@@ -42,8 +42,10 @@ def _td(text, colspan=1, rowspan=1, bg="", bold=False, size=11,
 
 
 def _bullets_html(items):
-    lines = [f"▶ {html.escape(s)}" for s in items if s.strip()]
-    return "<br>".join(lines) or "&nbsp;"
+    kept = [s for s in items if s.strip()]
+    if kept == ["해당없음"]:            # 내용이 없는 항목은 표식 없이 기재
+        return "해당없음"
+    return "<br>".join(f"▶ {html.escape(s)}" for s in kept) or "&nbsp;"
 
 
 def _two_col_row(items, min_height=60):
@@ -71,7 +73,7 @@ def preview_html(rec) -> str:
     pics = pics or "&nbsp;"
 
     product = html.escape(rec.product_name or "").replace("\n", "<br>") or "&nbsp;"
-    signal = html.escape(rec.signal_word or "") or "&nbsp;"
+    signal = html.escape(rec.signal_word or "해당없음")
 
     rows = []
     rows.append("<tr>" + _td("화학물질 작업공정별 관리 요령", colspan=6, bg=_RED,

@@ -34,7 +34,10 @@ _CELLS = {
 
 
 def _bullets(items) -> str:
-    return "\n".join("▶ " + s for s in items if s.strip())
+    kept = [s for s in items if s.strip()]
+    if kept == ["해당없음"]:            # 내용이 없는 항목은 표식 없이 기재
+        return "해당없음"
+    return "\n".join("▶ " + s for s in kept)
 
 
 # ── 행 높이 자동 조절 ────────────────────────────────────────────────────
@@ -111,7 +114,9 @@ def _sheet_title(name: str, used: set) -> str:
 
 def fill_sheet(ws, data):
     """복제된 양식 시트 1장에 MsdsData를 기록한다."""
-    values = {"product": data.product_name or "", "signal": data.signal_word or ""}
+    # 신호어가 없으면 "해당없음"으로 기재한다
+    values = {"product": data.product_name or "",
+              "signal": data.signal_word or "해당없음"}
     left, right = split_two(data.hazards)
     values["hazard_l"], values["hazard_r"] = _bullets(left), _bullets(right)
     left, right = split_two(data.precautions)

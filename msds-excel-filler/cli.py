@@ -28,7 +28,7 @@ def main():
         data = parse_msds(path, source_name=os.path.basename(path))
         for w in data.warnings:
             print(f"  [주의] {w}")
-        print(f"  제품명: {data.product_name or '(미확인)'} / 신호어: {data.signal_word or '(없음)'}"
+        print(f"  제품명: {data.product_name or '(미확인)'} / 신호어: {data.signal_word or '해당없음'}"
               f" / 그림문자: {', '.join(data.pictograms) or '(없음)'}")
         records.append(data)
 

@@ -270,8 +270,30 @@ def grab_block(text: str, start_pat: str, stop_pats: list) -> str:
 
 _BULLET_RX = re.compile(r"^[\s○●◦•·ㆍ\-–—▶▷►*∙:：,]+")
 _NOISE_RX = re.compile(
-    r"^(자료\s*없음|해당\s*없음|자료없음|해당없음|없음|N/?A|-|페이지|page|\d+\s*/\s*\d+)$",
+    r"^(자료\s*없음|해당\s*(?:사항\s*)?없음|자료없음|해당없음|내용\s*없음|없음|"
+    r"누락(?:되어(?:\s*있음)?|됨|되다)?|N/?A|-|페이지|page|\d+\s*/\s*\d+)\s*\.?$",
     re.I)
+
+# 내용이 없다는 뜻의 문구("없음", "해당없음", "내용없음", "누락" 등)만 적힌 경우
+_NONE_LINE_RX = re.compile(
+    r"^(자료\s*없음|해당\s*(?:사항\s*)?없음|내용\s*없음|없음|"
+    r"누락(?:되어(?:\s*있음)?|됨|되다)?|N/?A)\s*\.?$", re.I)
+NONE_TEXT = "해당없음"
+
+
+def _none_stated(block: str) -> bool:
+    """블록에 '없음/누락' 류 문구가 명시되어 있는지 확인한다."""
+    for raw in block.splitlines():
+        line = _BULLET_RX.sub("", raw.strip()).strip()
+        if line and _NONE_LINE_RX.match(line):
+            return True
+    return False
+
+
+# H290, P260, P301+P312 같은 유해·위험/예방조치 코드 — 양식에는 코드 뒤의
+# 문구만 적는다 (문장 어디에 있어도 제거)
+_CODE_RX = re.compile(
+    r"(?<![A-Za-z0-9])(?:EU)?[HP]\d{3}(?:\s*\+\s*(?:EU)?[HP]\d{3})*\s*[:.]?\s*")
 _MARKERS = ("○", "●", "◦", "•", "·", "ㆍ", "∙", "-", "–", "▶", "▷", "►", "*")
 _SENT_END = ("음", "함", "됨", "킴", "임", "짐", "오", "요", "것", ".", ")", "%")
 
@@ -288,11 +310,11 @@ def bulletize(block: str, drop_codes: bool = True) -> list:
         if drop_codes:
             # "H315 피부에 자극을 일으킴", "P301 + P312 삼켰다면..." -> 코드 제거
             # H/P 코드로 시작하는 줄은 표식이 없어도 새 항목으로 취급한다
-            new_line = re.sub(r"^[HP]\d{3}(?:\s*\+\s*[HP]\d{3})*\s*[:.]?\s*", "", line)
-            if new_line != line:
+            if _CODE_RX.match(line):
                 has_marker = True
-            line = new_line.strip()
-            if not line:
+            line = _CODE_RX.sub("", line)
+            line = re.sub(r"\(\s*\)", "", line).strip()   # "(H315)" 제거 후 빈 괄호 정리
+            if not line or _NOISE_RX.match(line):
                 continue
         # 표식 없는 줄이 이어지고 앞 문장이 끝나지 않았으면 줄바꿈으로 잘린 문장으로 본다
         if items and not has_marker and not items[-1].endswith(_SENT_END):
@@ -420,12 +442,16 @@ def parse_msds(pdf_source, source_name: str = "") -> MsdsData:
         [r"예방\s*조치\s*문구", r"신호어", r"그림\s*문자", _SUB_HEAD,
          r"기타\s*유해성", r"NFPA"])
     data.hazards = bulletize(hz_block)
-    if not data.hazards and h_codes:
+    if not data.hazards and _none_stated(hz_block):
+        # 원문이 "없음/해당없음/내용없음/누락" 등으로 명시한 경우
+        data.hazards = [NONE_TEXT]
+    elif not data.hazards and h_codes:
         data.hazards = [H_STATEMENTS[c] for c in h_codes if c in H_STATEMENTS]
         if data.hazards:
             data.warnings.append("유해·위험문구를 H-code로부터 표준 문구로 복원했습니다.")
     if not data.hazards:
-        data.warnings.append("유해·위험문구를 찾지 못했습니다.")
+        data.hazards = [NONE_TEXT]
+        data.warnings.append("유해·위험문구를 찾지 못해 '해당없음'으로 표기했습니다.")
 
     # 신호어 ("신호어 : 위험" / "신호어 위험" 모두 인식)
     m = re.search(r"신호어\s*[:：]?\s*(위험|경고)", sec2) or \
@@ -470,7 +496,10 @@ def parse_msds(pdf_source, source_name: str = "") -> MsdsData:
             [r"기타\s*유해성", _SUB_HEAD, r"NFPA"])
     data.precautions = bulletize(prev_block) + bulletize(store_block)
     if not data.precautions:
-        data.warnings.append("예방조치문구(취급주의 사항)를 찾지 못했습니다.")
+        data.precautions = [NONE_TEXT]
+        if not (_none_stated(prev_block) or _none_stated(store_block)):
+            data.warnings.append(
+                "예방조치문구(취급주의 사항)를 찾지 못해 '해당없음'으로 표기했습니다.")
 
     # 4) 응급조치 요령 ───────────────────────────────────────
     sec4 = sections.get(4, whole)

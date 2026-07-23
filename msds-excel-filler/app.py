@@ -64,6 +64,7 @@ for name, data in st.session_state.parsed.items():
             signal = c2.selectbox("신호어 〔MSDS 2항〕", ["위험", "경고", ""],
                                   index=["위험", "경고", ""].index(
                                       data.signal_word if data.signal_word in ("위험", "경고") else ""),
+                                  format_func=lambda v: v or "해당없음",
                                   key=f"s_{name}")
 
             pics = st.multiselect("GHS 그림문자 〔MSDS 2항 유해성·위험성 — 경고표지 항목〕",

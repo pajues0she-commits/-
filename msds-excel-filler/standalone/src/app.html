@@ -408,7 +408,23 @@ function grabBlock(text, startPat, stopPats){
 }
 
 const BULLET_RX = /^[\s○●◦•·ㆍ\-–—▶▷►*∙:：,]+/;
-const NOISE_RX = /^(자료\s*없음|해당\s*없음|자료없음|해당없음|없음|N\/?A|-|페이지|page|\d+\s*\/\s*\d+)$/i;
+const NOISE_RX = new RegExp(
+  "^(자료\\s*없음|해당\\s*(?:사항\\s*)?없음|자료없음|해당없음|내용\\s*없음|없음|" +
+  "누락(?:되어(?:\\s*있음)?|됨|되다)?|N\\/?A|-|페이지|page|\\d+\\s*\\/\\s*\\d+)\\s*\\.?$", "i");
+// 내용이 없다는 뜻의 문구("없음", "해당없음", "내용없음", "누락" 등)만 적힌 경우
+const NONE_LINE_RX = new RegExp(
+  "^(자료\\s*없음|해당\\s*(?:사항\\s*)?없음|내용\\s*없음|없음|" +
+  "누락(?:되어(?:\\s*있음)?|됨|되다)?|N\\/?A)\\s*\\.?$", "i");
+const NONE_TEXT = "해당없음";
+function noneStated(block){
+  for (const raw of block.split("\n")){
+    const line = raw.trim().replace(BULLET_RX, "").trim();
+    if (line && NONE_LINE_RX.test(line)) return true;
+  }
+  return false;
+}
+// H290, P260, P301+P312 같은 코드 — 양식에는 코드 뒤의 문구만 적는다
+const CODE_RX = /(?<![A-Za-z0-9])(?:EU)?[HP]\d{3}(?:\s*\+\s*(?:EU)?[HP]\d{3})*\s*[:.]?\s*/g;
 const MARKERS = ["○","●","◦","•","·","ㆍ","∙","-","–","▶","▷","►","*"];
 const SENT_END = ["음","함","됨","킴","임","짐","오","요","것",".",")","%"];
 
@@ -422,10 +438,10 @@ function bulletize(block, dropCodes = true){
     let marker = hasMarker;
     if (dropCodes){
       // H/P 코드로 시작하는 줄은 표식이 없어도 새 항목으로 취급한다
-      const newLine = line.replace(/^[HP]\d{3}(?:\s*\+\s*[HP]\d{3})*\s*[:.]?\s*/, "");
-      if (newLine !== line) marker = true;
-      line = newLine.trim();
-      if (!line) continue;
+      if (/^(?:EU)?[HP]\d{3}/.test(line)) marker = true;
+      line = line.replace(CODE_RX, "")
+                 .replace(/\(\s*\)/g, "").trim();   // "(H315)" 제거 후 빈 괄호 정리
+      if (!line || NOISE_RX.test(line)) continue;
     }
     const last = items[items.length - 1];
     if (last && !marker && !SENT_END.some(e => last.endsWith(e)))
@@ -529,12 +545,18 @@ function parseMsds(text, sourceName){
     ["예방\\s*조치\\s*문구", "신호어", "그림\\s*문자", SUB_HEAD,
      "기타\\s*유해성", "NFPA"]);
   data.hazards = bulletize(hzBlock);
-  if (!data.hazards.length && hCodes.length){
+  if (!data.hazards.length && noneStated(hzBlock)){
+    // 원문이 "없음/해당없음/내용없음/누락" 등으로 명시한 경우
+    data.hazards = [NONE_TEXT];
+  } else if (!data.hazards.length && hCodes.length){
     data.hazards = hCodes.filter(c => H_STATEMENTS[c]).map(c => H_STATEMENTS[c]);
     if (data.hazards.length)
       data.warnings.push("유해·위험문구를 H-code로부터 표준 문구로 복원했습니다.");
   }
-  if (!data.hazards.length) data.warnings.push("유해·위험문구를 찾지 못했습니다.");
+  if (!data.hazards.length){
+    data.hazards = [NONE_TEXT];
+    data.warnings.push("유해·위험문구를 찾지 못해 '해당없음'으로 표기했습니다.");
+  }
 
   m = /신호어\s*[:：]?\s*(위험|경고)/.exec(sec2) || /신호어\s*[:：]?\s*(위험|경고)/.exec(whole);
   if (m) data.signalWord = m[1];
@@ -572,8 +594,11 @@ function parseMsds(text, sourceName){
     prevBlock = grabBlock(sec2, "예방\\s*조치\\s*문구\\s*[:：]?",
       ["기타\\s*유해성", SUB_HEAD, "NFPA"]);
   data.precautions = bulletize(prevBlock).concat(bulletize(storeBlock));
-  if (!data.precautions.length)
-    data.warnings.push("예방조치문구(취급주의 사항)를 찾지 못했습니다.");
+  if (!data.precautions.length){
+    data.precautions = [NONE_TEXT];
+    if (!noneStated(prevBlock) && !noneStated(storeBlock))
+      data.warnings.push("예방조치문구(취급주의 사항)를 찾지 못해 '해당없음'으로 표기했습니다.");
+  }
 
   // 4) 응급조치 — 자기 라벨은 정지 조건에서 빼서 본문이 라벨을 반복하는 형식도 지원
   const sec4 = sections[4] || whole;
@@ -680,7 +705,9 @@ function splitTwo(items){
   return [items.slice(0, half), items.slice(half)];
 }
 function bulletsHtml(items){
-  const lines = items.filter(s => s.trim()).map(s => "▶ " + esc(s));
+  const kept = items.filter(s => s.trim());
+  if (kept.length === 1 && kept[0] === NONE_TEXT) return NONE_TEXT;  // 표식 없이 기재
+  const lines = kept.map(s => "▶ " + esc(s));
   return lines.join("<br>") || "&nbsp;";
 }
 function previewHtml(rec){
@@ -699,7 +726,7 @@ function previewHtml(rec){
         <td colspan="3" rowspan="2" class="piccell">${pics}</td>
         <td class="hdr2">신호어</td></tr>
     <tr><td colspan="2" class="green" style="height:60px">${esc(rec.productName || "") || "&nbsp;"}</td>
-        <td class="center">${esc(rec.signalWord || "") || "&nbsp;"}</td></tr>
+        <td class="center">${esc(rec.signalWord || "해당없음")}</td></tr>
     <tr><td colspan="6" class="hdr">건강 및 환경에 대한 유해성, 물리적 위험성</td></tr>
     ${twoCol(rec.hazards, 56)}
     <tr><td colspan="6" class="hdr">안전 및 보건상의 취급주의 사항</td></tr>
@@ -785,7 +812,7 @@ function buildCard(id, rec){
             <select data-id="${id}" data-key="signalWord">
               <option value="위험" ${rec.signalWord === "위험" ? "selected" : ""}>위험</option>
               <option value="경고" ${rec.signalWord === "경고" ? "selected" : ""}>경고</option>
-              <option value="" ${!rec.signalWord ? "selected" : ""}>(없음)</option>
+              <option value="" ${!rec.signalWord ? "selected" : ""}>해당없음</option>
             </select></div>
         </div>
         <label class="f">GHS 그림문자<span class="ref">MSDS 2항 유해성·위험성 — 경고표지 항목</span></label>
@@ -855,7 +882,11 @@ function b64ToU8(b64){
 const CELLS = { product:"A10", signal:"J10", hazardL:"A15", hazardR:"F15",
   precL:"A17", precR:"F17", ppe:"A19", inhalation:"A22", skinEye:"F22",
   ingestion:"A30", emergency:"F30" };
-const bullets = items => items.filter(s => s.trim()).map(s => "▶ " + s).join("\n");
+const bullets = items => {
+  const kept = items.filter(s => s.trim());
+  if (kept.length === 1 && kept[0] === NONE_TEXT) return NONE_TEXT;  // 표식 없이 기재
+  return kept.map(s => "▶ " + s).join("\n");
+};
 
 /* 행 높이 자동 조절: 내용이 길면 블록 마지막 행을 늘려 글자가 가려지지
    않게 한다. 인쇄는 fitToPage(가로·세로 1페이지)라 시트(탭)마다 항상
@@ -918,7 +949,7 @@ async function buildWorkbook(records){
     let [l, r] = splitTwo(rec.hazards);
     let [pl, pr] = splitTwo(rec.precautions);
     const values = {
-      product: rec.productName || "", signal: rec.signalWord || "",
+      product: rec.productName || "", signal: rec.signalWord || "해당없음",
       hazardL: bullets(l), hazardR: bullets(r),
       precL: bullets(pl), precR: bullets(pr),
       ppe: bullets(rec.ppe),
