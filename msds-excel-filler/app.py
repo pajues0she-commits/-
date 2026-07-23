@@ -12,7 +12,8 @@ from ghs_data import PICTOGRAM_NAMES
 from msds_parser import MsdsData, parse_msds
 from excel_writer import build_workbook
 from preview import preview_html
-from ncis_api import BASE_URL as NCIS_BASE_URL, search_substance
+from ncis_api import (BASE_URL as NCIS_BASE_URL, _contains as _ncis_contains,
+                      extract_entry, parse_items, search_substance)
 from sign_writer import KREACH_URL, build_sign_svg, parse_kreach_text
 
 st.set_page_config(page_title="MSDS 자동 작성 도구", page_icon="🧪",
@@ -200,13 +201,28 @@ with tab_sign:
         add_paste = st.text_area("KREACH 검색 결과 붙여넣기 (선택 — 붙여 넣으면 자동 인식)",
                                  height=90)
         if st.form_submit_button("＋ 물질 추가"):
-            ent = (parse_kreach_text(add_paste)
-                   if add_paste.strip() else {"name": "", "un": "", "pictograms": []})
+            ent = {"name": "", "un": "", "pictograms": []}
+            pasted = add_paste.strip()
+            if pasted:
+                # NCIS API 응답(JSON/XML)을 붙여 넣은 경우 정확한 필드 파싱을 우선
+                items, _api_err = parse_items(pasted)
+                if items:
+                    hits = [it for it in items
+                            if not add_nm.strip() or _ncis_contains(it, add_nm)]
+                    ent = extract_entry((hits or items)[0])
+                    if len(hits or items) > 1:
+                        st.info(f"API 응답에서 {len(hits or items)}건이 인식되어 "
+                                "첫 번째 물질을 추가했습니다. 물질명을 함께 입력하면 "
+                                "정확히 걸러집니다.")
+                else:
+                    ent = parse_kreach_text(pasted)
             ent["name"] = add_nm.strip() or ent["name"]
             ent["un"] = add_un.strip() or ent["un"]
             ent["pictograms"] = [p.split()[0] for p in add_pics] or ent["pictograms"]
             if ent["name"] or ent["un"] or ent["pictograms"]:
-                st.session_state.manual_subs.append(ent)
+                st.session_state.manual_subs.append(
+                    {"name": ent["name"], "un": ent["un"],
+                     "pictograms": ent["pictograms"]})
             else:
                 st.warning("물질 정보를 인식하지 못했습니다. 물질명을 입력해 주세요.")
 
