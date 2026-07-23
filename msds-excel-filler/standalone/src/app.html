@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>MSDS PDF → 화학물질 작업공정별 관리 요령</title>
+<title>MSDS 자동 작성 도구 — 관리요령·규격표지</title>
 <style>
   * { box-sizing: border-box; }
   body { font-family: 'Malgun Gothic', '맑은 고딕', sans-serif; margin: 0;
@@ -75,21 +75,76 @@
   td.center{ text-align: center; font-weight: bold; font-size: 12px; }
   td.piccell { text-align: center; }
   td.piccell img { width: 62px; height: 62px; margin: 2px 5px; vertical-align: middle; }
+  /* ── 상단 메뉴 ── */
+  .tabs { display: flex; gap: 8px; margin: 18px 0 0; }
+  .tabs button { border: 1px solid #c5cdd6; border-bottom: none; background: #e6ebf1;
+                 color: #456; font-size: 14.5px; font-weight: bold; cursor: pointer;
+                 padding: 11px 22px; border-radius: 10px 10px 0 0; font-family: inherit; }
+  .tabs button.on { background: #fff; color: #163a5f; border-color: #9db3c8;
+                    box-shadow: 0 -2px 6px rgba(0,0,0,.05); }
+  .tabpanel { background: #fff; border: 1px solid #9db3c8; border-radius: 0 10px 10px 10px;
+              padding: 4px 16px 16px; }
+  .tabpanel[hidden] { display: none; }
+  body.signview .bar { display: none; }
+  /* ── 규격표지 메뉴 ── */
+  .signnote { background: #eef4fb; border: 1px solid #c3d6ea; border-radius: 8px;
+              padding: 10px 14px; font-size: 12.5px; color: #2c4a68; line-height: 1.6; }
+  .signinputs { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  @media (max-width: 900px) { .signinputs { grid-template-columns: 1fr; } }
+  .unrow { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; align-items: center;
+           margin-top: 8px; }
+  .unrow .nm { font-size: 13px; color: #234; font-weight: bold; word-break: break-all; }
+  .signbtns { display: flex; gap: 12px; margin: 16px 0; }
+  .signbtns button { background: #1a5f9e; color: #fff; font-size: 14px; font-weight: bold;
+                     border: none; border-radius: 8px; padding: 10px 20px; cursor: pointer; }
+  .signbtns button:disabled { background: #aaa; cursor: not-allowed; }
+  #signPrev { border: 1px solid #ccc; background: #fff; padding: 12px; overflow: auto; }
+  #signPrev svg { width: 100%; height: auto; display: block; }
 </style>
 </head>
 <body>
 <div class="top">
-  <h1>🧪 MSDS PDF → 화학물질 작업공정별 관리 요령</h1>
-  <p>MSDS PDF를 올리면 항목을 자동 추출합니다. 좌측에서 확인·수정하면 우측 미리보기에 바로 반영되고,
-     하단 버튼으로 엑셀 양식과 동일한 .xlsx 파일을 다운로드합니다. 모든 처리는 이 브라우저 안에서만
-     이루어지며 파일이 외부로 전송되지 않습니다.</p>
+  <h1>🧪 MSDS 자동 작성 도구</h1>
+  <p>MSDS PDF를 올리면 항목을 자동 추출하며, 업로드한 물질은 아래 두 메뉴 모두에서 사용됩니다 —
+     ① <b>화학물질 작업공정별 관리요령</b>(엑셀 양식 자동 작성)
+     ② <b>유해화학물질 규격표지</b>(화학물질관리법 시행규칙 별표 2 표지판 시안).
+     모든 처리는 이 브라우저 안에서만 이루어지며 파일이 외부로 전송되지 않습니다.</p>
 </div>
 <div class="wrap">
   <label class="dropzone" id="dz">
     📄 여기를 클릭하거나 MSDS PDF 파일을 끌어다 놓으세요 (여러 개 가능, 최대 20개)
     <input type="file" id="fileInput" accept="application/pdf" multiple>
   </label>
-  <div id="cards"></div>
+  <div class="tabs">
+    <button id="tabBtnManage" class="on">📋 화학물질 작업공정별 관리요령</button>
+    <button id="tabBtnSign">🚧 유해화학물질 규격표지</button>
+  </div>
+  <div id="tabManage" class="tabpanel">
+    <div id="cards"></div>
+    <p class="hint" id="manageHint" style="margin:14px 4px;">MSDS PDF를 업로드하면 여기에서
+      추출 결과를 확인·수정하고 하단 버튼으로 엑셀 파일을 다운로드할 수 있습니다.</p>
+  </div>
+  <div id="tabSign" class="tabpanel" hidden>
+    <p class="signnote"><b>화학물질관리법 시행규칙 [별표 2] 유해화학물질의 표시방법</b>(제12조제2항 관련)
+      1호 — 유해화학물질 보관·저장시설 또는 진열·보관 장소 표지 시안을 만듭니다.<br>
+      규격: <b>a=50cm</b>, b=(3/2)a=<b>75cm</b>, c=(1/4)a=<b>12.5cm</b>, d=(1/4)a=<b>12.5cm</b>
+      · 바탕 흰색 / 테두리 검정 / "유해화학물질" 글자 빨강(테두리 높이의 65% 이상) /
+      관리책임자·비상전화 글자 검정 · 비상전화는 상시 연락이 가능한 번호를 기재합니다.</p>
+    <div class="signinputs">
+      <div><label class="f">관리책임자 (성명)</label>
+        <input type="text" id="sgMgr" placeholder="ㅇㅇㅇ"></div>
+      <div><label class="f">비상전화</label>
+        <input type="text" id="sgPh1" placeholder="00-000-0000"></div>
+      <div><label class="f">연락처 (보조, 선택)</label>
+        <input type="text" id="sgPh2" placeholder="000-0000-0000"></div>
+    </div>
+    <div id="sgUnList"></div>
+    <div class="signbtns">
+      <button id="sgSvg">⬇️ SVG 다운로드 (실측 75×50cm+표)</button>
+      <button id="sgPng">⬇️ PNG 다운로드 (150DPI)</button>
+    </div>
+    <div id="signPrev"></div>
+  </div>
 </div>
 <div class="bar">
   <button id="dl" disabled>📥 엑셀 파일 다운로드</button>
@@ -517,7 +572,7 @@ function sentences(items){
 function parseMsds(text, sourceName){
   const data = { sourceName, productName: "", signalWord: "", pictograms: [],
     hazards: [], precautions: [], ppe: [], inhalation: [], skinEye: [],
-    ingestion: [], emergency: [], warnings: [] };
+    ingestion: [], emergency: [], unNumber: "", warnings: [] };
   if (text.trim().length < 50){
     data.warnings.push("PDF에서 텍스트를 추출하지 못했습니다. 스캔본(이미지) MSDS인 경우 " +
       "OCR 처리된 PDF를 사용하거나 항목을 직접 입력해 주세요.");
@@ -689,6 +744,12 @@ function parseMsds(text, sourceName){
   data.ppe = ppe;
   if (!ppe.length) data.warnings.push("개인 보호구(8항)를 찾지 못했습니다.");
 
+  // 14) 국제연합번호(UN No.) — 유해화학물질 규격 표지의 표에 기재
+  const sec14 = sections[14] || "";
+  m = /(?:유엔|UN|국제\s*연합)\s*번호[^\d\n]{0,40}(\d{4})/.exec(sec14) ||
+      /\bUN\s*(\d{4})\b/.exec(sec14);
+  if (m) data.unNumber = m[1];
+
   // 띄어쓰기 자동 교정 (이상이 있는 줄만, 글자 불변)
   for (const f of ["hazards", "precautions", "ppe", "inhalation",
                    "skinEye", "ingestion", "emergency"])
@@ -785,6 +846,7 @@ async function addFiles(files){
     refreshPreview(id);
   }
   updateBar();
+  rebuildUnList(); renderSign();     // 규격표지 메뉴에도 반영
 }
 
 function field(id, key, label, ref, hint){
@@ -847,7 +909,13 @@ function buildCard(id, rec){
 }
 
 document.addEventListener("input", e => {
-  const el = e.target, id = el.dataset.id;
+  const el = e.target;
+  if (el.dataset.un){                       // 규격표지 메뉴의 국제연합번호 입력
+    const rec = state.get(el.dataset.un);
+    if (rec){ rec.unNumber = el.value.trim(); renderSign(); }
+    return;
+  }
+  const id = el.dataset.id;
   if (!id || !state.has(id)) return;
   const rec = state.get(id);
   if (el.dataset.pic){
@@ -858,6 +926,10 @@ document.addEventListener("input", e => {
     el.closest("label").classList.toggle("on", el.checked);
   } else if (el.dataset.key === "productName" || el.dataset.key === "signalWord"){
     rec[el.dataset.key] = el.value.trim();
+    if (el.dataset.key === "productName"){
+      const lb = document.querySelector(`[data-unlabel="${id}"]`);
+      if (lb) lb.textContent = "📄 " + (rec.productName || rec.sourceName);
+    }
   } else if (el.dataset.key){
     rec[el.dataset.key] = el.value.split("\n").map(s => s.trim()).filter(Boolean);
   }
@@ -865,7 +937,10 @@ document.addEventListener("input", e => {
 });
 document.addEventListener("click", e => {
   const del = e.target.dataset && e.target.dataset.del;
-  if (del){ state.delete(del); document.getElementById(del).remove(); updateBar(); }
+  if (del){
+    state.delete(del); document.getElementById(del).remove(); updateBar();
+    rebuildUnList(); renderSign();
+  }
 });
 
 function refreshPreview(id){
@@ -877,7 +952,205 @@ function updateBar(){
   $status.textContent = state.size
     ? `물질 ${state.size}개 준비됨 — 내용 확인 후 다운로드하세요.`
     : "PDF를 업로드하면 버튼이 활성화됩니다.";
+  document.getElementById("manageHint").hidden = state.size > 0;
 }
+
+/* ══════════════ 유해화학물질 규격표지 (sign_writer.py 이식) ══════════════
+   화학물질관리법 시행규칙 [별표 2] 1호 — 보관·저장시설 표지.
+   a=50cm 기준: b=(3/2)a=75cm, c=(1/4)a=12.5cm, d=(1/4)a=12.5cm.
+   SVG 단위는 mm(1단위=1mm), 문서 크기를 cm로 지정해 실측 인쇄가 가능하다. */
+const SIGN_A = 500, SIGN_B = 750, SIGN_C = 125, SIGN_D = 125;
+const SIGN_FONT = "&#39;Malgun Gothic&#39;,&#39;맑은 고딕&#39;,sans-serif";
+function signTextUnits(s){
+  let u = 0;
+  for (const ch of s) u += ch.codePointAt(0) > 0x2E80 ? 1.0 : 0.55;
+  return u;
+}
+function buildSignSvg(entries, manager, phone, phone2){
+  let rows = entries.length ? entries.slice() : [{}];
+  while (rows.length < 4) rows.push({});      // 별표 2 양식 그림과 같이 최소 4행
+
+  const colW = [300, 180, 270], colX = [0, 300, 480];
+  const headH = 45, rowH = 70, tableY = SIGN_A + 30;
+  const totalH = tableY + headH + rowH * rows.length;
+  const p = [];
+
+  // ── 상단 표지판 (b × a) ──
+  p.push(`<rect x="3" y="3" width="${SIGN_B - 6}" height="${SIGN_A - 6}" ` +
+         `fill="#ffffff" stroke="#000000" stroke-width="6"/>`);
+  const gap = (SIGN_A - SIGN_C - SIGN_D) / 3;   // 상·중·하 여백 균등
+  const boxX = 40, boxW = SIGN_B - 80;
+
+  // "유해화학물질" 테두리(c) — 글자 높이 ≥ 0.65c (font 90mm ≈ 0.72c)
+  const ty = gap;
+  p.push(`<rect x="${boxX}" y="${ty}" width="${boxW}" height="${SIGN_C}" ` +
+         `fill="#ffffff" stroke="#000000" stroke-width="4"/>`);
+  const title = "유해화학물질", fs = 90, pad = 34;
+  const start = boxX + pad + fs / 2, end = boxX + boxW - pad - fs / 2;
+  const step = (end - start) / (title.length - 1);
+  [...title].forEach((ch, i) => {
+    p.push(`<text x="${(start + step * i).toFixed(1)}" y="${(ty + SIGN_C / 2).toFixed(1)}" ` +
+           `font-family="${SIGN_FONT}" font-size="${fs}" font-weight="700" ` +
+           `fill="#FF0000" text-anchor="middle" dominant-baseline="central">${ch}</text>`);
+  });
+
+  // 관리책임자·비상전화 테두리(d) — 글자 검정
+  const by = gap * 2 + SIGN_C;
+  p.push(`<rect x="${boxX}" y="${by}" width="${boxW}" height="${SIGN_D}" ` +
+         `fill="#ffffff" stroke="#000000" stroke-width="4"/>`);
+  const l1 = `관리책임자 : ${(manager || "").trim() || "ㅇㅇㅇ"} (성명)`;
+  const l2 = `비상전화 : ${(phone || "").trim() || "00-000-0000"}`;
+  const l3 = (phone2 || "").trim() ? `(${phone2.trim()}) (연락처)` : "";
+  const lines = l3 ? [l1, l2, l3] : [l1, l2];
+  const ys = l3 ? [by + SIGN_D * 0.26, by + SIGN_D * 0.54, by + SIGN_D * 0.82]
+                : [by + SIGN_D * 0.34, by + SIGN_D * 0.70];
+  lines.forEach((line, i) => {
+    const x = boxX + 30 + (line === l3 && l3 ? 110 : 0);  // 보조 연락처 들여쓰기
+    p.push(`<text x="${x}" y="${ys[i].toFixed(1)}" font-family="${SIGN_FONT}" ` +
+           `font-size="30" font-weight="700" fill="#000000" ` +
+           `dominant-baseline="central">${esc(line)}</text>`);
+  });
+
+  // ── 하단 표: 물질명 | 국제연합번호 | 그림문자 ──
+  p.push(`<rect x="2" y="${tableY}" width="${SIGN_B - 4}" ` +
+         `height="${headH + rowH * rows.length}" fill="#ffffff" ` +
+         `stroke="#000000" stroke-width="4"/>`);
+  ["물질명", "국제연합번호", "그림문자"].forEach((h, ci) => {
+    p.push(`<text x="${(colX[ci] + colW[ci] / 2).toFixed(1)}" ` +
+           `y="${(tableY + headH / 2).toFixed(1)}" font-family="${SIGN_FONT}" ` +
+           `font-size="26" font-weight="700" fill="#000000" text-anchor="middle" ` +
+           `dominant-baseline="central">${h}</text>`);
+  });
+  for (const ci of [1, 2])
+    p.push(`<line x1="${colX[ci]}" y1="${tableY}" x2="${colX[ci]}" ` +
+           `y2="${totalH - 2}" stroke="#000000" stroke-width="2"/>`);
+  for (let ri = 0; ri < rows.length; ri++){
+    const y = tableY + headH + rowH * ri;
+    p.push(`<line x1="2" y1="${y}" x2="${SIGN_B - 2}" y2="${y}" ` +
+           `stroke="#000000" stroke-width="2"/>`);
+  }
+
+  rows.forEach((ent, ri) => {
+    const cy = tableY + headH + rowH * ri + rowH / 2;
+    const name = (ent.name || "").trim();
+    if (name){
+      const fsN = Math.min(24, (colW[0] - 24) / Math.max(signTextUnits(name), 1));
+      p.push(`<text x="${(colW[0] / 2).toFixed(1)}" y="${cy.toFixed(1)}" ` +
+             `font-family="${SIGN_FONT}" font-size="${fsN.toFixed(1)}" ` +
+             `fill="#000000" text-anchor="middle" ` +
+             `dominant-baseline="central">${esc(name)}</text>`);
+    }
+    const un = (ent.un || "").trim();
+    if (un)
+      p.push(`<text x="${(colX[1] + colW[1] / 2).toFixed(1)}" y="${cy.toFixed(1)}" ` +
+             `font-family="${SIGN_FONT}" font-size="26" fill="#000000" ` +
+             `text-anchor="middle" dominant-baseline="central">${esc(un)}</text>`);
+    const pics = [...new Set(ent.pictograms || [])].filter(c => GHS_IMG[c]).slice(0, 6);
+    if (pics.length){
+      const size = Math.min(56, (colW[2] - 20 - 4 * (pics.length - 1)) / pics.length);
+      const tot = size * pics.length + 4 * (pics.length - 1);
+      const x0 = colX[2] + (colW[2] - tot) / 2;
+      pics.forEach((code, k) => {
+        p.push(`<image x="${(x0 + k * (size + 4)).toFixed(1)}" ` +
+               `y="${(cy - size / 2).toFixed(1)}" width="${size.toFixed(1)}" ` +
+               `height="${size.toFixed(1)}" ` +
+               `href="data:image/png;base64,${GHS_IMG[code]}"/>`);
+      });
+    }
+  });
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${SIGN_B / 10}cm" ` +
+         `height="${(totalH / 10).toFixed(1)}cm" viewBox="0 0 ${SIGN_B} ${totalH}">` +
+         `<rect width="${SIGN_B}" height="${totalH}" fill="#ffffff"/>` +
+         p.join("") + `</svg>`;
+}
+
+/* ── 규격표지 UI ── */
+const $sgMgr = document.getElementById("sgMgr");
+const $sgPh1 = document.getElementById("sgPh1");
+const $sgPh2 = document.getElementById("sgPh2");
+const $sgUnList = document.getElementById("sgUnList");
+const $signPrev = document.getElementById("signPrev");
+
+function signEntries(){
+  return [...state.values()].map(r => ({
+    name: r.productName || "", un: r.unNumber || "", pictograms: r.pictograms }));
+}
+function renderSign(){
+  $signPrev.innerHTML = buildSignSvg(signEntries(),
+    $sgMgr.value, $sgPh1.value, $sgPh2.value);
+}
+function rebuildUnList(){
+  if (!state.size){
+    $sgUnList.innerHTML = '<p class="hint" style="margin:14px 4px;">MSDS PDF를 업로드하면 ' +
+      '물질명·국제연합번호·그림문자가 표에 자동으로 채워집니다.</p>';
+    return;
+  }
+  let h = '<label class="f">물질별 국제연합번호<span class="ref">MSDS 14항 운송에 필요한 정보</span></label>';
+  for (const [id, rec] of state){
+    h += `<div class="unrow"><div class="nm" data-unlabel="${id}">📄 ${esc(rec.productName || rec.sourceName)}</div>
+      <input type="text" data-un="${id}" value="${esc(rec.unNumber || "")}"
+             placeholder="국제연합번호(UN No.) — 없으면 비워 두세요"></div>`;
+  }
+  $sgUnList.innerHTML = h;
+}
+for (const el of [$sgMgr, $sgPh1, $sgPh2])
+  el.addEventListener("input", renderSign);
+
+/* ── 메뉴 전환 ── */
+const $btnManage = document.getElementById("tabBtnManage");
+const $btnSign = document.getElementById("tabBtnSign");
+function showTab(which){
+  const sign = which === "sign";
+  $btnManage.classList.toggle("on", !sign);
+  $btnSign.classList.toggle("on", sign);
+  document.getElementById("tabManage").hidden = sign;
+  document.getElementById("tabSign").hidden = !sign;
+  document.body.classList.toggle("signview", sign);
+  if (sign){ rebuildUnList(); renderSign(); }
+}
+$btnManage.addEventListener("click", () => showTab("manage"));
+$btnSign.addEventListener("click", () => showTab("sign"));
+rebuildUnList(); renderSign();
+
+/* ── 표지판 다운로드 (SVG 실측 / PNG 150DPI) ── */
+function downloadBlob(blob, filename){
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+}
+document.getElementById("sgSvg").addEventListener("click", () => {
+  const svg = buildSignSvg(signEntries(), $sgMgr.value, $sgPh1.value, $sgPh2.value);
+  downloadBlob(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }),
+               "유해화학물질_표지판.svg");
+});
+document.getElementById("sgPng").addEventListener("click", async e => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  try {
+    const svg = buildSignSvg(signEntries(), $sgMgr.value, $sgPh1.value, $sgPh2.value);
+    const vb = /viewBox="0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)"/.exec(svg);
+    const scale = 150 / 25.4;             // 150DPI: mm → px
+    const w = Math.round(parseFloat(vb[1]) * scale);
+    const h = Math.round(parseFloat(vb[2]) * scale);
+    const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
+    const img = new Image();
+    await new Promise((res, rej) => { img.onload = res; img.onerror = rej; img.src = url; });
+    const cv = document.createElement("canvas");
+    cv.width = w; cv.height = h;
+    const ctx = cv.getContext("2d");
+    ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+    URL.revokeObjectURL(url);
+    const blob = await new Promise(res => cv.toBlob(res, "image/png"));
+    downloadBlob(blob, "유해화학물질_표지판.png");
+  } catch (err){
+    alert("PNG 생성 중 오류가 발생했습니다:\n" + (err.message || err));
+  }
+  btn.disabled = false;
+});
 
 /* ══════════════ 엑셀 생성 (excel_writer.py 이식) ══════════════ */
 function b64ToU8(b64){

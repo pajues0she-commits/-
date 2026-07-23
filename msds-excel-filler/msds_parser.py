@@ -135,6 +135,7 @@ class MsdsData:
     skin_eye: list = field(default_factory=list)         # 피부·눈 접촉 시
     ingestion: list = field(default_factory=list)        # 먹었을 때
     emergency: list = field(default_factory=list)        # 응급대응(화재·누출)
+    un_number: str = ""                                  # 국제연합번호(14항)
     warnings: list = field(default_factory=list)         # 파싱 경고 메시지
 
 
@@ -606,6 +607,13 @@ def parse_msds(pdf_source, source_name: str = "") -> MsdsData:
     data.ppe = ppe
     if not ppe:
         data.warnings.append("개인 보호구(8항)를 찾지 못했습니다.")
+
+    # 14) 국제연합번호(UN No.) — 유해화학물질 규격 표지의 표에 기재 ────
+    sec14 = sections.get(14, "")
+    m = re.search(r"(?:유엔|UN|국제\s*연합)\s*번호[^\d\n]{0,40}(\d{4})", sec14) or \
+        re.search(r"\bUN\s*(\d{4})\b", sec14)
+    if m:
+        data.un_number = m.group(1)
 
     # 띄어쓰기 자동 교정 (글자 사이 공백·붙은 문장 이상이 있는 줄만, 글자 불변)
     for f in ("hazards", "precautions", "ppe", "inhalation",

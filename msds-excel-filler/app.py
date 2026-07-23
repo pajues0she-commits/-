@@ -4,6 +4,7 @@
 실행:  streamlit run app.py
 """
 import io
+import re
 
 import streamlit as st
 
@@ -11,13 +12,15 @@ from ghs_data import PICTOGRAM_NAMES
 from msds_parser import MsdsData, parse_msds
 from excel_writer import build_workbook
 from preview import preview_html
+from sign_writer import build_sign_svg
 
-st.set_page_config(page_title="MSDS → 관리요령 엑셀 자동작성", page_icon="🧪",
+st.set_page_config(page_title="MSDS 자동 작성 도구", page_icon="🧪",
                    layout="wide")
 
-st.title("🧪 MSDS PDF → 화학물질 작업공정별 관리 요령")
-st.caption("MSDS PDF를 업로드하면 항목을 자동 추출합니다. 내용을 확인·수정한 뒤 "
-           "엑셀(양식 동일)로 다운로드하세요. 물질 여러 개를 올리면 시트가 하나씩 만들어집니다.")
+st.title("🧪 MSDS 자동 작성 도구")
+st.caption("MSDS PDF를 업로드하면 항목을 자동 추출합니다. 업로드한 물질은 아래 두 메뉴 "
+           "모두에서 사용됩니다 — ① 화학물질 작업공정별 관리요령(엑셀), "
+           "② 유해화학물질 규격표지(화학물질관리법 시행규칙 별표 2).")
 
 _PIC_OPTIONS = [f"{code} {name}" for code, name in PICTOGRAM_NAMES.items()]
 
@@ -47,10 +50,14 @@ for name in list(st.session_state.parsed):
     if name not in current_names:
         del st.session_state.parsed[name]
 
+tab_manage, tab_sign = st.tabs(
+    ["📋 화학물질 작업공정별 관리요령", "🚧 유해화학물질 규격표지"])
+
 records = []
 for name, data in st.session_state.parsed.items():
-    with st.expander(f"📄 {name} — {data.product_name or '제품명 미확인'}",
-                     expanded=len(st.session_state.parsed) == 1):
+    with tab_manage, st.expander(
+            f"📄 {name} — {data.product_name or '제품명 미확인'}",
+            expanded=len(st.session_state.parsed) == 1):
         for w in data.warnings:
             st.warning(w)
 
@@ -102,6 +109,7 @@ for name, data in st.session_state.parsed.items():
             skin_eye=[l.strip() for l in skin.splitlines() if l.strip()],
             ingestion=[l.strip() for l in ingest.splitlines() if l.strip()],
             emergency=[l.strip() for l in emerg.splitlines() if l.strip()],
+            un_number=data.un_number,
         )
         records.append(rec)
 
@@ -109,19 +117,54 @@ for name, data in st.session_state.parsed.items():
             st.markdown("##### 🔍 미리보기 (엑셀 양식과 동일)")
             st.markdown(preview_html(rec), unsafe_allow_html=True)
 
-if records:
-    st.divider()
-    if st.button("📥 엑셀 파일 생성", type="primary"):
-        try:
-            xlsx = build_workbook(records)
-            st.session_state.xlsx = xlsx
-        except Exception as e:
-            st.error(f"엑셀 생성 실패: {e}")
-    if st.session_state.get("xlsx"):
-        st.download_button(
-            "⬇️ 화학물질_작업공정별_관리요령.xlsx 다운로드",
-            st.session_state.xlsx,
-            file_name="화학물질_작업공정별_관리요령.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-else:
-    st.info("MSDS PDF 파일을 업로드하면 여기에서 추출 결과를 확인하고 수정할 수 있습니다.")
+with tab_manage:
+    if records:
+        st.divider()
+        if st.button("📥 엑셀 파일 생성", type="primary"):
+            try:
+                xlsx = build_workbook(records)
+                st.session_state.xlsx = xlsx
+            except Exception as e:
+                st.error(f"엑셀 생성 실패: {e}")
+        if st.session_state.get("xlsx"):
+            st.download_button(
+                "⬇️ 화학물질_작업공정별_관리요령.xlsx 다운로드",
+                st.session_state.xlsx,
+                file_name="화학물질_작업공정별_관리요령.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    else:
+        st.info("MSDS PDF 파일을 업로드하면 여기에서 추출 결과를 확인하고 수정할 수 있습니다.")
+
+with tab_sign:
+    st.markdown("**화학물질관리법 시행규칙 [별표 2] 유해화학물질의 표시방법**(제12조제2항 관련) "
+                "1호 — 보관·저장시설/진열·보관 장소 표지 시안을 만듭니다.  \n"
+                "규격: a=50cm, b=(3/2)a=75cm, c=(1/4)a=12.5cm, d=(1/4)a=12.5cm · "
+                "바탕 흰색 / 테두리 검정 / 유해화학물질 글자 빨강(높이 65% 이상) / "
+                "관리책임자·비상전화 글자 검정")
+    c1, c2, c3 = st.columns(3)
+    manager = c1.text_input("관리책임자 (성명)", key="sign_mgr")
+    phone = c2.text_input("비상전화", key="sign_ph1",
+                          help="상시 연락이 가능한 전화번호를 기재해야 합니다.")
+    phone2 = c3.text_input("연락처 (보조, 선택)", key="sign_ph2")
+
+    entries = []
+    if records:
+        st.markdown("###### 물질별 기재 내용 〔국제연합번호: MSDS 14항 운송에 필요한 정보〕")
+        for i, rec in enumerate(records):
+            e1, e2 = st.columns([2, 1])
+            nm = e1.text_input("물질명", rec.product_name,
+                               key=f"sign_nm_{rec.source_name}")
+            un = e2.text_input("국제연합번호(UN No.)", rec.un_number,
+                               key=f"sign_un_{rec.source_name}")
+            entries.append({"name": nm, "un": un, "pictograms": rec.pictograms})
+    else:
+        st.info("MSDS PDF를 업로드하면 물질명·국제연합번호·그림문자가 표에 자동으로 채워집니다.")
+
+    svg = build_sign_svg(entries, manager, phone, phone2)
+    st.download_button("⬇️ 표지판 시안 다운로드 (SVG, 실측 75×50cm+표)", svg,
+                       file_name="유해화학물질_표지판.svg", mime="image/svg+xml")
+    preview_svg = re.sub(r'width="[^"]+" height="[^"]+"', 'width="100%"',
+                         svg, count=1)   # 화면에서는 폭에 맞춰 축소 표시
+    st.markdown(
+        f'<div style="border:1px solid #ccc;background:#fff;padding:10px;">'
+        f'{preview_svg}</div>', unsafe_allow_html=True)
