@@ -32,23 +32,35 @@ class MsdsData:
 
 
 def extract_text(pdf_source) -> str:
-    """PDF 전체 텍스트를 추출한다. pdf_source는 경로 또는 파일 객체."""
+    """PDF 전체 텍스트를 추출한다. pdf_source는 경로 또는 파일 객체.
+
+    페이지 경계는 \f(폼피드)로 표시한다 — clean_text가 페이지 수 기반으로
+    반복 머리글/바닥글을 걸러내는 데 쓴다.
+    """
     pages = []
     with pdfplumber.open(pdf_source) as pdf:
         for page in pdf.pages:
             pages.append(page.extract_text() or "")
-    return "\n".join(pages)
+    return "\n\f\n".join(pages)
 
 
 _FOOTER_RX = re.compile(
-    r"쪽\s*\d+\s*/\s*\d+|^\s*page\s*\d+|^\s*-?\s*\d+\s*/\s*\d+\s*-?\s*$", re.I)
+    r"쪽\s*[:：]?\s*\d+\s*/\s*\d+"          # "쪽 4 / 14", "쪽: 3/9"
+    r"|^\s*page\s*\d+"
+    r"|^\s*-?\s*\d+\s*/\s*\d+\s*-?\s*$"
+    r"|\(\s*\d+\s*쪽\s*(?:에서?|부터)\s*계속\s*\)"   # "(3 쪽에계속)", "(2 쪽부터계속)"
+    r"|continued\s+(?:on|from)\s+page", re.I)
 
 
 def clean_text(text: str) -> str:
-    """페이지 푸터와 3회 이상 반복되는 상용구(회사 푸터 등)를 제거한다."""
-    lines = text.splitlines()
-    counts = Counter(l.strip() for l in lines if len(l.strip()) > 10)
-    boiler = {l for l, c in counts.items() if c >= 3}
+    """페이지 푸터·"(N쪽에 계속)" 문구·반복되는 머리글(회사 상용구 등)을 제거한다."""
+    n_pages = text.count("\f") + 1
+    lines = text.replace("\f", "\n").splitlines()
+    counts = Counter(l.strip() for l in lines if len(l.strip()) > 1)
+    # 페이지마다 반복되는 짧은 머리글("물질안전보건자료", "KR" 등)은 페이지 수
+    # 기준으로, 긴 상용구는 3회 반복이면 제거한다.
+    boiler = {l for l, c in counts.items()
+              if (len(l) > 10 and c >= 3) or c >= max(3, n_pages - 1)}
     kept = [l for l in lines
             if l.strip() not in boiler and not _FOOTER_RX.search(l)]
     return "\n".join(kept)
@@ -134,7 +146,11 @@ def bulletize(block: str, drop_codes: bool = True) -> list:
             continue
         if drop_codes:
             # "H315 피부에 자극을 일으킴", "P301 + P312 삼켰다면..." -> 코드 제거
-            line = re.sub(r"^[HP]\d{3}(?:\s*\+\s*[HP]\d{3})*\s*[:.]?\s*", "", line).strip()
+            # H/P 코드로 시작하는 줄은 표식이 없어도 새 항목으로 취급한다
+            new_line = re.sub(r"^[HP]\d{3}(?:\s*\+\s*[HP]\d{3})*\s*[:.]?\s*", "", line)
+            if new_line != line:
+                has_marker = True
+            line = new_line.strip()
             if not line:
                 continue
         # 표식 없는 줄이 이어지고 앞 문장이 끝나지 않았으면 줄바꿈으로 잘린 문장으로 본다
@@ -258,8 +274,11 @@ def parse_msds(pdf_source, source_name: str = "") -> MsdsData:
         "inhale": r"흡입\s*(?:했을|한|시)",
         "ingest": r"(?:먹었을|삼켰을)\s*때",
     }
+    # 주의: 정지 패턴은 소제목에만 걸려야 한다. "의료진의"처럼 짧은 패턴은
+    # "의료진의 도움을 구한다" 같은 본문 문장을 잘라 버린다.
     _aid_common = [_SUB_HEAD, r"가장\s*중요한", r"일반적인\s*조치",
-                   r"기타\s*의사의|의사의\s*주의사항|의료진의", r"급성\s*증상"]
+                   r"기타\s*의사의|의사의\s*주의사항|의료진의\s*주의",
+                   r"즉각적인\s*의료\s*처?치", r"급성\s*증상"]
 
     def aid(key, start_pat):
         # 자기 자신의 라벨은 정지 조건에서 빼서, 본문이 라벨을 반복하는 형식도 지원
@@ -281,17 +300,22 @@ def parse_msds(pdf_source, source_name: str = "") -> MsdsData:
     ext = bulletize(grab_block(
         sec5, r"(?:적절한\s*(?:\(및\s*부적절한\)?\s*)?)?소화제\s*[:：]?",
         [r"부적절한", r"안전상의\s*이유로", r"사용해서는\s*안되는",
-         r"화학물질로부터", r"특정\s*유해성", _SUB_HEAD,
-         r"소방대원|화재\s*진압", r"그\s*밖의"]))
+         r"화학물질로부터", r"특[정별]\s*유해성", _SUB_HEAD,
+         r"소방대원|소방관|화재\s*진압", r"그\s*밖의"]))
+    # "· 소화제" 밑에 "· 적절한 소화제: ..."가 다시 오는 형식(라벨 중복) 정리
+    ext = [x for x in (re.sub(r"^(?:적절한\s*)?소화제\s*[:：]\s*", "", x).strip()
+                       for x in ext) if x]
     if ext:
         emergency.append("적절한 소화제 : " + ", ".join(x.rstrip(",.") for x in ext[:3]))
     fire_hz = _sentences(bulletize(grab_block(
-        sec5, r"(?:화학물질로부터\s*생기는\s*)?특정\s*유해성\s*[:：]?",
-        [_SUB_HEAD, r"소방대원", r"화재\s*진압\s*시", r"그\s*밖의"])))
+        sec5, r"(?:화학물질로부터\s*생기는\s*|(?:화학물질이나\s*혼합물에서\s*)?발생하는\s*)?"
+              r"특[정별]\s*유해성\s*[:：]?",
+        [_SUB_HEAD, r"소방대원", r"소방관", r"화재\s*진압\s*시", r"그\s*밖의"])))
     emergency += fire_hz[:3]
     spill = _sentences(bulletize(grab_block(
-        sec6, r"정화\s*(?:또는\s*제거)?\s*방법\s*[:：]?",
-        [_SUB_HEAD, r"^\s*(?:제\s*|항\s*)?7\s*[.):：]"])))
+        sec6, r"정화\s*(?:또는\s*제거)?\s*방법(?:과\s*소재)?\s*[:：]?",
+        [_SUB_HEAD, r"타\s*섹션\s*참조", r"다른\s*항목?\s*참조",
+         r"^\s*(?:제\s*|항\s*)?7\s*[.):：]"])))
     emergency += spill[:4]
     data.emergency = emergency
     if not emergency:
@@ -306,12 +330,21 @@ def parse_msds(pdf_source, source_name: str = "") -> MsdsData:
         "hand": r"손\s*보호", "body": r"신체\s*보호",
         "full": r"전체\s*보호", "splash": r"튐\s*보호",
     }
-    _ppe_common = [r"위생상", _SUB_HEAD, r"^\s*(?:제\s*|항\s*)?9\s*[.):：]"]
+    _ppe_common = [r"위생상", r"주\s*변\s*환경에\s*대한", r"환경\s*노출\s*방지",
+                   _SUB_HEAD, r"^\s*(?:제\s*|항\s*)?9\s*[.):：]"]
+    _BUL = r"[·ㆍ○●◦•∙\-–—*\s]*"
     ppe = []
 
     def grab8(key):
-        stops = [r"^\s*" + p + r"\s*[:：]?[ \t]*$"
-                 for k, p in _ppe_labels.items() if k != key] + _ppe_common
+        # 정지: 다른 라벨이 "줄 단독"이거나 "줄 머리 + 콜론"으로 나올 때만.
+        # (본문 속 "눈 보호용 도구" 같은 표현에는 걸리지 않는다)
+        stops = []
+        for k, p in _ppe_labels.items():
+            if k == key:
+                continue
+            stops.append(r"^\s*" + p + r"\s*[:：]?[ \t]*$")
+            stops.append(r"^" + _BUL + p + r"\s*[:：]")
+        stops += _ppe_common
         pat = r"(?:" + _ppe_labels[key] + r"\s*[:：]|^\s*" + _ppe_labels[key] + r"[ \t]*$)"
         return bulletize(grab_block(sec8, pat, stops))
 
