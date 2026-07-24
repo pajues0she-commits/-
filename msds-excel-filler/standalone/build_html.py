@@ -16,6 +16,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
 
+from chem_db import CHEM_DB  # noqa: E402
 from ghs_data import H_STATEMENTS  # noqa: E402
 import ko_spacing  # noqa: E402
 
@@ -82,6 +83,10 @@ def main():
     html = html.replace("__CMAPS_B64_JSON__", json.dumps(cmaps))
     html = html.replace("__H_STATEMENTS_JSON__",
                         json.dumps(H_STATEMENTS, ensure_ascii=False))
+    html = html.replace("__CHEM_DB_JSON__", json.dumps([
+        {"name": e["name"], "alias": e["alias"], "cas": e["cas"],
+         "un": e["un"], "pics": e["pics"]} for e in CHEM_DB],
+        ensure_ascii=False))
     html = html.replace("__KO_DICT_JSON__", json.dumps({
         "nouns": ko_spacing.NOUNS,
         "funcs": ko_spacing.FUNCS,

@@ -19,14 +19,9 @@ SVG 좌표 단위는 mm(1단위 = 1mm)이고 문서 크기를 cm로 지정하므
 import base64
 import html
 import os
-import re
 from functools import lru_cache
 
 from excel_writer import GHS_DIR
-from ghs_data import pictograms_for_codes
-
-# 화학물질정보처리시스템(KREACH) 분류·표시 검색 화면
-KREACH_URL = "https://kreach.mcee.go.kr/repwrt/ghs/ghsList.do"
 
 # 별표 2 규격 (mm)
 A_MM = 500.0            # a = 50cm
@@ -46,39 +41,6 @@ def _pic_b64(code: str) -> str:
         return base64.b64encode(f.read()).decode()
 
 
-def parse_kreach_text(text: str) -> dict:
-    """KREACH 검색/상세 화면에서 복사한 텍스트에서 표지 기재 정보를 인식한다.
-
-    반환: {"name": 물질명, "un": 국제연합번호, "pictograms": [GHS 코드]}
-    (브라우저 보안 정책상 외부 사이트를 직접 조회할 수 없어, 사용자가
-    복사해 온 텍스트를 파싱하는 방식으로 연동한다.)
-    """
-    ent = {"name": "", "un": "", "pictograms": []}
-    m = re.search(r"(?:물질\s*명(?:칭)?|국문\s*명(?:칭)?|화학물질명)\s*[:：]?\s*([^\n\t|]+)",
-                  text)
-    if m:
-        ent["name"] = re.sub(r"\s{2,}.*$", "", m.group(1).strip())
-    m = re.search(r"(?:UN|유엔|국제\s*연합)\s*(?:번호|No\.?)?\s*[:：]?\s*(\d{4})(?!\d)",
-                  text, re.I)
-    if m:
-        ent["un"] = m.group(1)
-    pics = sorted(set(re.findall(r"GHS0[1-9]", text)))
-    if not pics:
-        h_codes = sorted(set(re.findall(r"H\d{3}", text)))
-        if h_codes:
-            pics = pictograms_for_codes(h_codes)
-    if not pics:
-        kw_map = [(r"폭발성", "GHS01"), (r"인화성", "GHS02"), (r"산화성", "GHS03"),
-                  (r"고압\s*가스", "GHS04"), (r"부식성", "GHS05"),
-                  (r"급성\s*독성", "GHS06"), (r"해골", "GHS06"),
-                  (r"느낌표", "GHS07"), (r"감탄부호", "GHS07"),
-                  (r"호흡기\s*과민성", "GHS08"), (r"건강\s*유해성", "GHS08"),
-                  (r"환경\s*유해성", "GHS09"), (r"수생\s*환경", "GHS09")]
-        pics = [code for kw, code in kw_map if re.search(kw, text)]
-    ent["pictograms"] = sorted(set(pics))
-    return ent
-
-
 def _text_units(s: str) -> float:
     """개략적인 글자폭(한글 1.0em, 영문·숫자 0.55em)."""
     return sum(1.0 if ord(ch) > 0x2E80 else 0.55 for ch in s)
@@ -88,8 +50,10 @@ def build_sign_svg(entries, manager: str = "", phone: str = "",
                    phone2: str = "") -> str:
     """규격 표지판 SVG 문자열을 만든다.
 
-    entries: [{"name": 물질명, "un": 국제연합번호, "pictograms": ["GHS05",...]}]
+    entries: [{"name": 물질명, "cas": CAS 번호(선택), "un": 국제연합번호,
+               "pictograms": ["GHS05", ...]}]
     manager/phone/phone2: 관리책임자 성명 / 비상전화 / 보조 연락처(선택)
+    CAS 번호가 있으면 물질명 아래에 작은 글자로 함께 표기한다.
     """
     esc = html.escape
     rows = list(entries) or [{}]
@@ -173,12 +137,20 @@ def build_sign_svg(entries, manager: str = "", phone: str = "",
     for ri, ent in enumerate(rows):
         cy = table_y + head_h + row_h * ri + row_h / 2
         name = (ent.get("name") or "").strip()
+        cas = (ent.get("cas") or "").strip()
         if name:
             fs_n = min(24.0, (col_w[0] - 24) / max(_text_units(name), 1))
-            p.append(f'<text x="{col_w[0] / 2:.1f}" y="{cy:.1f}" '
+            ny = cy - 12 if cas else cy      # CAS가 있으면 두 줄로 나눠 쓴다
+            p.append(f'<text x="{col_w[0] / 2:.1f}" y="{ny:.1f}" '
                      f'font-family="{_FONT}" font-size="{fs_n:.1f}" '
                      f'fill="#000000" text-anchor="middle" '
                      f'dominant-baseline="central">{esc(name)}</text>')
+        if cas:
+            cas_y = cy + 14 if name else cy
+            p.append(f'<text x="{col_w[0] / 2:.1f}" y="{cas_y:.1f}" '
+                     f'font-family="{_FONT}" font-size="15" fill="#000000" '
+                     f'text-anchor="middle" dominant-baseline="central">'
+                     f'CAS {esc(cas)}</text>')
         un = (ent.get("un") or "").strip()
         if un:
             p.append(f'<text x="{col_x[1] + col_w[1] / 2:.1f}" y="{cy:.1f}" '

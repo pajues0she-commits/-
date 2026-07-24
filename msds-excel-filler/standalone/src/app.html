@@ -91,22 +91,19 @@
               padding: 10px 14px; font-size: 12.5px; color: #2c4a68; line-height: 1.6; }
   .signinputs { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
   @media (max-width: 900px) { .signinputs { grid-template-columns: 1fr; } }
-  .unrow { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; align-items: center;
-           margin-top: 8px; }
-  .unrow .nm { font-size: 13px; color: #234; font-weight: bold; word-break: break-all; }
   .signadd { border: 1px solid #d8e2ec; border-radius: 8px; background: #f8fafc;
              padding: 10px 14px 14px; margin-top: 14px; }
   .addrow { display: flex; gap: 8px; }
   .addrow input { flex: 1; }
   .addrow button { border: none; border-radius: 7px; padding: 8px 16px; cursor: pointer;
                    font-family: inherit; font-size: 13px; font-weight: bold;
-                   background: #35597e; color: #fff; white-space: nowrap; }
-  #sgAdd { background: #1a7f37; }
-  #sgPaste { min-height: 64px; margin-top: 8px; }
-  #sgPasteMsg:not(:empty) { color: #1a7f37; font-weight: bold; }
-  .mrow { display: grid; grid-template-columns: 2fr 1fr auto auto; gap: 10px;
+                   background: #1a7f37; color: #fff; white-space: nowrap; }
+  #sgMsg:not(:empty) { color: #1a7f37; font-weight: bold; }
+  #sgMsg.warn { color: #a33; }
+  .mrow { display: grid; grid-template-columns: 2fr 1.1fr 0.9fr auto auto; gap: 10px;
           align-items: center; margin-top: 8px; border: 1px solid #e2e8ef;
           border-radius: 8px; padding: 8px 10px; background: #fff; }
+  @media (max-width: 1000px) { .mrow { grid-template-columns: 1fr 1fr; } }
   .mpics { display: flex; gap: 3px; flex-wrap: wrap; }
   .mpics label { border: 1.5px solid #d0d7df; border-radius: 6px; padding: 2px;
                  cursor: pointer; line-height: 0; background: #fff; }
@@ -133,8 +130,9 @@
 <div class="top">
   <h1>🧪 MSDS 자동 작성 도구</h1>
   <p>① <b>화학물질 작업공정별 관리요령</b> 메뉴에서 MSDS PDF를 올리면 항목을 자동 추출해
-     엑셀 양식을 만들고, 올린 물질은 ② <b>유해화학물질 규격표지</b>(화학물질관리법 시행규칙
-     별표 2 표지판 시안) 메뉴에도 함께 반영됩니다.
+     엑셀 양식을 만들고, ② <b>유해화학물질 규격표지</b> 메뉴에서는 화학물질명만 입력하면
+     CAS 번호·국제연합번호·그림문자가 자동 입력된 표지판 시안(화학물질관리법 시행규칙
+     별표 2)을 만듭니다.
      모든 처리는 이 브라우저 안에서만 이루어지며 파일이 외부로 전송되지 않습니다.</p>
 </div>
 <div class="wrap">
@@ -166,33 +164,19 @@
         <input type="text" id="sgPh2" placeholder="000-0000-0000"></div>
     </div>
     <div class="signadd">
-      <label class="f">화학물질 추가 — 물질명으로 조회 (NCIS 자동 조회 / KREACH 검색)</label>
+      <label class="f">화학물질 추가 — 물질명을 입력하면 CAS 번호·국제연합번호·그림문자가
+        자동 입력됩니다</label>
       <div class="addrow">
-        <input type="text" id="sgName" placeholder="화학물질명 입력 (예: 황산, 톨루엔)">
-        <button id="sgNcis" type="button">🔎 NCIS 자동 조회</button>
-        <button id="sgKreach" type="button">🔍 KREACH 검색</button>
-        <button id="sgAdd" type="button">＋ 직접 추가</button>
+        <input type="text" id="sgName" list="chemList"
+               placeholder="화학물질명 입력 (예: 황산, 톨루엔, 가성소다, 7664-93-9)">
+        <datalist id="chemList"></datalist>
+        <button id="sgSearch" type="button">🔎 검색 · 추가</button>
       </div>
-      <div class="addrow" style="margin-top:8px;">
-        <button id="sgDataBtn" type="button">📁 메타데이터 파일 불러오기 (CSV·XLSX)</button>
-        <input type="password" id="sgApiKey"
-               placeholder="공공데이터포털 API 인증키(serviceKey) — 데이터 파일이 없을 때 사용">
-        <input type="file" id="sgDataFile" accept=".csv,.xlsx,.xlsm,.txt" style="display:none">
-      </div>
-      <div class="hint" id="sgDataInfo"></div>
-      <div class="hint">「NCIS 자동 조회」는 ① 공공데이터포털(data.go.kr)에서 내려받은
-        <b>메타데이터 파일(CSV·XLSX)</b>을 「메타데이터 파일 불러오기」로 올려 두면 그
-        데이터에서 물질명을 검색합니다 — 한 번 불러오면 이 브라우저에 저장되어 인증키·
-        인터넷 없이 동작합니다. ② 데이터 파일이 없으면 한국환경공단 화학물질(유독물 GHS)
-        조회 API(apis.data.go.kr/B552584/kecoapi/ncissbstn)를 인증키로 호출합니다.
-        브라우저가 API 접속을 차단(CORS)하면 조회 주소를 새 탭으로 열어 응답을 복사해
-        붙여 넣는 방법을 안내하며, 「KREACH 검색」 화면 내용을 붙여 넣어도 됩니다.</div>
-      <div id="sgNcisResults"></div>
-      <textarea id="sgPaste" placeholder="KREACH 검색 결과 화면 내용을 여기에 붙여넣기 (Ctrl+V) — 자동 인식되어 표에 추가됩니다"></textarea>
-      <div class="hint" id="sgPasteMsg"></div>
+      <div class="hint" id="sgDbHint"></div>
+      <div id="sgResults"></div>
+      <div class="hint" id="sgMsg"></div>
     </div>
     <div id="sgManual"></div>
-    <div id="sgUnList"></div>
     <div class="signbtns">
       <button id="sgSvg">⬇️ SVG 다운로드 (실측 75×50cm+표)</button>
       <button id="sgPng">⬇️ PNG 다운로드 (150DPI)</button>
@@ -216,6 +200,7 @@
 const TEMPLATE_B64 = "__TEMPLATE_B64__";   // 빈 양식 시트 20장 (원본 서식 그대로)
 const GHS_IMG = __GHS_B64_JSON__;          // { GHS01: "b64", ... }
 const CMAPS = __CMAPS_B64_JSON__;          // 한국어 CID 폰트용 CMap (.bcmap)
+const CHEM_DB = __CHEM_DB_JSON__;          // 규격표지용 내장 화학물질 정보 (chem_db.py)
 
 /* ══════════════ GHS 표준 데이터 (ghs_data.py와 동일) ══════════════ */
 const H_STATEMENTS = __H_STATEMENTS_JSON__;
@@ -900,7 +885,6 @@ async function addFiles(files){
     refreshPreview(id);
   }
   updateBar();
-  rebuildUnList(); renderSign();     // 규격표지 메뉴에도 반영
 }
 
 function field(id, key, label, ref, hint){
@@ -964,11 +948,6 @@ function buildCard(id, rec){
 
 document.addEventListener("input", e => {
   const el = e.target;
-  if (el.dataset.un){                       // 규격표지 메뉴의 국제연합번호 입력
-    const rec = state.get(el.dataset.un);
-    if (rec){ rec.unNumber = el.value.trim(); renderSign(); }
-    return;
-  }
   const id = el.dataset.id;
   if (!id || !state.has(id)) return;
   const rec = state.get(id);
@@ -980,10 +959,6 @@ document.addEventListener("input", e => {
     el.closest("label").classList.toggle("on", el.checked);
   } else if (el.dataset.key === "productName" || el.dataset.key === "signalWord"){
     rec[el.dataset.key] = el.value.trim();
-    if (el.dataset.key === "productName"){
-      const lb = document.querySelector(`[data-unlabel="${id}"]`);
-      if (lb) lb.textContent = "📄 " + (rec.productName || rec.sourceName);
-    }
   } else if (el.dataset.key){
     rec[el.dataset.key] = el.value.split("\n").map(s => s.trim()).filter(Boolean);
   }
@@ -993,7 +968,6 @@ document.addEventListener("click", e => {
   const del = e.target.dataset && e.target.dataset.del;
   if (del){
     state.delete(del); document.getElementById(del).remove(); updateBar();
-    rebuildUnList(); renderSign();
   }
 });
 
@@ -1087,13 +1061,19 @@ function buildSignSvg(entries, manager, phone, phone2){
   rows.forEach((ent, ri) => {
     const cy = tableY + headH + rowH * ri + rowH / 2;
     const name = (ent.name || "").trim();
+    const cas = (ent.cas || "").trim();
     if (name){
       const fsN = Math.min(24, (colW[0] - 24) / Math.max(signTextUnits(name), 1));
-      p.push(`<text x="${(colW[0] / 2).toFixed(1)}" y="${cy.toFixed(1)}" ` +
+      const ny = cas ? cy - 12 : cy;        // CAS가 있으면 두 줄로 나눠 쓴다
+      p.push(`<text x="${(colW[0] / 2).toFixed(1)}" y="${ny.toFixed(1)}" ` +
              `font-family="${SIGN_FONT}" font-size="${fsN.toFixed(1)}" ` +
              `fill="#000000" text-anchor="middle" ` +
              `dominant-baseline="central">${esc(name)}</text>`);
     }
+    if (cas)
+      p.push(`<text x="${(colW[0] / 2).toFixed(1)}" y="${(name ? cy + 14 : cy).toFixed(1)}" ` +
+             `font-family="${SIGN_FONT}" font-size="15" fill="#000000" ` +
+             `text-anchor="middle" dominant-baseline="central">CAS ${esc(cas)}</text>`);
     const un = (ent.un || "").trim();
     if (un)
       p.push(`<text x="${(colX[1] + colW[1] / 2).toFixed(1)}" y="${cy.toFixed(1)}" ` +
@@ -1123,49 +1103,25 @@ function buildSignSvg(entries, manager, phone, phone2){
 const $sgMgr = document.getElementById("sgMgr");
 const $sgPh1 = document.getElementById("sgPh1");
 const $sgPh2 = document.getElementById("sgPh2");
-const $sgUnList = document.getElementById("sgUnList");
 const $signPrev = document.getElementById("signPrev");
 
-/* 직접 추가·KREACH 붙여넣기로 만든 물질 (MSDS 업로드 물질과 표에 함께 표시) */
-const manual = new Map();   // id -> {name, un, pictograms}
+/* 표에 들어갈 물질 목록 (물질명 검색 자동 입력 + 직접 수정) */
+const manual = new Map();   // id -> {name, cas, un, pictograms}
 let mseq = 0;
 
-function signEntries(){
-  const fromMsds = [...state.values()].map(r => ({
-    name: r.productName || "", un: r.unNumber || "", pictograms: r.pictograms }));
-  return fromMsds.concat([...manual.values()]);
-}
 function renderSign(){
-  $signPrev.innerHTML = buildSignSvg(signEntries(),
+  $signPrev.innerHTML = buildSignSvg([...manual.values()],
     $sgMgr.value, $sgPh1.value, $sgPh2.value);
-}
-function rebuildUnList(){
-  if (!state.size){
-    $sgUnList.innerHTML = '<p class="hint" style="margin:14px 4px;">「화학물질 작업공정별 ' +
-      '관리요령」 메뉴에서 MSDS PDF를 업로드하면 그 물질들도 표에 자동으로 채워집니다.</p>';
-    return;
-  }
-  let h = '<label class="f">MSDS에서 불러온 물질 — 국제연합번호<span class="ref">MSDS 14항 운송에 필요한 정보</span></label>';
-  for (const [id, rec] of state){
-    h += `<div class="unrow"><div class="nm" data-unlabel="${id}">📄 ${esc(rec.productName || rec.sourceName)}</div>
-      <input type="text" data-un="${id}" value="${esc(rec.unNumber || "")}"
-             placeholder="국제연합번호(UN No.) — 없으면 비워 두세요"></div>`;
-  }
-  $sgUnList.innerHTML = h;
 }
 for (const el of [$sgMgr, $sgPh1, $sgPh2])
   el.addEventListener("input", renderSign);
 
-/* ── 물질 직접 추가 + KREACH(화학물질정보처리시스템) 검색 연동 ── */
 const $sgManual = document.getElementById("sgManual");
 const $sgName = document.getElementById("sgName");
-const $sgPaste = document.getElementById("sgPaste");
-const $sgPasteMsg = document.getElementById("sgPasteMsg");
-const KREACH_URL = "https://kreach.mcee.go.kr/repwrt/ghs/ghsList.do";
 
 function rebuildManualList(){
   let h = manual.size
-    ? '<label class="f">직접 추가한 물질 — 그림문자를 눌러 켜고 끕니다</label>' : "";
+    ? '<label class="f">표에 들어갈 물질 — 모든 항목을 직접 수정할 수 있습니다 (그림문자는 눌러 켜고 끕니다)</label>' : "";
   for (const [id, ent] of manual){
     const pics = Object.keys(PICTOGRAM_NAMES).map(code => `
       <label class="${ent.pictograms.includes(code) ? "on" : ""}"
@@ -1175,6 +1131,7 @@ function rebuildManualList(){
         <img src="data:image/png;base64,${GHS_IMG[code]}"></label>`).join("");
     h += `<div class="mrow">
       <input type="text" data-mnm="${id}" value="${esc(ent.name)}" placeholder="물질명">
+      <input type="text" data-mcas="${id}" value="${esc(ent.cas)}" placeholder="CAS 번호">
       <input type="text" data-mun="${id}" value="${esc(ent.un)}" placeholder="국제연합번호">
       <div class="mpics">${pics}</div>
       <button class="mdel" data-mdel="${id}" type="button">삭제</button></div>`;
@@ -1183,417 +1140,103 @@ function rebuildManualList(){
 }
 function addManualEntry(ent){
   manual.set("m" + (++mseq), {
-    name: ent.name || "", un: ent.un || "",
+    name: ent.name || "", cas: ent.cas || "", un: ent.un || "",
     pictograms: [...new Set(ent.pictograms || [])].sort() });
   rebuildManualList();
   renderSign();
 }
-/* KREACH 검색/상세 화면에서 복사한 텍스트에서 물질명·UN번호·그림문자를 인식 */
-function parseKreachText(t){
-  const ent = { name: "", un: "", pictograms: [] };
-  let m = /(?:물질\s*명(?:칭)?|국문\s*명(?:칭)?|화학물질명)\s*[:：]?\s*([^\n\t|]+)/.exec(t);
-  if (m) ent.name = m[1].trim().replace(/\s{2,}.*$/, "");
-  m = /(?:UN|유엔|국제\s*연합)\s*(?:번호|No\.?)?\s*[:：]?\s*(\d{4})(?!\d)/i.exec(t);
-  if (m) ent.un = m[1];
-  let pics = [...new Set(t.match(/GHS0[1-9]/g) || [])];
-  if (!pics.length){
-    const hCodes = [...new Set(t.match(/H\d{3}/g) || [])];
-    if (hCodes.length) pics = pictogramsForCodes(hCodes);
+/* ── 내장 화학물질 정보 검색 (chem_db.py 이식) ──
+   물질명·별칭·CAS 번호로 CHEM_DB를 검색해 CAS·UN번호·그림문자를 자동 입력한다.
+   정확 일치 > 시작 일치 > 포함 일치 순이며, 정확 일치가 있으면 그것만 반환한다. */
+const chemNorm = s => String(s || "").replace(/\s+/g, "").toLowerCase();
+function chemSearch(query, limit = 10){
+  const q = chemNorm(query);
+  if (!q) return [];
+  let scored = [];
+  for (const ent of CHEM_DB){
+    const keys = [chemNorm(ent.name), ...ent.alias.map(chemNorm), chemNorm(ent.cas)];
+    let rank;
+    if (keys.some(k => k === q)) rank = 0;
+    else if (keys.some(k => k.startsWith(q))) rank = 1;
+    else if (keys.some(k => k.includes(q))) rank = 2;
+    else continue;
+    scored.push([rank, ent]);
   }
-  if (!pics.length){
-    // 그림문자 명칭 표기(예: "부식성 물질", "인화성") 인식
-    const kwMap = [["폭발성","GHS01"],["인화성","GHS02"],["산화성","GHS03"],
-      ["고압\\s*가스","GHS04"],["부식성","GHS05"],["급성\\s*독성","GHS06"],
-      ["해골","GHS06"],["느낌표","GHS07"],["감탄부호","GHS07"],
-      ["호흡기\\s*과민성","GHS08"],["건강\\s*유해성","GHS08"],["환경\\s*유해성","GHS09"],
-      ["수생\\s*환경","GHS09"]];
-    for (const [kw, code] of kwMap)
-      if (new RegExp(kw).test(t)) pics.push(code);
-  }
-  ent.pictograms = [...new Set(pics)].sort();
-  return ent;
-}
-/* ── NCIS(공공데이터포털 한국환경공단) 자동 조회 — ncis_api.py 이식 ──
-   요청 파라미터·응답 필드명이 환경에 따라 다를 수 있어 방어적으로 동작한다:
-   검색 파라미터 후보를 순차 시도하고, 안 되면 전체 목록을 받아 이름으로
-   걸러 내며, 필드는 키 이름 패턴 매칭으로 추출한다. */
-const NCIS_BASE = "https://apis.data.go.kr/B552584/kecoapi/ncissbstn";
-const NCIS_NAME_PARAMS = ["sbstnNmKor", "mttrNmKor", "sbstnNm", "korNm",
-                          "chemNm", "srchWrd", "searchWord"];
-const NCIS_PIC_KW = [["폭발","GHS01"],["인화","GHS02"],["산화","GHS03"],
-  ["고압\\s*가스","GHS04"],["부식","GHS05"],["급성\\s*독성|해골","GHS06"],
-  ["느낌표|감탄","GHS07"],["건강\\s*유해|호흡기\\s*과민","GHS08"],
-  ["환경\\s*유해|수생","GHS09"]];
-
-function ncisUrl(key, params){
-  key = key.trim();
-  if (!key.includes("%")) key = encodeURIComponent(key);
-  const qs = Object.entries(params)
-    .map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
-  return `${NCIS_BASE}?serviceKey=${key}&${qs}`;
-}
-function ncisItemsFromJson(obj){
-  if (Array.isArray(obj)){
-    if (obj.length && obj.every(x => x && typeof x === "object" && !Array.isArray(x)))
-      return obj;
-    for (const x of obj){
-      const f = ncisItemsFromJson(x);
-      if (f.length) return f;
-    }
-  } else if (obj && typeof obj === "object"){
-    for (const k of ["items", "item", "list", "data", "body", "response"])
-      if (k in obj){
-        const f = ncisItemsFromJson(obj[k]);
-        if (f.length) return f;
-      }
-    for (const v of Object.values(obj)){
-      const f = ncisItemsFromJson(v);
-      if (f.length) return f;
-    }
-  }
-  return [];
-}
-function ncisParse(text){
-  const t = text.trim();
-  if (t.startsWith("{") || t.startsWith("[")){
-    let obj;
-    try { obj = JSON.parse(t); } catch { return { items: [], err: "응답 해석 실패" }; }
-    let err = "";
-    const m = /"(?:resultMsg|returnAuthMsg|errMsg)"\s*:\s*"([^"]+)"/.exec(t);
-    if (m && !/OK|NORMAL/i.test(m[1])) err = m[1];
-    return { items: ncisItemsFromJson(obj), err };
-  }
-  const doc = new DOMParser().parseFromString(t, "text/xml");
-  if (doc.querySelector("parsererror")) return { items: [], err: "응답 해석 실패" };
-  let err = "";
-  for (const tag of ["returnAuthMsg", "resultMsg", "errMsg", "returnReasonCode"]){
-    const el = doc.getElementsByTagName(tag)[0];
-    if (el && el.textContent && !/OK|NORMAL/i.test(el.textContent)){
-      err = el.textContent.trim(); break;
-    }
-  }
-  const items = [];
-  for (const it of doc.getElementsByTagName("item")){
-    const d = {};
-    for (const c of it.getElementsByTagName("*"))
-      if (c.children.length === 0 && c.textContent.trim())
-        d[c.tagName] = c.textContent.trim();
-    if (Object.keys(d).length) items.push(d);
-  }
-  return { items, err };
-}
-function ncisFirstMatch(item, patterns, koreanOnly){
-  for (const pat of patterns){
-    const rx = new RegExp(pat, "i");
-    for (const [k, v] of Object.entries(item)){
-      const s = String(v ?? "").trim();
-      if (!s || !rx.test(k)) continue;
-      if (koreanOnly && !/[가-힣]/.test(s)) continue;
-      return s;
-    }
-  }
-  return "";
-}
-function ncisExtract(item){
-  // 영문 필드명(API)과 국문 열 이름(메타데이터 CSV/XLSX) 모두 지원
-  const NAME_PATS = ["물질\\s*명|국문\\s*명|화학물질명",
-                     "nm.*kor|kor.*nm", "sbstn.*nm|mttr.*nm|chem.*nm", "nm$|name"];
-  const name = ncisFirstMatch(item, NAME_PATS, true) ||
-               ncisFirstMatch(item, NAME_PATS, false);
-  let un = "";
-  let m = /\b(\d{4})\b/.exec(
-    ncisFirstMatch(item, ["유엔|국제\\s*연합|un.?(no|num)", "^un$"], false));
-  if (m) un = m[1];
-  const cas = ncisFirstMatch(item, ["cas"], false);
-  const blob = Object.values(item).map(v => String(v ?? "")).join(" ");
-  let pics = new Set(blob.match(/GHS0[1-9]/g) || []);
-  if (!pics.size){
-    const pf = ncisFirstMatch(item, ["그림\\s*문자|pctg|pictogram|grim|picto"], false);
-    for (const [kw, code] of NCIS_PIC_KW)
-      if (new RegExp(kw).test(pf)) pics.add(code);
-  }
-  if (!pics.size){
-    const h = [...new Set(blob.match(/H\d{3}/g) || [])];
-    if (h.length) pics = new Set(pictogramsForCodes(h));
-  }
-  return { name, un, cas, pictograms: [...pics].sort() };
-}
-const ncisNorm = s => String(s).replace(/\s+/g, "").toLowerCase();
-function ncisContains(item, q){
-  q = ncisNorm(q);
-  return Object.values(item).some(v => ncisNorm(v).includes(q));
-}
-async function ncisFetch(url){
-  const resp = await fetch(url, { headers: { Accept: "application/json, application/xml;q=0.9" } });
-  return resp.text();
-}
-async function ncisSearch(key, name){
-  let lastErr = "";
-  for (const p of NCIS_NAME_PARAMS){
-    const url = ncisUrl(key, { pageNo: 1, numOfRows: 50, dataType: "JSON", [p]: name });
-    const { items, err } = ncisParse(await ncisFetch(url));
-    if (err){ lastErr = err; continue; }
-    if (items.length){
-      const hits = items.filter(it => ncisContains(it, name));
-      if (hits.length && (items.length < 50 || hits.length < items.length))
-        return { entries: hits.slice(0, 20).map(ncisExtract), err: "" };
-    }
-  }
-  const hits = [];
-  for (let page = 1; page <= 4; page++){
-    const url = ncisUrl(key, { pageNo: page, numOfRows: 500, dataType: "JSON" });
-    const { items, err } = ncisParse(await ncisFetch(url));
-    if (err && !items.length) return { entries: [], err: "API 오류: " + err };
-    if (!items.length) break;
-    hits.push(...items.filter(it => ncisContains(it, name)));
-    if (items.length < 500) break;
-  }
-  if (hits.length) return { entries: hits.slice(0, 20).map(ncisExtract), err: "" };
-  return { entries: [], err: lastErr || "검색 결과가 없습니다." };
+  if (scored.some(([r]) => r === 0)) scored = scored.filter(([r]) => r === 0);
+  scored.sort((a, b) => a[0] - b[0] || a[1].name.localeCompare(b[1].name, "ko"));
+  return scored.slice(0, limit).map(([, e]) =>
+    ({ name: e.name, cas: e.cas, un: e.un, pictograms: e.pics.slice() }));
 }
 
-const $sgApiKey = document.getElementById("sgApiKey");
-const $sgNcisResults = document.getElementById("sgNcisResults");
-let ncisResults = [];
-try { $sgApiKey.value = localStorage.getItem("ncisApiKey") || ""; } catch {}
-$sgApiKey.addEventListener("input", () => {
-  try { localStorage.setItem("ncisApiKey", $sgApiKey.value); } catch {}
-});
-
-/* ── 메타데이터 파일(CSV/XLSX) 데이터셋 — 한 번 불러오면 브라우저에 저장 ── */
-let ncisDataset = null;
-try { ncisDataset = JSON.parse(localStorage.getItem("ncisDataset") || "null"); } catch {}
-const $sgDataInfo = document.getElementById("sgDataInfo");
-const $sgDataFile = document.getElementById("sgDataFile");
-function renderDataInfo(extra){
-  if (ncisDataset && ncisDataset.rows.length){
-    $sgDataInfo.innerHTML = `📚 데이터셋 사용 중: <b>${esc(ncisDataset.name)}</b>
-      (${ncisDataset.rows.length}건)${extra ? " — " + esc(extra) : ""}
-      <a href="#" id="sgDataDel">[삭제]</a>`;
-  } else $sgDataInfo.innerHTML = "";
+const $sgResults = document.getElementById("sgResults");
+const $sgMsg = document.getElementById("sgMsg");
+let chemResults = [];
+document.getElementById("sgDbHint").textContent =
+  `내장 물질정보 ${CHEM_DB.length}종(물질명·별칭·CAS 번호로 검색)은 참고용 요약이므로, ` +
+  "표지 제작 전에 해당 제품의 MSDS와 대조해 확인하세요. 추가한 뒤 모든 항목을 직접 수정할 수 있습니다.";
+{ // 물질명 입력창 자동완성 목록
+  const dl = document.getElementById("chemList");
+  dl.innerHTML = CHEM_DB.map(e =>
+    `<option value="${esc(e.name)}">CAS ${esc(e.cas)}</option>`).join("");
 }
-function parseCsvText(text){
-  const rows = []; let row = [], field = "", inQ = false;
-  for (let i = 0; i < text.length; i++){
-    const ch = text[i];
-    if (inQ){
-      if (ch === '"'){
-        if (text[i + 1] === '"'){ field += '"'; i++; } else inQ = false;
-      } else field += ch;
-    } else if (ch === '"') inQ = true;
-    else if (ch === ",") { row.push(field); field = ""; }
-    else if (ch === "\n" || ch === "\r"){
-      if (ch === "\r" && text[i + 1] === "\n") i++;
-      row.push(field); field = "";
-      rows.push(row); row = [];
-    } else field += ch;
-  }
-  if (field !== "" || row.length){ row.push(field); rows.push(row); }
-  return rows;
+function setSgMsg(text, warn){
+  $sgMsg.textContent = text;
+  $sgMsg.classList.toggle("warn", !!warn);
 }
-function rowsToObjects(raw){
-  let headers = null; const out = [];
-  for (const r of raw){
-    const vals = r.map(v => String(v ?? "").trim());
-    if (!vals.some(Boolean)) continue;
-    if (!headers){                       // 첫 번째 내용 있는 행 = 열 이름
-      if (vals.filter(Boolean).length >= 2) headers = vals;
-      continue;
-    }
-    const d = {};
-    vals.forEach((v, i) => { if (headers[i] && v) d[headers[i]] = v; });
-    if (Object.keys(d).length) out.push(d);
-  }
-  return out;
+function chemDesc(ent){
+  return `물질명: ${ent.name || "(직접 입력 필요)"}, CAS ${ent.cas || "없음"}, ` +
+    `국제연합번호 ${ent.un || "없음"}, 그림문자 ${ent.pictograms.join(", ") || "없음"}`;
 }
-function xlsxCellText(cell){
-  const v = cell.value;
-  if (v == null) return "";
-  if (typeof v === "object"){
-    if (v.richText) return v.richText.map(t => t.text).join("");
-    if (v.text !== undefined) return String(v.text);
-    if (v.result !== undefined) return String(v.result);
-    if (v instanceof Date) return v.toISOString().slice(0, 10);
-  }
-  return String(v);
-}
-async function loadDatasetFile(file){
-  if (/\.xls[xm]$/i.test(file.name)){
-    const wb = new ExcelJS.Workbook();
-    await wb.xlsx.load(await file.arrayBuffer());
-    const raw = [];
-    wb.worksheets[0].eachRow({ includeEmpty: false }, row => {
-      const vals = [];
-      row.eachCell({ includeEmpty: true },
-        (cell, col) => { vals[col - 1] = xlsxCellText(cell); });
-      raw.push(vals);
-    });
-    return rowsToObjects(raw);
-  }
-  const buf = await file.arrayBuffer();
-  let text = new TextDecoder("utf-8").decode(buf);
-  if ((text.match(/�/g) || []).length > 2)      // 한글 CSV는 CP949인 경우가 많다
-    text = new TextDecoder("euc-kr").decode(buf);
-  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
-  return rowsToObjects(parseCsvText(text));
-}
-document.getElementById("sgDataBtn").addEventListener("click", () => $sgDataFile.click());
-$sgDataFile.addEventListener("change", async () => {
-  const f = $sgDataFile.files[0];
-  $sgDataFile.value = "";
-  if (!f) return;
-  $sgDataInfo.textContent = "데이터 파일 읽는 중...";
-  try {
-    const rows = await loadDatasetFile(f);
-    if (!rows.length){
-      $sgDataInfo.textContent = "⚠️ 파일에서 표 형식 데이터를 찾지 못했습니다.";
-      return;
-    }
-    ncisDataset = { name: f.name, rows };
-    let saved = true;
-    try { localStorage.setItem("ncisDataset", JSON.stringify(ncisDataset)); }
-    catch { saved = false; try { localStorage.removeItem("ncisDataset"); } catch {} }
-    renderDataInfo(saved ? "" : "파일이 커서 이 창을 닫으면 다시 불러와야 합니다");
-  } catch (err){
-    $sgDataInfo.textContent = "⚠️ 파일을 읽지 못했습니다: " + (err.message || err);
-  }
-});
-$sgDataInfo.addEventListener("click", e => {
-  if (e.target.id === "sgDataDel"){
-    e.preventDefault();
-    ncisDataset = null;
-    try { localStorage.removeItem("ncisDataset"); } catch {}
-    renderDataInfo();
-  }
-});
-renderDataInfo();
-function renderNcisResults(err){
-  let h = "";
-  ncisResults.forEach((ent, i) => {
-    h += `<div class="nrow"><div><b>${esc(ent.name || "(이름 없음)")}</b>
-      ${ent.cas ? " (CAS " + esc(ent.cas) + ")" : ""} —
+function renderChemResults(){
+  $sgResults.innerHTML = chemResults.map((ent, i) =>
+    `<div class="nrow"><div><b>${esc(ent.name)}</b> — CAS ${esc(ent.cas)} ·
       국제연합번호: ${esc(ent.un || "없음")} ·
       그림문자: ${esc(ent.pictograms.join(", ") || "없음")}</div>
-      <button type="button" data-nadd="${i}">표에 추가</button></div>`;
-  });
-  if (err) h += `<div class="nerr">⚠️ ${esc(err)}</div>`;
-  $sgNcisResults.innerHTML = h;
+      <button type="button" data-nadd="${i}">표에 추가</button></div>`).join("");
 }
-document.getElementById("sgNcis").addEventListener("click", async e => {
-  const btn = e.currentTarget;
-  const key = $sgApiKey.value.trim(), nm = $sgName.value.trim();
-  ncisResults = [];
-  if (!nm){ renderNcisResults("조회할 화학물질명을 입력해 주세요."); return; }
-  // 메타데이터 파일이 있으면 그 데이터에서 검색 (인증키·인터넷 불필요)
-  if (ncisDataset && ncisDataset.rows.length){
-    const hits = ncisDataset.rows.filter(it => ncisContains(it, nm));
-    ncisResults = hits.slice(0, 20).map(ncisExtract);
-    renderNcisResults(ncisResults.length ? ""
-      : "데이터셋에서 해당 물질명을 찾지 못했습니다. 철자를 확인하거나 데이터 파일을 최신으로 교체해 보세요.");
-    return;
+function chemSearchAdd(){
+  const nm = $sgName.value.trim();
+  chemResults = [];
+  renderChemResults();
+  if (!nm){ setSgMsg("화학물질명을 입력해 주세요.", true); return; }
+  const found = chemSearch(nm);
+  if (found.length === 1){
+    addManualEntry(found[0]);
+    $sgName.value = "";
+    setSgMsg(`「${found[0].name}」을(를) 표에 추가했습니다 — ${chemDesc(found[0])}`);
+  } else if (found.length){
+    chemResults = found;
+    renderChemResults();
+    setSgMsg(`${found.length}건이 검색되었습니다 — 위 목록에서 「표에 추가」를 눌러 선택하세요.`);
+  } else {
+    addManualEntry({ name: nm });
+    $sgName.value = "";
+    setSgMsg(`내장 물질정보에서 「${nm}」을(를) 찾지 못해 물질명만 추가했습니다. ` +
+      "아래에서 CAS 번호·국제연합번호·그림문자를 직접 입력해 주세요.", true);
   }
-  if (!key){ renderNcisResults("메타데이터 파일을 불러오거나 공공데이터포털 API 인증키(serviceKey)를 입력해 주세요."); return; }
-  btn.disabled = true;
-  renderNcisResults("");
-  $sgNcisResults.innerHTML = '<div class="hint">NCIS 조회 중...</div>';
-  try {
-    const { entries, err } = await ncisSearch(key, nm);
-    ncisResults = entries;
-    renderNcisResults(err);
-  } catch (err){
-    // 공공데이터포털은 브라우저의 교차 출처(CORS) 호출을 허용하지 않지만,
-    // 주소창에서 직접 여는 것은 막지 않는다 → 조회 주소를 새 탭으로 열어
-    // 응답을 복사해 오는 브리지를 안내한다.
-    const openUrl = ncisUrl(key, { pageNo: 1, numOfRows: 500, dataType: "JSON",
-                                   [NCIS_NAME_PARAMS[0]]: nm });
-    $sgNcisResults.innerHTML =
-      `<div class="nerr">⚠️ 브라우저가 API 직접 접속을 차단했습니다(CORS: ${esc(err.message || String(err))}).
-        아래 2단계로 조회할 수 있습니다.</div>
-      <div class="hint" style="font-size:12.5px;">
-        1) <a href="${esc(openUrl)}" target="_blank" rel="noopener"><b>📡 NCIS 조회 주소를 새 탭에서 열기</b></a>
-        — 주소창으로 여는 요청은 차단되지 않습니다.<br>
-        2) 열린 화면의 응답 내용을 <b>전체 선택(Ctrl+A)·복사(Ctrl+C)</b>한 뒤 아래
-        붙여넣기 칸에 붙여 넣으세요 — 물질명·국제연합번호·그림문자를 자동 인식해
-        표에 추가합니다. (또는 「KREACH 검색」 화면 내용을 붙여 넣어도 됩니다)</div>`;
-  }
-  btn.disabled = false;
+}
+document.getElementById("sgSearch").addEventListener("click", chemSearchAdd);
+$sgName.addEventListener("keydown", e => {
+  if (e.key === "Enter"){ e.preventDefault(); chemSearchAdd(); }
 });
-$sgNcisResults.addEventListener("click", e => {
+$sgResults.addEventListener("click", e => {
   const i = e.target.dataset && e.target.dataset.nadd;
   if (i === undefined) return;
-  const ent = ncisResults[Number(i)];
+  const ent = chemResults[Number(i)];
   if (!ent) return;
   addManualEntry(ent);
-  ncisResults.splice(Number(i), 1);
-  renderNcisResults("");
-  $sgPasteMsg.textContent = `표에 추가했습니다 — 물질명: ${ent.name || "(직접 입력 필요)"}, ` +
-    `국제연합번호: ${ent.un || "없음"}, 그림문자: ${ent.pictograms.join(", ") || "없음"}`;
+  chemResults = [];
+  renderChemResults();
+  $sgName.value = "";
+  setSgMsg(`「${ent.name}」을(를) 표에 추가했습니다 — ${chemDesc(ent)}`);
 });
 
-document.getElementById("sgKreach").addEventListener("click", () => {
-  const nm = $sgName.value.trim();
-  if (nm && navigator.clipboard)
-    navigator.clipboard.writeText(nm).catch(() => {});
-  window.open(KREACH_URL, "_blank");
-  $sgPasteMsg.textContent = nm
-    ? `"${nm}" 이(가) 클립보드에 복사되었습니다 — KREACH 검색창에 붙여넣어 검색한 뒤, 결과 내용을 복사해 오세요.`
-    : "";
-});
-document.getElementById("sgAdd").addEventListener("click", () => {
-  addManualEntry({ name: $sgName.value.trim() });
-  $sgName.value = "";
-});
-$sgPaste.addEventListener("paste", () => {
-  setTimeout(() => {
-    const t = $sgPaste.value.trim();
-    if (!t) return;
-    // 1) NCIS API 응답(JSON/XML)을 붙여 넣은 경우 — 정확한 필드 파싱
-    if (/^[\[{]/.test(t) || /<(?:response|OpenAPI_ServiceResponse)/i.test(t) ||
-        /resultCode|returnAuthMsg/i.test(t)){
-      const { items, err } = ncisParse(t);
-      if (items.length){
-        const q = $sgName.value.trim();
-        let hits = q ? items.filter(it => ncisContains(it, q)) : items;
-        if (!hits.length) hits = items;      // 서버에서 이미 걸러진 경우
-        const entries = hits.slice(0, 20).map(ncisExtract);
-        $sgPaste.value = "";
-        if (entries.length === 1){
-          addManualEntry(entries[0]);
-          $sgPasteMsg.textContent = `API 응답에서 표에 추가했습니다 — 물질명: ` +
-            `${entries[0].name || "(직접 입력 필요)"}, 국제연합번호: ${entries[0].un || "없음"}, ` +
-            `그림문자: ${entries[0].pictograms.join(", ") || "없음"}`;
-        } else {
-          ncisResults = entries;
-          renderNcisResults("");
-          $sgPasteMsg.textContent = `API 응답에서 ${entries.length}건을 인식했습니다 — ` +
-            `위 목록에서 「표에 추가」를 눌러 선택하세요.`;
-        }
-        return;
-      }
-      if (err){
-        $sgPaste.value = "";
-        $sgPasteMsg.textContent = "API 응답 오류: " + err;
-        return;
-      }
-    }
-    // 2) KREACH 화면 텍스트 등 일반 텍스트
-    const ent = parseKreachText(t);
-    if (!ent.name) ent.name = $sgName.value.trim();
-    if (!ent.name && !ent.un && !ent.pictograms.length){
-      $sgPasteMsg.textContent = "붙여넣은 내용에서 물질 정보를 인식하지 못했습니다. 물질명을 직접 입력해 주세요.";
-      return;
-    }
-    addManualEntry(ent);
-    $sgPaste.value = "";
-    $sgName.value = "";
-    $sgPasteMsg.textContent = `표에 추가했습니다 — 물질명: ${ent.name || "(직접 입력 필요)"}, ` +
-      `국제연합번호: ${ent.un || "없음"}, 그림문자: ${ent.pictograms.join(", ") || "없음"}`;
-  }, 0);
-});
 $sgManual.addEventListener("input", e => {
   const el = e.target;
   if (el.dataset.mnm && manual.has(el.dataset.mnm))
     manual.get(el.dataset.mnm).name = el.value.trim();
+  else if (el.dataset.mcas && manual.has(el.dataset.mcas))
+    manual.get(el.dataset.mcas).cas = el.value.trim();
   else if (el.dataset.mun && manual.has(el.dataset.mun))
     manual.get(el.dataset.mun).un = el.value.trim();
   else if (el.dataset.mpic && manual.has(el.dataset.mpic)){
@@ -1620,11 +1263,11 @@ function showTab(which){
   document.getElementById("tabManage").hidden = sign;
   document.getElementById("tabSign").hidden = !sign;
   document.body.classList.toggle("signview", sign);
-  if (sign){ rebuildUnList(); renderSign(); }
+  if (sign) renderSign();
 }
 $btnManage.addEventListener("click", () => showTab("manage"));
 $btnSign.addEventListener("click", () => showTab("sign"));
-rebuildUnList(); renderSign();
+renderSign();
 
 /* ── 표지판 다운로드 (SVG 실측 / PNG 150DPI) ── */
 function downloadBlob(blob, filename){
@@ -1635,7 +1278,7 @@ function downloadBlob(blob, filename){
   setTimeout(() => URL.revokeObjectURL(a.href), 30000);
 }
 document.getElementById("sgSvg").addEventListener("click", () => {
-  const svg = buildSignSvg(signEntries(), $sgMgr.value, $sgPh1.value, $sgPh2.value);
+  const svg = buildSignSvg([...manual.values()], $sgMgr.value, $sgPh1.value, $sgPh2.value);
   downloadBlob(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }),
                "유해화학물질_표지판.svg");
 });
@@ -1643,7 +1286,7 @@ document.getElementById("sgPng").addEventListener("click", async e => {
   const btn = e.currentTarget;
   btn.disabled = true;
   try {
-    const svg = buildSignSvg(signEntries(), $sgMgr.value, $sgPh1.value, $sgPh2.value);
+    const svg = buildSignSvg([...manual.values()], $sgMgr.value, $sgPh1.value, $sgPh2.value);
     const vb = /viewBox="0 0 (\d+(?:\.\d+)?) (\d+(?:\.\d+)?)"/.exec(svg);
     const scale = 150 / 25.4;             // 150DPI: mm → px
     const w = Math.round(parseFloat(vb[1]) * scale);

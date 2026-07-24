@@ -12,18 +12,17 @@ from ghs_data import PICTOGRAM_NAMES
 from msds_parser import MsdsData, parse_msds
 from excel_writer import build_workbook
 from preview import preview_html
-from ncis_api import (BASE_URL as NCIS_BASE_URL, _contains as _ncis_contains,
-                      extract_entry, load_dataset, parse_items, search_dataset,
-                      search_substance)
-from sign_writer import KREACH_URL, build_sign_svg, parse_kreach_text
+from chem_db import CHEM_DB, search_chem
+from sign_writer import build_sign_svg
 
 st.set_page_config(page_title="MSDS 자동 작성 도구", page_icon="🧪",
                    layout="wide")
 
 st.title("🧪 MSDS 자동 작성 도구")
 st.caption("「화학물질 작업공정별 관리요령」 메뉴에서 MSDS PDF를 업로드하면 항목을 자동 "
-           "추출해 엑셀 양식을 만들고, 올린 물질은 「유해화학물질 규격표지」(화학물질관리법 "
-           "시행규칙 별표 2) 메뉴에도 함께 반영됩니다.")
+           "추출해 엑셀 양식을 만들고, 「유해화학물질 규격표지」 메뉴에서는 화학물질명만 "
+           "입력하면 CAS 번호·국제연합번호·그림문자가 자동 입력된 표지판 시안(화학물질관리법 "
+           "시행규칙 별표 2)을 만듭니다.")
 
 _PIC_OPTIONS = [f"{code} {name}" for code, name in PICTOGRAM_NAMES.items()]
 
@@ -151,128 +150,88 @@ with tab_sign:
                           help="상시 연락이 가능한 전화번호를 기재해야 합니다.")
     phone2 = c3.text_input("연락처 (보조, 선택)", key="sign_ph2")
 
-    if "manual_subs" not in st.session_state:
-        st.session_state.manual_subs = []
+    if "sign_subs" not in st.session_state:
+        st.session_state.sign_subs = []      # [{"id", "name", "cas", "un", "pictograms"}]
+        st.session_state.sign_seq = 0
 
-    # 화학물질 추가 ① — 물질명 자동 조회 (메타데이터 파일 우선, 없으면 API)
-    st.markdown("###### 화학물질 추가 ① — 물질명으로 자동 조회")
-    data_file = st.file_uploader(
-        "공공데이터포털 메타데이터 파일 (CSV/XLSX — 데이터 파일을 내려받아 한 번 올려 두면 "
-        "인증키·인터넷 없이 검색됩니다)", type=["csv", "xlsx", "txt"], key="ncis_file")
-    if data_file is not None and \
-            st.session_state.get("ncis_ds_name") != data_file.name:
-        try:
-            st.session_state.ncis_ds = load_dataset(data_file.name,
-                                                    data_file.getvalue())
-            st.session_state.ncis_ds_name = data_file.name
-        except Exception as e:
-            st.session_state.ncis_ds = []
-            st.error(f"데이터 파일을 읽지 못했습니다: {e}")
-    dataset = st.session_state.get("ncis_ds") or []
-    if dataset:
-        st.caption(f"📚 데이터셋 사용 중: {st.session_state.ncis_ds_name} "
-                   f"({len(dataset)}건)")
-    api_key = st.text_input(
-        "공공데이터포털 API 인증키 (serviceKey — 데이터 파일이 없을 때 사용)",
-        type="password", key="ncis_key",
-        help=f"{NCIS_BASE_URL} 서비스를 공공데이터포털(data.go.kr)에서 활용 신청 후 "
-             "발급받은 인증키를 입력하세요.")
+    def _add_sub(ent):
+        st.session_state.sign_seq += 1
+        st.session_state.sign_subs.append(
+            {"id": st.session_state.sign_seq, "name": ent.get("name", ""),
+             "cas": ent.get("cas", ""), "un": ent.get("un", ""),
+             "pictograms": list(ent.get("pictograms") or [])})
+
+    # ── 화학물질 추가: 물질명 입력 → CAS·UN·그림문자 자동 입력 ──
+    st.markdown("###### 화학물질 추가 — 물질명을 입력하면 CAS 번호·국제연합번호·"
+                "그림문자가 자동 입력됩니다")
+    st.caption(f"내장 물질정보 {len(CHEM_DB)}종(물질명·별칭·CAS 번호로 검색)은 참고용 "
+               "요약이므로, 표지 제작 전에 해당 제품의 MSDS와 대조해 확인하세요. "
+               "추가한 뒤 모든 항목을 직접 수정할 수 있습니다.")
     s1, s2 = st.columns([3, 1])
-    ncis_q = s1.text_input("화학물질명", key="ncis_q", placeholder="예: 황산, 톨루엔")
-    if s2.button("🔎 자동 조회"):
-        if not ncis_q.strip():
-            st.session_state.ncis_results = []
-            st.session_state.ncis_err = "조회할 화학물질명을 입력해 주세요."
-        elif dataset:
-            found = search_dataset(dataset, ncis_q)
-            st.session_state.ncis_results = found
-            st.session_state.ncis_err = \
-                "" if found else "데이터셋에서 해당 물질명을 찾지 못했습니다."
-        elif not api_key.strip():
-            st.session_state.ncis_results = []
-            st.session_state.ncis_err = ("메타데이터 파일을 올리거나 API 인증키를 "
-                                         "입력해 주세요.")
+    chem_q = s1.text_input("화학물질명", key="chem_q",
+                           placeholder="예: 황산, 톨루엔, 가성소다, 7664-93-9")
+    if s2.button("🔎 검색 · 추가", type="primary"):
+        found = search_chem(chem_q)
+        if not chem_q.strip():
+            st.session_state.chem_results = []
+            st.session_state.chem_msg = ("warning", "화학물질명을 입력해 주세요.")
+        elif len(found) == 1:
+            _add_sub(found[0])
+            st.session_state.chem_results = []
+            st.session_state.chem_msg = \
+                ("success", f"「{found[0]['name']}」을(를) 표에 추가했습니다 — "
+                            f"CAS {found[0]['cas']}, UN {found[0]['un'] or '없음'}, "
+                            f"그림문자 {', '.join(found[0]['pictograms']) or '없음'}")
+        elif found:
+            st.session_state.chem_results = found
+            st.session_state.chem_msg = \
+                ("info", f"{len(found)}건이 검색되었습니다 — 아래에서 물질을 선택하세요.")
         else:
-            with st.spinner("NCIS 조회 중..."):
-                found, _url, err = search_substance(api_key, ncis_q)
-            st.session_state.ncis_results = found
-            st.session_state.ncis_err = err
-    for i, ent in enumerate(st.session_state.get("ncis_results", [])):
+            _add_sub({"name": chem_q.strip()})
+            st.session_state.chem_results = []
+            st.session_state.chem_msg = \
+                ("warning", f"내장 물질정보에서 「{chem_q.strip()}」을(를) 찾지 못해 "
+                            "물질명만 추가했습니다. 아래에서 CAS 번호·국제연합번호·"
+                            "그림문자를 직접 입력해 주세요.")
+    kind, msg = st.session_state.get("chem_msg", ("", ""))
+    if msg:
+        getattr(st, kind)(msg)
+    for i, ent in enumerate(st.session_state.get("chem_results", [])):
         r1, r2 = st.columns([5, 1])
-        r1.markdown(f"**{ent['name'] or '(이름 없음)'}**"
-                    f"{' (CAS ' + ent['cas'] + ')' if ent.get('cas') else ''} — "
+        r1.markdown(f"**{ent['name']}** — CAS {ent['cas']} · "
                     f"국제연합번호: {ent['un'] or '없음'} · "
                     f"그림문자: {', '.join(ent['pictograms']) or '없음'}")
-        if r2.button("표에 추가", key=f"ncis_add_{i}"):
-            st.session_state.manual_subs.append(
-                {"name": ent["name"], "un": ent["un"],
-                 "pictograms": ent["pictograms"]})
-            st.session_state.ncis_results = []
+        if r2.button("표에 추가", key=f"chem_add_{i}"):
+            _add_sub(ent)
+            st.session_state.chem_results = []
+            st.session_state.chem_msg = \
+                ("success", f"「{ent['name']}」을(를) 표에 추가했습니다.")
             st.rerun()
-    if st.session_state.get("ncis_err"):
-        st.warning(st.session_state.ncis_err)
 
-    # 화학물질 추가 ② — KREACH(화학물질정보처리시스템) 검색 활용
-    st.markdown(f"###### 화학물질 추가 ② — [🔍 KREACH 분류·표시 검색 열기]({KREACH_URL})")
-    st.caption("위 링크에서 물질을 검색한 뒤 결과·상세 화면 내용을 전체 선택(Ctrl+A)·"
-               "복사(Ctrl+C)해서 아래에 붙여 넣으면 물질명·국제연합번호·그림문자"
-               "(H코드 포함 시 자동 판정)를 인식해 표에 추가합니다.")
-    with st.form("manual_add", clear_on_submit=True):
-        a1, a2 = st.columns([2, 1])
-        add_nm = a1.text_input("화학물질명")
-        add_un = a2.text_input("국제연합번호(UN No.)")
-        add_pics = st.multiselect("그림문자", _PIC_OPTIONS)
-        add_paste = st.text_area("KREACH 검색 결과 붙여넣기 (선택 — 붙여 넣으면 자동 인식)",
-                                 height=90)
-        if st.form_submit_button("＋ 물질 추가"):
-            ent = {"name": "", "un": "", "pictograms": []}
-            pasted = add_paste.strip()
-            if pasted:
-                # NCIS API 응답(JSON/XML)을 붙여 넣은 경우 정확한 필드 파싱을 우선
-                items, _api_err = parse_items(pasted)
-                if items:
-                    hits = [it for it in items
-                            if not add_nm.strip() or _ncis_contains(it, add_nm)]
-                    ent = extract_entry((hits or items)[0])
-                    if len(hits or items) > 1:
-                        st.info(f"API 응답에서 {len(hits or items)}건이 인식되어 "
-                                "첫 번째 물질을 추가했습니다. 물질명을 함께 입력하면 "
-                                "정확히 걸러집니다.")
-                else:
-                    ent = parse_kreach_text(pasted)
-            ent["name"] = add_nm.strip() or ent["name"]
-            ent["un"] = add_un.strip() or ent["un"]
-            ent["pictograms"] = [p.split()[0] for p in add_pics] or ent["pictograms"]
-            if ent["name"] or ent["un"] or ent["pictograms"]:
-                st.session_state.manual_subs.append(
-                    {"name": ent["name"], "un": ent["un"],
-                     "pictograms": ent["pictograms"]})
-            else:
-                st.warning("물질 정보를 인식하지 못했습니다. 물질명을 입력해 주세요.")
-
+    # ── 추가한 물질 목록 (모든 항목 수정 가능) ──
     entries = []
-    if records:
-        st.markdown("###### MSDS에서 불러온 물질 〔국제연합번호: MSDS 14항 운송에 필요한 정보〕")
-        for i, rec in enumerate(records):
-            e1, e2 = st.columns([2, 1])
-            nm = e1.text_input("물질명", rec.product_name,
-                               key=f"sign_nm_{rec.source_name}")
-            un = e2.text_input("국제연합번호(UN No.)", rec.un_number,
-                               key=f"sign_un_{rec.source_name}")
-            entries.append({"name": nm, "un": un, "pictograms": rec.pictograms})
-    if st.session_state.manual_subs:
-        st.markdown("###### 직접 추가한 물질")
-        for i, ent in enumerate(list(st.session_state.manual_subs)):
-            e1, e2 = st.columns([5, 1])
-            e1.markdown(f"**{ent['name'] or '(물질명 미입력)'}** — "
-                        f"국제연합번호: {ent['un'] or '없음'} · "
-                        f"그림문자: {', '.join(ent['pictograms']) or '없음'}")
-            if e2.button("삭제", key=f"sign_del_{i}"):
-                st.session_state.manual_subs.pop(i)
-                st.rerun()
-        entries += st.session_state.manual_subs
+    if st.session_state.sign_subs:
+        st.markdown("###### 표에 들어갈 물질 — 항목을 자유롭게 수정할 수 있습니다")
+    for ent in list(st.session_state.sign_subs):
+        sid = ent["id"]
+        e1, e2, e3, e4 = st.columns([2, 1.2, 1, 0.5])
+        ent["name"] = e1.text_input("물질명", ent["name"], key=f"sub_nm_{sid}")
+        ent["cas"] = e2.text_input("CAS 번호", ent["cas"], key=f"sub_cas_{sid}")
+        ent["un"] = e3.text_input("국제연합번호(UN No.)", ent["un"],
+                                  key=f"sub_un_{sid}")
+        e4.markdown("<div style='height:1.9em'></div>", unsafe_allow_html=True)
+        if e4.button("🗑️", key=f"sub_del_{sid}", help="이 물질 삭제"):
+            st.session_state.sign_subs = \
+                [s for s in st.session_state.sign_subs if s["id"] != sid]
+            st.rerun()
+        pics = st.multiselect("그림문자", _PIC_OPTIONS,
+                              default=[_pic_label(c) for c in ent["pictograms"]
+                                       if c in PICTOGRAM_NAMES],
+                              key=f"sub_pic_{sid}")
+        ent["pictograms"] = [p.split()[0] for p in pics]
+        entries.append(ent)
     if not entries:
-        st.info("MSDS PDF를 업로드하거나 위에서 물질을 직접 추가하면 표에 채워집니다.")
+        st.info("위에서 화학물질명을 검색해 물질을 추가하면 표지판 표에 채워집니다.")
 
     svg = build_sign_svg(entries, manager, phone, phone2)
     st.download_button("⬇️ 표지판 시안 다운로드 (SVG, 실측 75×50cm+표)", svg,
