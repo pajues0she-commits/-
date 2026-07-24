@@ -18,6 +18,7 @@ sys.path.insert(0, ROOT)
 
 from chem_db import CHEM_DB  # noqa: E402
 from ghs_data import H_STATEMENTS  # noqa: E402
+from review_logic import CRITERIA_REGISTER, CRITERIA_REVIEW  # noqa: E402
 import ko_spacing  # noqa: E402
 
 VENDOR = os.path.join(HERE, "vendor")
@@ -86,6 +87,9 @@ def main():
     html = html.replace("__CHEM_DB_JSON__", json.dumps([
         {"name": e["name"], "alias": e["alias"], "cas": e["cas"],
          "un": e["un"], "pics": e["pics"]} for e in CHEM_DB],
+        ensure_ascii=False))
+    html = html.replace("__REVIEW_CRITERIA_JSON__", json.dumps(
+        {"review": CRITERIA_REVIEW, "register": CRITERIA_REGISTER},
         ensure_ascii=False))
     html = html.replace("__KO_DICT_JSON__", json.dumps({
         "nouns": ko_spacing.NOUNS,

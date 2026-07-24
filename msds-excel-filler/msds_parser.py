@@ -136,6 +136,9 @@ class MsdsData:
     ingestion: list = field(default_factory=list)        # 먹었을 때
     emergency: list = field(default_factory=list)        # 응급대응(화재·누출)
     un_number: str = ""                                  # 국제연합번호(14항)
+    manufacturer: str = ""                               # 제조사·공급자(1항)
+    components: list = field(default_factory=list)       # 구성성분(3항)
+    #   components: [{"name": 성분명, "cas": CAS번호, "content": 함유량}]
     warnings: list = field(default_factory=list)         # 파싱 경고 메시지
 
 
@@ -397,6 +400,183 @@ def curate_precautions(items: list) -> list:
     return [items[i] for i in keep_idx]
 
 
+# ── 개인보호구(8항) 요약 ────────────────────────────────────────────────
+# 성분별 노출농도 구간마다 보호구를 나열하는 상세형 MSDS(예: 수산화나트륨
+# 20/50/100/2000mg/m3 …)는 전문을 그대로 옮기면 양식 칸을 넘친다.
+# 보호구 종류별로 핵심 문장 두 개 내외만 남긴다.
+MAX_PPE_PER_TYPE = 2
+
+_PPE_LADDER_RX = re.compile(r"노출\s*농도가\s*[\d,.]+\s*(?:mg|㎎|ppm)", re.I)
+_PPE_HEADER_RX = re.compile(r"(?:다음과\s*같은.*)?권고됨\s*[.:：]?$")
+_PPE_EQUIP_RX = re.compile(r"보호|착용|마스크|장갑|보안경|보호구|설치")
+
+
+def condense_ppe(items: list, limit: int = MAX_PPE_PER_TYPE) -> list:
+    """보호구 항목을 종류별 핵심 문장 limit개 내외로 요약한다."""
+    if not items:
+        return items
+    # 1) 성분명이 문장 머리에 반복되는 형식("수산화나트륨 …을 착용하시오",
+    #    "물(WATER) …") — 두 번 이상 반복되는 머리 단어는 성분명으로 보고 뗀다
+    heads = Counter()
+    for it in items:
+        m = re.match(r"^(\S{2,20})(?:\s|$)", it)
+        if m and not _PPE_EQUIP_RX.search(m.group(1)):
+            heads[m.group(1)] += 1
+    strip = {h for h, c in heads.items() if c >= 2}
+    out = []
+    for it in items:
+        for h in strip:
+            if it == h:                      # 성분명만 있는 줄은 버린다
+                it = ""
+                break
+            if it.startswith(h + " "):
+                it = it[len(h):].strip()
+                break
+        if it:
+            out.append(it)
+    # 2) 노출농도 구간별 나열("노출농도가 20mg/m3보다 낮을 경우 …")과
+    #    목록 머리글("…이 권고됨")은 제외한다
+    core = [it for it in out
+            if not _PPE_LADDER_RX.search(it) and not _PPE_HEADER_RX.search(it)]
+    if not core:
+        core = out
+    # 3) "A 또는 B 또는 C 또는 …"처럼 긴 대안 나열은 앞의 두 개 + "등"으로 줄인다
+    shortened = []
+    for it in core:
+        parts = it.split(" 또는 ")
+        if len(parts) >= 3:
+            it = " 또는 ".join(parts[:2]).rstrip(",.") + " 등"
+        shortened.append(it)
+    return dedupe_merge(shortened)[:limit]
+
+
+# ── 제조사(1항)·구성성분(3항) — 화학물질 도입검토용 ─────────────────────
+_CAS_RX = re.compile(r"(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])")
+
+
+def _valid_cas(cas: str) -> bool:
+    """CAS 등록번호 검증(마지막 자리는 검사숫자) — EC번호·색인번호 오인 방지."""
+    digits = cas.replace("-", "")
+    body, check = digits[:-1], int(digits[-1])
+    s = sum(int(d) * w for w, d in enumerate(reversed(body), start=1))
+    return s % 10 == check
+
+
+# 분류 용어(영문)가 성분명 자리에 들어온 경우(Merck 등 표 형식 붕괴) 걸러낸다
+_CLASS_TERM_RX = re.compile(
+    r"Flam|Tox|Skin|Corr|Irrit|STOT|Aquatic|Repr|Muta|Carc|Liq|Sol|"
+    r"Eye|Dam|Acute|Chronic|구분\s*\d|분류|함유량|식별번호|번호", re.I)
+_CONTENT_RX = re.compile(
+    r"([<>≥≤=]{0,2}\s*\d+(?:[.,]\d+)?\s*(?:%|(?:\s*[–\-~]\s*"
+    r"[<>≥≤=]{0,2}\s*\d+(?:[.,]\d+)?\s*%?))?%?)\s*$")
+
+
+def _clean_component_name(s: str) -> str:
+    s = re.sub(r"^[·ㆍ○●\-–—*\s:：]+|[;,·\s]+$", "", s.strip())
+    s = re.sub(r"\s{2,}", " ", s)
+    return "" if _CLASS_TERM_RX.search(s) else s
+
+
+def extract_manufacturer(sec1: str) -> str:
+    """1항에서 회사명(제조자·공급자)을 찾는다."""
+    for pat in (r"회\s*사\s*명", r"제조\s*(?:회\s*)?사", r"제조\s*업체",
+                r"공급\s*(?:자|업체)", r"수입\s*자", r"판매\s*자", r"업체\s*명"):
+        for m in re.finditer(pat + r"\s*[:：]?[ \t]*([^\n]*)", sec1):
+            val = re.sub(r"^[:：·ㆍ\-\s]+", "", m.group(1)).strip()
+            # "제조자/수입자/유통업자 정보:"처럼 라벨이 이어지는 경우는 건너뛴다
+            if not val or val.startswith(("/", "(", "·")) or \
+                    re.search(r"정보\s*[:：]?\s*$", val) or len(val) < 2:
+                continue
+            return val[:60].strip()
+    return ""
+
+
+def extract_components(sec3: str) -> list:
+    """3항에서 성분명·CAS번호·함유량 목록을 뽑는다.
+
+    지원 형식:
+      1) 행 형식      "수산화나트륨 (이명) 1310-73-2 2"
+      2) CAS 라벨 형식 "CAS: 7775-27-1 디나트륨 퍼옥소디황산염 85–90%"
+      3) 전치 형식     "물질명 A B / CAS번호 x y / 함유량 3.2% 96.8%"
+    """
+    comps = []          # [{"name", "cas", "content"}]
+
+    def add(name, cas, content):
+        name = _clean_component_name(name or "")
+        content = (content or "").strip().rstrip(".")
+        if content and "%" not in content:
+            content += "%"
+        for c in comps:
+            if c["cas"] == cas:                 # 같은 CAS는 정보를 보강만 한다
+                if name and not c["name"]:
+                    c["name"] = name
+                if content and not c["content"]:
+                    c["content"] = content
+                return
+        comps.append({"name": name, "cas": cas, "content": content})
+
+    # 전치 형식(속성이 행으로 나열): "물질명 A B" / "CAS번호 x y" / "함유량 …"
+    nm = re.search(r"^[·ㆍ\s]*(?:화학)?물질명\s+(.+)$", sec3, re.M)
+    cm = re.search(r"^[·ㆍ\s]*CAS\s*[\-]?\s*(?:번호|No)?\.?\s*[:：]?\s+(.+)$",
+                   sec3, re.M | re.I)
+    fm = re.search(r"^[·ㆍ\s]*함\s*유\s*량\s*(?:\(%\))?\s*[:：]?\s+(.+)$",
+                   sec3, re.M)
+    if nm and cm:
+        cases = [c for c in _CAS_RX.findall(cm.group(1)) if _valid_cas(c)]
+        if cases:
+            names, contents = [], []
+            # 연속된 영문 토큰("DI WATER")은 한 이름으로 묶는다
+            for tok in nm.group(1).split():
+                if (names and re.fullmatch(r"[A-Za-z0-9().\-]+", tok)
+                        and re.fullmatch(r"[A-Za-z0-9().\-]+",
+                                         names[-1].split()[-1])):
+                    names[-1] += " " + tok
+                else:
+                    names.append(tok)
+            if fm:
+                contents = re.findall(r"[<>≥≤=]{0,2}\s*\d+(?:[.,]\d+)?"
+                                      r"(?:\s*[–\-~]\s*\d+(?:[.,]\d+)?)?\s*%?",
+                                      fm.group(1))
+            for k, cas in enumerate(cases):
+                add(names[k] if k < len(names) else "", cas,
+                    contents[k] if k < len(contents) else "")
+            return comps
+
+    lines = sec3.splitlines()
+    for i, line in enumerate(lines):
+        for cmm in _CAS_RX.finditer(line):
+            cas = cmm.group(1)
+            if not _valid_cas(cas):
+                continue
+            before = line[:cmm.start()]
+            after = line[cmm.end():]
+            # "CAS: 7775-27-1 성분명 85–90%" — CAS 라벨 뒤 또는 줄 머리에
+            # CAS가 오는 형식은 성분명·함유량을 CAS 뒤에서 찾는다
+            if not before.strip() or \
+                    re.search(r"CAS[\s.:：번호No또는식별\-]*$", before, re.I):
+                m = _CONTENT_RX.search(after)
+                content = m.group(1) if m else ""
+                name = after[:m.start()] if m else after
+                # 성분명이 없으면 바로 윗줄(표 헤더 제외)을 성분명으로 본다
+                if not _clean_component_name(name):
+                    name = ""
+                    for j in range(i - 1, max(i - 3, -1), -1):
+                        prev = lines[j].strip()
+                        if prev and not re.search(
+                                r"성\s*분|분\s*류|함유량|CAS|번호|^\d|[:：]",
+                                prev):
+                            name = prev
+                            break
+                add(name, cas, content)
+            else:
+                # "성분명 (이명) CAS 함유량" — 행 형식
+                name = before.split()[0] if before.split() else ""
+                m = re.match(r"\s*([<>≥≤=]{0,2}\s*\d+(?:[.,]\d+)?"
+                             r"(?:\s*[–\-~]\s*\d+(?:[.,]\d+)?)?\s*%?)", after)
+                add(name, cas, m.group(1) if m else "")
+    return comps
+
+
 def _sentences(items: list) -> list:
     """한 줄에 여러 문장이 몰린 항목을 문장 단위로 나눈다 (응급조치용)."""
     out = []
@@ -433,6 +613,10 @@ def parse_msds(pdf_source, source_name: str = "") -> MsdsData:
         data.product_name = re.sub(r"^[:：·ㆍ\-\s]+", "", m.group(1).strip())
     else:
         data.warnings.append("제품명을 찾지 못했습니다.")
+
+    # 1항 제조사·3항 구성성분 — 화학물질 도입검토 메뉴에서 사용
+    data.manufacturer = extract_manufacturer(sec1)
+    data.components = extract_components(sections.get(3, ""))
 
     # 2) 유해성·위험성 ───────────────────────────────────────
     sec2 = sections.get(2, whole)
@@ -567,8 +751,8 @@ def parse_msds(pdf_source, source_name: str = "") -> MsdsData:
 
     # 8) 개인 보호구 ─────────────────────────────────────────
     sec8 = sections.get(8, whole)
-    # 정지 조건은 "라벨만 있는 줄"(예: "눈 보호")에만 걸리게 해서
-    # 본문 속 "눈 보호용 도구" 같은 표현에 잘리지 않도록 한다
+    # 정지 조건은 라벨이 "줄 단독"이거나 "줄 머리(공백 뒤 본문 허용)"로 나올 때만
+    # 걸리게 해서 본문 속 "눈 보호용 도구" 같은 표현에 잘리지 않도록 한다
     _ppe_labels = {
         "resp": r"호흡기\s*보호", "eye": r"눈\s*보호",
         "hand": r"손\s*보호", "body": r"신체\s*보호",
@@ -580,17 +764,24 @@ def parse_msds(pdf_source, source_name: str = "") -> MsdsData:
     ppe = []
 
     def grab8(key):
-        # 정지: 다른 라벨이 "줄 단독"이거나 "줄 머리 + 콜론"으로 나올 때만.
-        # (본문 속 "눈 보호용 도구" 같은 표현에는 걸리지 않는다)
+        # 정지: 다른 라벨이 줄 단독("눈 보호"), 줄 머리+콜론("눈 보호 : "),
+        # 줄 머리+공백+본문("눈 보호 눈에 자극을...") 형식으로 나올 때.
         stops = []
         for k, p in _ppe_labels.items():
             if k == key:
                 continue
             stops.append(r"^\s*" + p + r"\s*[:：]?[ \t]*$")
             stops.append(r"^" + _BUL + p + r"\s*[:：]")
+            stops.append(r"^\s*" + p + r"(?=[ \t])")
         stops += _ppe_common
-        pat = r"(?:" + _ppe_labels[key] + r"\s*[:：]|^\s*" + _ppe_labels[key] + r"[ \t]*$)"
-        return bulletize(grab_block(sec8, pat, stops))
+        # 시작: "라벨 :", 줄 단독 "라벨", 줄 머리 "라벨 본문..." 모두 지원
+        pat = (r"(?:" + _ppe_labels[key] + r"\s*[:：]|^\s*" + _ppe_labels[key]
+               + r"[ \t]*$|^\s*" + _ppe_labels[key] + r"(?=[ \t]))")
+        block = grab_block(sec8, pat, stops)
+        # 블록 안에서 같은 라벨이 반복되면("호흡기 보호 입자상 물질의...") 제거
+        block = re.sub(r"(?m)^\s*" + _ppe_labels[key] + r"\s*[:：]?\s*", "",
+                       block)
+        return condense_ppe(bulletize(block))
 
     resp = grab8("resp")
     eye_p = grab8("eye")

@@ -124,13 +124,49 @@
   .signbtns button:disabled { background: #aaa; cursor: not-allowed; }
   #signPrev { border: 1px solid #ccc; background: #fff; padding: 12px; overflow: auto; }
   #signPrev svg { width: 100%; height: auto; display: block; }
+  /* ── 화학물질 도입검토 메뉴 ── */
+  details.rvcrit { background: #f8fafc; border: 1px solid #d8e2ec; border-radius: 8px;
+                   padding: 8px 14px; margin-top: 12px; font-size: 13px; }
+  details.rvcrit summary { cursor: pointer; font-weight: bold; color: #345; }
+  details.rvcrit b { display: block; margin: 10px 0 2px; color: #163a5f; }
+  details.rvcrit ol { margin: 4px 0 8px; padding-left: 22px; line-height: 1.6; }
+  .rvgrid { display: grid; grid-template-columns: 1.6fr 1.3fr 1fr; gap: 12px; }
+  @media (max-width: 900px) { .rvgrid { grid-template-columns: 1fr; } }
+  .rvcomp { display: grid; grid-template-columns: 1.6fr 1fr 0.8fr auto; gap: 8px;
+            margin-top: 6px; align-items: center; }
+  .rvcomp button, .rvcadd { border: none; background: #d9534f; color: #fff;
+            border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+  .rvcadd { background: #5a7a99; margin-top: 8px; font-family: inherit; }
+  .rvverdict div { border-radius: 6px; padding: 8px 12px; font-size: 12.5px;
+                   margin-top: 8px; }
+  .rvverdict .v-warn { background: #fff6df; border: 1px solid #f0d48a; color: #7a5c00; }
+  .rvverdict .v-ok   { background: #eef9f0; border: 1px solid #b7dfc0; color: #14602a; }
+  .rvverdict .v-info { background: #eef4fb; border: 1px solid #c3d6ea; color: #2c4a68; }
+  table.rvt { border-collapse: collapse; width: 100%; background: #fff;
+              font-size: 12.5px; }
+  table.rvt th, table.rvt td { border: 1px solid #c9d3dd; padding: 6px 9px;
+              text-align: left; vertical-align: top; }
+  table.rvt th { background: #eef3f8; color: #345; white-space: nowrap; }
+  table.rvt td .rvdel2 { border: none; background: #d9534f; color: #fff;
+              border-radius: 5px; padding: 3px 9px; cursor: pointer; }
+  table.rvt:empty { display: none; }
+  .rvsave { border: none; background: #1a5f9e; color: #fff; border-radius: 7px;
+            padding: 9px 18px; cursor: pointer; font-weight: bold; margin-top: 12px;
+            font-family: inherit; font-size: 13px; }
+  .rvmsg { font-size: 12.5px; margin-left: 10px; font-weight: bold; color: #1a7f37; }
+  .rvmsg.warn { color: #a33; }
+  .rvconsumer { display: flex; align-items: center; gap: 6px; margin-top: 12px;
+                font-size: 12.5px; color: #345; }
+  .rvconsumer input { width: auto; }
 </style>
 </head>
 <body>
 <div class="top">
   <h1>🧪 MSDS 자동 작성 도구</h1>
   <p>① <b>화학물질 작업공정별 관리요령</b> 메뉴에서 MSDS PDF를 올리면 항목을 자동 추출해
-     엑셀 양식을 만들고, ② <b>유해화학물질 규격표지</b> 메뉴에서는 화학물질명만 입력하면
+     엑셀 양식을 만들고, ② <b>화학물질 도입검토</b> 메뉴에서는 MSDS에서 물질명·제조사·
+     주요성분을 자동 인식해 도입검토·정보등록 대상 여부를 판독하고 누적 관리하며,
+     ③ <b>유해화학물질 규격표지</b> 메뉴에서는 화학물질명만 입력하면
      CAS 번호·국제연합번호·그림문자가 자동 입력된 표지판 시안(화학물질관리법 시행규칙
      별표 2)을 만듭니다.
      모든 처리는 이 브라우저 안에서만 이루어지며 파일이 외부로 전송되지 않습니다.</p>
@@ -138,6 +174,7 @@
 <div class="wrap">
   <div class="tabs">
     <button id="tabBtnManage" class="on">📋 화학물질 작업공정별 관리요령</button>
+    <button id="tabBtnReview">🔍 화학물질 도입검토</button>
     <button id="tabBtnSign">🚧 유해화학물질 규격표지</button>
   </div>
   <div id="tabManage" class="tabpanel">
@@ -148,6 +185,36 @@
     <div id="cards"></div>
     <p class="hint" id="manageHint" style="margin:14px 4px;">MSDS PDF를 업로드하면 여기에서
       추출 결과를 확인·수정하고 하단 버튼으로 엑셀 파일을 다운로드할 수 있습니다.</p>
+  </div>
+  <div id="tabReview" class="tabpanel" hidden>
+    <p class="signnote" style="margin-top:14px;">MSDS를 등록하면 <b>화학물질명·제조사·주요성분
+      및 함량</b>을 자동 인식해 비교표를 만들고, 기존 등록 이력과 비교해
+      <b>도입검토 대상·정보등록 대상</b> 여부를 자동 판독합니다. 등록된 정보는 이 브라우저에
+      누적 저장되며, 같은 물질의 새 MSDS를 등록할 때 이전 등록과 비교할 수 있습니다.
+      작성일(연도~날짜)은 작성자가 직접 입력합니다.</p>
+    <details class="rvcrit"><summary>ℹ️ 도입검토 대상·정보등록 대상 기준 보기</summary>
+      <div id="rvCriteria"></div>
+      <div class="hint">자동 판독은 이 프로그램에 등록된 이력과의 비교(물질명·구성성분)
+        결과이며 참고용입니다. 최종 판단은 사내 절차에 따라 확인하세요.</div>
+    </details>
+    <label class="dropzone" id="rvDz" style="margin-top:14px;">
+      📄 여기를 클릭하거나 MSDS PDF 파일을 끌어다 놓으세요 (여러 개 가능)
+      <input type="file" id="rvFileInput" accept="application/pdf" multiple>
+    </label>
+    <div id="rvCards"></div>
+    <div id="rvCompareWrap" hidden>
+      <div class="prev-title">📊 비교표 — 업로드한 MSDS</div>
+      <div style="overflow-x:auto"><table class="rvt" id="rvCompare"></table></div>
+    </div>
+    <p class="hint" id="rvHint" style="margin:14px 4px;">MSDS PDF를 업로드하면 화학물질명·
+      제조사·주요성분 및 함량을 자동 인식해 비교표를 만들고 대상 여부를 판독합니다.</p>
+    <hr style="border:none;border-top:1px solid #dde5ec;margin:18px 0;">
+    <div class="prev-title" style="margin-top:0;">🗂 등록된 화학물질 조회 (누적 관리)</div>
+    <div class="addrow" style="max-width:520px;">
+      <input type="text" id="rvQ" placeholder="물질명·제조사·CAS 번호로 검색 (예: TOC BASE, 새론, 1310-73-2)">
+    </div>
+    <div style="overflow-x:auto;margin-top:10px;"><table class="rvt" id="rvDbTable"></table></div>
+    <div class="hint" id="rvDbHint"></div>
   </div>
   <div id="tabSign" class="tabpanel" hidden>
     <p class="signnote"><b>화학물질관리법 시행규칙 [별표 2] 유해화학물질의 표시방법</b>(제12조제2항 관련)
@@ -201,6 +268,7 @@ const TEMPLATE_B64 = "__TEMPLATE_B64__";   // 빈 양식 시트 20장 (원본 �
 const GHS_IMG = __GHS_B64_JSON__;          // { GHS01: "b64", ... }
 const CMAPS = __CMAPS_B64_JSON__;          // 한국어 CID 폰트용 CMap (.bcmap)
 const CHEM_DB = __CHEM_DB_JSON__;          // 규격표지용 내장 화학물질 정보 (chem_db.py)
+const REVIEW_CRITERIA = __REVIEW_CRITERIA_JSON__; // 도입검토·정보등록 기준 (review_logic.py)
 
 /* ══════════════ GHS 표준 데이터 (ghs_data.py와 동일) ══════════════ */
 const H_STATEMENTS = __H_STATEMENTS_JSON__;
@@ -590,6 +658,164 @@ function curatePrecautions(items){
   return order.map(i => items[i]);
 }
 
+/* 개인보호구(8항) 요약 — msds_parser.condense_ppe 이식.
+   성분별 노출농도 구간마다 보호구를 나열하는 상세형 MSDS는 전문을 옮기면
+   양식 칸을 넘치므로 보호구 종류별 핵심 문장 두 개 내외만 남긴다. */
+const MAX_PPE_PER_TYPE = 2;
+const PPE_LADDER_RX = /노출\s*농도가\s*[\d,.]+\s*(?:mg|㎎|ppm)/i;
+const PPE_HEADER_RX = /(?:다음과\s*같은.*)?권고됨\s*[.:：]?$/;
+const PPE_EQUIP_RX = /보호|착용|마스크|장갑|보안경|보호구|설치/;
+
+function condensePpe(items, limit = MAX_PPE_PER_TYPE){
+  if (!items.length) return items;
+  // 1) 성분명이 문장 머리에 반복되는 형식("수산화나트륨 …", "물(WATER) …") —
+  //    두 번 이상 반복되는 머리 단어는 성분명으로 보고 뗀다
+  const heads = new Map();
+  for (const it of items){
+    const m = /^(\S{2,20})(?:\s|$)/.exec(it);
+    if (m && !PPE_EQUIP_RX.test(m[1]))
+      heads.set(m[1], (heads.get(m[1]) || 0) + 1);
+  }
+  const strip = [...heads.entries()].filter(([, c]) => c >= 2).map(([h]) => h);
+  const out = [];
+  for (let it of items){
+    for (const h of strip){
+      if (it === h){ it = ""; break; }        // 성분명만 있는 줄은 버린다
+      if (it.startsWith(h + " ")){ it = it.slice(h.length).trim(); break; }
+    }
+    if (it) out.push(it);
+  }
+  // 2) 노출농도 구간별 나열과 목록 머리글("…이 권고됨")은 제외한다
+  let core = out.filter(it => !PPE_LADDER_RX.test(it) && !PPE_HEADER_RX.test(it));
+  if (!core.length) core = out;
+  // 3) "A 또는 B 또는 C…"처럼 긴 대안 나열은 앞의 두 개 + "등"으로 줄인다
+  const shortened = core.map(it => {
+    const parts = it.split(" 또는 ");
+    return parts.length >= 3
+      ? parts.slice(0, 2).join(" 또는 ").replace(/[,.]+$/, "") + " 등" : it;
+  });
+  return dedupeMerge(shortened).slice(0, limit);
+}
+
+/* ── 제조사(1항)·구성성분(3항) — 화학물질 도입검토용 (msds_parser 이식) ── */
+const CAS_NUM_RX = /(?<![\d-])(\d{2,7}-\d{2}-\d)(?![\d-])/g;
+
+// CAS 등록번호 검증(마지막 자리는 검사숫자) — EC번호·색인번호 오인 방지
+function validCas(cas){
+  const digits = cas.replace(/-/g, "");
+  const body = digits.slice(0, -1), check = Number(digits.slice(-1));
+  let s = 0;
+  for (let i = 0; i < body.length; i++)
+    s += Number(body[body.length - 1 - i]) * (i + 1);
+  return s % 10 === check;
+}
+
+// 분류 용어(영문)가 성분명 자리에 들어온 경우(Merck 등 표 형식 붕괴) 걸러낸다
+const CLASS_TERM_RX = new RegExp(
+  "Flam|Tox|Skin|Corr|Irrit|STOT|Aquatic|Repr|Muta|Carc|Liq|Sol|" +
+  "Eye|Dam|Acute|Chronic|구분\\s*\\d|분류|함유량|식별번호|번호", "i");
+const CONTENT_END_RX = new RegExp(
+  "([<>≥≤=]{0,2}\\s*\\d+(?:[.,]\\d+)?\\s*(?:%|(?:\\s*[–\\-~]\\s*" +
+  "[<>≥≤=]{0,2}\\s*\\d+(?:[.,]\\d+)?\\s*%?))?%?)\\s*$");
+
+function cleanComponentName(s){
+  s = (s || "").trim().replace(/^[·ㆍ○●\-–—*\s:：]+|[;,·\s]+$/g, "")
+      .replace(/\s{2,}/g, " ");
+  return CLASS_TERM_RX.test(s) ? "" : s;
+}
+
+function extractManufacturer(sec1){
+  for (const pat of ["회\\s*사\\s*명", "제조\\s*(?:회\\s*)?사", "제조\\s*업체",
+                     "공급\\s*(?:자|업체)", "수입\\s*자", "판매\\s*자", "업체\\s*명"]){
+    const rx = new RegExp(pat + "\\s*[:：]?[ \\t]*([^\\n]*)", "g");
+    let m;
+    while ((m = rx.exec(sec1))){
+      const val = m[1].replace(/^[:：·ㆍ\-\s]+/, "").trim();
+      // "제조자/수입자/유통업자 정보:"처럼 라벨이 이어지는 경우는 건너뛴다
+      if (!val || /^[\/(·]/.test(val) || /정보\s*[:：]?\s*$/.test(val) ||
+          val.length < 2) continue;
+      return val.slice(0, 60).trim();
+    }
+  }
+  return "";
+}
+
+function extractComponents(sec3){
+  const comps = [];
+  const add = (name, cas, content) => {
+    name = cleanComponentName(name || "");
+    content = (content || "").trim().replace(/\.+$/, "");
+    if (content && !content.includes("%")) content += "%";
+    for (const c of comps){
+      if (c.cas === cas){                     // 같은 CAS는 정보를 보강만 한다
+        if (name && !c.name) c.name = name;
+        if (content && !c.content) c.content = content;
+        return;
+      }
+    }
+    comps.push({ name, cas, content });
+  };
+
+  // 전치 형식(속성이 행으로 나열): "물질명 A B" / "CAS번호 x y" / "함유량 …"
+  const nm = /^[·ㆍ\s]*(?:화학)?물질명\s+(.+)$/m.exec(sec3);
+  const cm = /^[·ㆍ\s]*CAS\s*[\-]?\s*(?:번호|No)?\.?\s*[:：]?\s+(.+)$/mi.exec(sec3);
+  const fm = /^[·ㆍ\s]*함\s*유\s*량\s*(?:\(%\))?\s*[:：]?\s+(.+)$/m.exec(sec3);
+  if (nm && cm){
+    const cases = (cm[1].match(CAS_NUM_RX) || []).filter(validCas);
+    if (cases.length){
+      const names = [];
+      // 연속된 영문 토큰("DI WATER")은 한 이름으로 묶는다
+      for (const tok of nm[1].split(/\s+/)){
+        const ascii = /^[A-Za-z0-9().\-]+$/;
+        if (names.length && ascii.test(tok) &&
+            ascii.test(names[names.length - 1].split(/\s+/).pop()))
+          names[names.length - 1] += " " + tok;
+        else names.push(tok);
+      }
+      const contents = fm ? (fm[1].match(
+        /[<>≥≤=]{0,2}\s*\d+(?:[.,]\d+)?(?:\s*[–\-~]\s*\d+(?:[.,]\d+)?)?\s*%?/g)
+        || []) : [];
+      cases.forEach((cas, k) => add(names[k] || "", cas, contents[k] || ""));
+      return comps;
+    }
+  }
+
+  const lines = sec3.split("\n");
+  lines.forEach((line, i) => {
+    for (const cmm of line.matchAll(CAS_NUM_RX)){
+      const cas = cmm[1];
+      if (!validCas(cas)) continue;
+      const before = line.slice(0, cmm.index);
+      const after = line.slice(cmm.index + cmm[0].length);
+      // "CAS: 7775-27-1 성분명 85–90%" — CAS 라벨 뒤 또는 줄 머리에
+      // CAS가 오는 형식은 성분명·함유량을 CAS 뒤에서 찾는다
+      if (!before.trim() || /CAS[\s.:：번호No또는식별\-]*$/i.test(before)){
+        const m = CONTENT_END_RX.exec(after);
+        const content = m ? m[1] : "";
+        let name = m ? after.slice(0, m.index) : after;
+        // 성분명이 없으면 바로 윗줄(표 헤더 제외)을 성분명으로 본다
+        if (!cleanComponentName(name)){
+          name = "";
+          for (let j = i - 1; j >= Math.max(i - 2, 0); j--){
+            const prev = lines[j].trim();
+            if (prev && !/성\s*분|분\s*류|함유량|CAS|번호|^\d|[:：]/.test(prev)){
+              name = prev; break;
+            }
+          }
+        }
+        add(name, cas, content);
+      } else {
+        // "성분명 (이명) CAS 함유량" — 행 형식
+        const toks = before.trim().split(/\s+/);
+        const name = toks.length ? toks[0] : "";
+        const m = /^\s*([<>≥≤=]{0,2}\s*\d+(?:[.,]\d+)?(?:\s*[–\-~]\s*\d+(?:[.,]\d+)?)?\s*%?)/.exec(after);
+        add(name, cas, m ? m[1] : "");
+      }
+    }
+  });
+  return comps;
+}
+
 // 응급조치 내용이 라벨을 다시 반복하는 형식("눈에 들어갔을 때: 다량의 물로...") 정리
 const RESTATED_RX = new RegExp(
   "^(?:눈에\\s*들어갔을\\s*때|눈에\\s*묻으면|피부에\\s*접촉(?:했을|된|한)?\\s*(?:때|경우)?|" +
@@ -611,7 +837,8 @@ function sentences(items){
 function parseMsds(text, sourceName){
   const data = { sourceName, productName: "", signalWord: "", pictograms: [],
     hazards: [], precautions: [], ppe: [], inhalation: [], skinEye: [],
-    ingestion: [], emergency: [], unNumber: "", warnings: [] };
+    ingestion: [], emergency: [], unNumber: "",
+    manufacturer: "", components: [], warnings: [] };
   if (text.trim().length < 50){
     data.warnings.push("PDF에서 텍스트를 추출하지 못했습니다. 스캔본(이미지) MSDS인 경우 " +
       "OCR 처리된 PDF를 사용하거나 항목을 직접 입력해 주세요.");
@@ -630,6 +857,10 @@ function parseMsds(text, sourceName){
           /제품명\s*[:：]?\s*([^\n]+)/.exec(whole);
   if (m) data.productName = m[1].trim().replace(/^[:：·ㆍ\-\s]+/, "");
   else data.warnings.push("제품명을 찾지 못했습니다.");
+
+  // 1항 제조사·3항 구성성분 — 화학물질 도입검토 메뉴에서 사용
+  data.manufacturer = extractManufacturer(sections[1] || whole);
+  data.components = extractComponents(sections[3] || "");
 
   // 2) 유해성·위험성
   const sec2 = sections[2] || whole;
@@ -760,17 +991,24 @@ function parseMsds(text, sourceName){
   const PPE_BUL = "[·ㆍ○●◦•∙\\-–—*\\s]*";
   const ppe = [];
   const grab8 = key => {
-    // 정지: 다른 라벨이 "줄 단독"이거나 "줄 머리 + 콜론"으로 나올 때만.
+    // 정지: 다른 라벨이 줄 단독("눈 보호"), 줄 머리+콜론("눈 보호 : "),
+    // 줄 머리+공백+본문("눈 보호 눈에 자극을...") 형식으로 나올 때.
     // (본문 속 "눈 보호용 도구" 같은 표현에는 걸리지 않는다)
     const stops = [];
     for (const [k, p] of Object.entries(ppeLabels)){
       if (k === key) continue;
       stops.push("^\\s*" + p + "\\s*[:：]?[ \\t]*$");
       stops.push("^" + PPE_BUL + p + "\\s*[:：]");
+      stops.push("^\\s*" + p + "(?=[ \\t])");
     }
     stops.push(...ppeCommon);
-    const pat = "(?:" + ppeLabels[key] + "\\s*[:：]|^\\s*" + ppeLabels[key] + "[ \\t]*$)";
-    return bulletize(grabBlock(sec8, pat, stops)).join(" ");
+    // 시작: "라벨 :", 줄 단독 "라벨", 줄 머리 "라벨 본문..." 모두 지원
+    const pat = "(?:" + ppeLabels[key] + "\\s*[:：]|^\\s*" + ppeLabels[key] +
+                "[ \\t]*$|^\\s*" + ppeLabels[key] + "(?=[ \\t]))";
+    let block = grabBlock(sec8, pat, stops);
+    // 블록 안에서 같은 라벨이 반복되면("호흡기 보호 입자상 물질의...") 제거
+    block = block.replace(new RegExp("^\\s*" + ppeLabels[key] + "\\s*[:：]?\\s*", "gm"), "");
+    return condensePpe(bulletize(block)).join(" ");
   };
   const resp = grab8("resp");
   const eyeP = grab8("eye");
@@ -1250,19 +1488,310 @@ $sgManual.addEventListener("click", e => {
   if (id){ manual.delete(id); rebuildManualList(); renderSign(); }
 });
 
+/* ══════════════ 화학물질 도입검토 ══════════════ */
+const RV_DB_KEY = "msdsReviewDb";          // 등록 정보는 브라우저 localStorage에 누적
+const $rvCards = document.getElementById("rvCards");
+const $rvHint = document.getElementById("rvHint");
+const $rvQ = document.getElementById("rvQ");
+const rvState = new Map();                 // id -> {source, name, manufacturer, date, components, consumer}
+let rvSeq = 0;
+
+function loadRvDb(){
+  try {
+    const db = JSON.parse(localStorage.getItem(RV_DB_KEY) || "[]");
+    return Array.isArray(db) ? db : [];
+  } catch (e){ return []; }
+}
+function saveRvDb(db){ localStorage.setItem(RV_DB_KEY, JSON.stringify(db)); }
+
+const rvNorm = s => String(s || "").replace(/\s+/g, "").toLowerCase();
+// 구성성분을 비교 가능한 키로 만든다 — CAS(없으면 성분명)+함유량 (review_logic.py)
+function rvCompKey(components){
+  const keys = [];
+  for (const c of components || []){
+    const ident = rvNorm(c.cas) || rvNorm(c.name);
+    if (ident) keys.push(ident + "|" + rvNorm(c.content));
+  }
+  return keys.sort().join("§");
+}
+
+// 도입검토·정보등록 대상 여부 판독 (review_logic.assess 이식)
+function rvAssess(name, components, db, consumer){
+  const key = rvCompKey(components), nm = rvNorm(name);
+  const sameName = (db || []).filter(r => nm && rvNorm(r.name) === nm);
+  const sameComp = (db || []).filter(r => key && rvCompKey(r.components) === key);
+  let review, reviewLabel, reviewReason;
+  if (sameComp.length){
+    review = false; reviewLabel = "도입검토 제외 가능";
+    reviewReason = "기존 등록 물질과 구성성분이 동일합니다(제조사 변경 등 구성성분이 " +
+                   "동일한 경우) — 도입검토를 제외할 수 있습니다.";
+  } else if (sameName.length){
+    review = true; reviewLabel = "도입검토 대상";
+    reviewReason = "같은 이름의 기존 등록 물질과 구성성분이 다릅니다 — 다른 물질로의 " +
+                   "변경에 해당하여 도입검토 대상입니다.";
+  } else {
+    review = true; reviewLabel = "도입검토 대상";
+    reviewReason = "기존 등록 이력이 없는 신규 도입 화학물질입니다 — 도입검토 대상입니다.";
+  }
+  let register, registerLabel, registerReason;
+  if (consumer){
+    register = false; registerLabel = "정보등록 제외";
+    registerReason = "일반 소매점에서 일반 소비자 대상으로 판매되는 물질은 정보등록 " +
+                     "대상에서 제외됩니다.";
+  } else {
+    register = true; registerLabel = "정보등록 대상";
+    registerReason = "공정(시설/장비 등)·당사 보유 시설/장비·협력업체 반입·구성원 작업 시 " +
+                     "취급하는 화학물질은 정보등록 대상입니다.";
+  }
+  return { review, reviewLabel, reviewReason, register, registerLabel,
+           registerReason, sameName, sameComp };
+}
+
+function rvComponentsText(components){
+  return (components || []).map(c => {
+    let s = (c.name || "").trim() || "(성분명 미상)";
+    if ((c.cas || "").trim()) s += ` (CAS ${c.cas.trim()})`;
+    if ((c.content || "").trim()) s += ` ${c.content.trim()}`;
+    return s;
+  }).join(", ");
+}
+const rvComps = st => st.components.filter(
+  c => (c.name || c.cas || c.content || "").trim());
+
+// 기준 설명 채우기
+document.getElementById("rvCriteria").innerHTML =
+  "<b>도입검토 대상</b><ol>" +
+  REVIEW_CRITERIA.review.map(c => `<li>${esc(c)}</li>`).join("") + "</ol>" +
+  "<b>정보등록 대상</b><ol>" +
+  REVIEW_CRITERIA.register.map(c => `<li>${esc(c)}</li>`).join("") + "</ol>";
+
+const rvDz = document.getElementById("rvDz");
+const rvFi = document.getElementById("rvFileInput");
+rvDz.addEventListener("dragover", e => { e.preventDefault(); rvDz.classList.add("drag"); });
+rvDz.addEventListener("dragleave", () => rvDz.classList.remove("drag"));
+rvDz.addEventListener("drop", e => {
+  e.preventDefault(); rvDz.classList.remove("drag");
+  rvAddFiles([...e.dataTransfer.files].filter(f => /\.pdf$/i.test(f.name)));
+});
+rvFi.addEventListener("change", () => { rvAddFiles([...rvFi.files]); rvFi.value = ""; });
+
+async function rvAddFiles(files){
+  for (const f of files){
+    let rec;
+    try {
+      rec = parseMsds(await extractText(await f.arrayBuffer()), f.name);
+    } catch (err){
+      rec = parseMsds("", f.name);
+      rec.warnings = [`PDF를 읽지 못했습니다: ${err.message || err}`];
+    }
+    const id = "v" + (++rvSeq);
+    const warnings = rec.warnings.filter(w => /읽지|텍스트|제품명/.test(w));
+    if (!rec.components.length)
+      warnings.push("구성성분(3항)을 자동 인식하지 못했습니다. 아래 표에 직접 입력해 주세요.");
+    rvState.set(id, { id, source: f.name, name: rec.productName,
+      manufacturer: rec.manufacturer, date: "", consumer: false, warnings,
+      components: rec.components.map(c => ({ ...c })) });
+    $rvCards.appendChild(buildRvCard(id));
+    renderRvComps(id);
+    renderRvVerdict(id);
+  }
+  renderRvCompare();
+}
+
+function buildRvCard(id){
+  const st = rvState.get(id);
+  const div = document.createElement("div");
+  div.className = "card rvcard"; div.id = id;
+  const warns = st.warnings.map(w => `<div class="warn">⚠️ ${esc(w)}</div>`).join("");
+  div.innerHTML = `
+    <div class="card-head"><b>📄 ${esc(st.source)}</b>
+      <button data-rvdel="${id}">삭제</button></div>
+    <div style="padding:4px 18px 16px">
+      ${warns}
+      <div class="rvgrid">
+        <div><label class="f">화학물질명<span class="ref">MSDS 1항</span></label>
+          <input type="text" data-rvid="${id}" data-rvkey="name" value="${esc(st.name)}"></div>
+        <div><label class="f">제조사<span class="ref">MSDS 1항</span></label>
+          <input type="text" data-rvid="${id}" data-rvkey="manufacturer" value="${esc(st.manufacturer)}"></div>
+        <div><label class="f">작성일 (직접 입력)</label>
+          <input type="date" data-rvid="${id}" data-rvkey="date" value="">
+          <div class="hint">연도부터 날짜까지 작성자가 직접 입력합니다.</div></div>
+      </div>
+      <label class="f">주요성분 및 함량<span class="ref">MSDS 3항 구성성분의 명칭 및 함유량</span></label>
+      <div data-rvcomps="${id}"></div>
+      <button class="rvcadd" data-rvcadd="${id}" type="button">＋ 성분 추가</button>
+      <label class="rvconsumer"><input type="checkbox" data-rvid="${id}" data-rvkey="consumer">
+        일반 소매점에서 일반 소비자 대상으로 판매되는 물질 (정보등록 제외)</label>
+      <div class="rvverdict" data-rvverdict="${id}"></div>
+      <div data-rvprior="${id}"></div>
+      <div><button class="rvsave" data-rvsave="${id}" type="button">💾 등록 (누적 관리 목록에 저장)</button>
+        <span class="rvmsg" data-rvmsg="${id}"></span></div>
+    </div>`;
+  return div;
+}
+
+function renderRvComps(id){
+  const st = rvState.get(id);
+  if (!st.components.length) st.components.push({ name: "", cas: "", content: "" });
+  document.querySelector(`[data-rvcomps="${id}"]`).innerHTML =
+    st.components.map((c, i) => `
+      <div class="rvcomp">
+        <input type="text" placeholder="성분명" data-rvid="${id}" data-rvc="name" data-rvi="${i}" value="${esc(c.name)}">
+        <input type="text" placeholder="CAS 번호" data-rvid="${id}" data-rvc="cas" data-rvi="${i}" value="${esc(c.cas)}">
+        <input type="text" placeholder="함유량(%)" data-rvid="${id}" data-rvc="content" data-rvi="${i}" value="${esc(c.content)}">
+        <button data-rvcd="${id}" data-rvi="${i}" type="button" title="이 성분 삭제">🗑</button>
+      </div>`).join("");
+}
+
+function rvDiffHtml(last, comps){
+  const key = c => rvNorm(c.cas) || rvNorm(c.name);
+  const old = new Map((last.components || []).map(c => [key(c), c]));
+  const cur = new Map(comps.map(c => [key(c), c]));
+  const ks = [...old.keys()];
+  for (const k of cur.keys()) if (!old.has(k)) ks.push(k);
+  const rows = ks.map(k => {
+    const o = old.get(k), n = cur.get(k);
+    const same = o && n && rvNorm(o.content) === rvNorm(n.content);
+    return `<tr><td>${esc((n || o).name || "")}</td><td>${esc((n || o).cas || "")}</td>
+      <td>${o ? esc(o.content || "") : "(없던 성분)"}</td>
+      <td>${n ? esc(n.content || "") : "(빠진 성분)"}</td>
+      <td>${same ? "동일" : "<b>변경</b>"}</td></tr>`;
+  }).join("");
+  return `<div class="prev-title">🔁 이전 등록과 비교 — ${esc(last.name || "")} ` +
+    `(작성일 ${esc(last.date || "미상")}, 제조사 ${esc(last.manufacturer || "미상")})</div>` +
+    `<div style="overflow-x:auto"><table class="rvt">` +
+    `<tr><th>성분명</th><th>CAS 번호</th><th>이전 함유량</th><th>이번 함유량</th><th>변경</th></tr>` +
+    rows + `</table></div>`;
+}
+
+function renderRvVerdict(id){
+  const st = rvState.get(id);
+  const res = rvAssess(st.name, rvComps(st), loadRvDb(), st.consumer);
+  st.lastRes = res;
+  document.querySelector(`[data-rvverdict="${id}"]`).innerHTML =
+    `<div class="${res.review ? "v-warn" : "v-ok"}"><b>${res.reviewLabel}</b> — ${esc(res.reviewReason)}</div>` +
+    `<div class="${res.register ? "v-info" : "v-ok"}"><b>${res.registerLabel}</b> — ${esc(res.registerReason)}</div>`;
+  const prior = res.sameName.length ? res.sameName : res.sameComp;
+  document.querySelector(`[data-rvprior="${id}"]`).innerHTML =
+    prior.length ? rvDiffHtml(prior[prior.length - 1], rvComps(st)) : "";
+}
+
+function renderRvCompare(){
+  const wrap = document.getElementById("rvCompareWrap");
+  const tbl = document.getElementById("rvCompare");
+  const sts = [...rvState.values()];
+  wrap.hidden = !sts.length;
+  $rvHint.hidden = !!sts.length;
+  tbl.innerHTML = !sts.length ? "" :
+    "<tr><th>파일</th><th>화학물질명</th><th>제조사</th><th>주요성분 및 함량</th>" +
+    "<th>작성일</th><th>도입검토</th><th>정보등록</th></tr>" +
+    sts.map(st => `<tr><td>${esc(st.source)}</td><td>${esc(st.name)}</td>` +
+      `<td>${esc(st.manufacturer)}</td><td>${esc(rvComponentsText(rvComps(st)))}</td>` +
+      `<td>${esc(st.date)}</td><td>${st.lastRes ? st.lastRes.reviewLabel : ""}</td>` +
+      `<td>${st.lastRes ? st.lastRes.registerLabel : ""}</td></tr>`).join("");
+}
+
+function renderRvDb(){
+  const db = loadRvDb();
+  const q = rvNorm($rvQ.value);
+  const hit = r => !q || rvNorm(
+    [r.name, r.manufacturer, rvComponentsText(r.components)].join(" ")).includes(q);
+  const shown = db.filter(hit);
+  document.getElementById("rvDbTable").innerHTML = !shown.length ? "" :
+    "<tr><th>No.</th><th>작성일</th><th>화학물질명</th><th>제조사</th>" +
+    "<th>주요성분 및 함량</th><th>도입검토</th><th>정보등록</th><th>MSDS 파일</th><th></th></tr>" +
+    shown.map(r => `<tr><td>${r.id}</td><td>${esc(r.date || "")}</td>` +
+      `<td>${esc(r.name || "")}</td><td>${esc(r.manufacturer || "")}</td>` +
+      `<td>${esc(rvComponentsText(r.components))}</td><td>${esc(r.review || "")}</td>` +
+      `<td>${esc(r.register || "")}</td><td>${esc(r.source || "")}</td>` +
+      `<td><button class="rvdel2" data-rvdbdel="${r.id}" type="button">삭제</button></td></tr>`).join("");
+  document.getElementById("rvDbHint").textContent =
+    db.length ? `등록 ${db.length}건${q ? ` — 검색 결과 ${shown.length}건` : ""} · ` +
+      "등록 정보는 이 브라우저(localStorage)에 저장됩니다."
+      : "등록된 화학물질이 없습니다. MSDS를 업로드하고 「등록」 버튼을 누르면 누적 관리됩니다.";
+}
+
+function rvSave(id){
+  const st = rvState.get(id);
+  const msg = document.querySelector(`[data-rvmsg="${id}"]`);
+  msg.classList.remove("warn");
+  if (!st.date){
+    msg.textContent = "작성일을 입력한 뒤 등록해 주세요.";
+    msg.classList.add("warn"); return;
+  }
+  if (!(st.name || "").trim()){
+    msg.textContent = "화학물질명을 입력한 뒤 등록해 주세요.";
+    msg.classList.add("warn"); return;
+  }
+  const db = loadRvDb();
+  const res = st.lastRes || rvAssess(st.name, rvComps(st), db, st.consumer);
+  db.push({ id: Math.max(0, ...db.map(r => r.id || 0)) + 1, date: st.date,
+    name: st.name.trim(), manufacturer: (st.manufacturer || "").trim(),
+    components: rvComps(st), source: st.source,
+    review: res.reviewLabel, register: res.registerLabel });
+  saveRvDb(db);
+  msg.textContent = `「${st.name.trim()}」을(를) 등록했습니다 (누적 ${db.length}건)`;
+  renderRvDb();
+  for (const other of rvState.keys()) renderRvVerdict(other);
+  renderRvCompare();
+}
+
+$rvCards.addEventListener("input", e => {
+  const el = e.target, id = el.dataset.rvid;
+  if (!id || !rvState.has(id)) return;
+  const st = rvState.get(id);
+  if (el.dataset.rvc) st.components[+el.dataset.rvi][el.dataset.rvc] = el.value;
+  else if (el.dataset.rvkey === "consumer") st.consumer = el.checked;
+  else if (el.dataset.rvkey) st[el.dataset.rvkey] = el.value;
+  renderRvVerdict(id);
+  renderRvCompare();
+});
+$rvCards.addEventListener("click", e => {
+  const t = e.target;
+  if (t.dataset.rvdel){
+    rvState.delete(t.dataset.rvdel);
+    document.getElementById(t.dataset.rvdel).remove();
+    renderRvCompare();
+  } else if (t.dataset.rvcadd){
+    rvState.get(t.dataset.rvcadd).components.push({ name: "", cas: "", content: "" });
+    renderRvComps(t.dataset.rvcadd);
+  } else if (t.dataset.rvcd){
+    const st = rvState.get(t.dataset.rvcd);
+    st.components.splice(+t.dataset.rvi, 1);
+    renderRvComps(t.dataset.rvcd);
+    renderRvVerdict(t.dataset.rvcd);
+    renderRvCompare();
+  } else if (t.dataset.rvsave){
+    rvSave(t.dataset.rvsave);
+  }
+});
+$rvQ.addEventListener("input", renderRvDb);
+document.getElementById("rvDbTable").addEventListener("click", e => {
+  const del = e.target.dataset && e.target.dataset.rvdbdel;
+  if (!del) return;
+  saveRvDb(loadRvDb().filter(r => String(r.id) !== String(del)));
+  renderRvDb();
+  for (const id of rvState.keys()) renderRvVerdict(id);
+});
+renderRvDb();
+
 /* ── 메뉴 전환 ── */
 const $btnManage = document.getElementById("tabBtnManage");
+const $btnReview = document.getElementById("tabBtnReview");
 const $btnSign = document.getElementById("tabBtnSign");
 function showTab(which){
-  const sign = which === "sign";
-  $btnManage.classList.toggle("on", !sign);
-  $btnSign.classList.toggle("on", sign);
-  document.getElementById("tabManage").hidden = sign;
-  document.getElementById("tabSign").hidden = !sign;
-  document.body.classList.toggle("signview", sign);
-  if (sign) renderSign();
+  const map = { manage: "tabManage", review: "tabReview", sign: "tabSign" };
+  for (const [k, pid] of Object.entries(map))
+    document.getElementById(pid).hidden = k !== which;
+  $btnManage.classList.toggle("on", which === "manage");
+  $btnReview.classList.toggle("on", which === "review");
+  $btnSign.classList.toggle("on", which === "sign");
+  // 하단 엑셀 다운로드 바는 관리요령 메뉴에서만 보인다
+  document.body.classList.toggle("signview", which !== "manage");
+  if (which === "sign") renderSign();
 }
 $btnManage.addEventListener("click", () => showTab("manage"));
+$btnReview.addEventListener("click", () => showTab("review"));
 $btnSign.addEventListener("click", () => showTab("sign"));
 renderSign();
 
