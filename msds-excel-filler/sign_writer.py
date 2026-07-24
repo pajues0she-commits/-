@@ -50,10 +50,9 @@ def build_sign_svg(entries, manager: str = "", phone: str = "",
                    phone2: str = "") -> str:
     """규격 표지판 SVG 문자열을 만든다.
 
-    entries: [{"name": 물질명, "cas": CAS 번호(선택), "un": 국제연합번호,
-               "pictograms": ["GHS05", ...]}]
+    entries: [{"name": 물질명, "un": 국제연합번호, "pictograms": ["GHS05", ...]}]
     manager/phone/phone2: 관리책임자 성명 / 비상전화 / 보조 연락처(선택)
-    CAS 번호가 있으면 물질명 아래에 작은 글자로 함께 표기한다.
+    (entries의 "cas" 값은 교차 확인용 조회 정보일 뿐, 표지판에는 표기하지 않는다.)
     """
     esc = html.escape
     rows = list(entries) or [{}]
@@ -137,20 +136,12 @@ def build_sign_svg(entries, manager: str = "", phone: str = "",
     for ri, ent in enumerate(rows):
         cy = table_y + head_h + row_h * ri + row_h / 2
         name = (ent.get("name") or "").strip()
-        cas = (ent.get("cas") or "").strip()
         if name:
             fs_n = min(24.0, (col_w[0] - 24) / max(_text_units(name), 1))
-            ny = cy - 12 if cas else cy      # CAS가 있으면 두 줄로 나눠 쓴다
-            p.append(f'<text x="{col_w[0] / 2:.1f}" y="{ny:.1f}" '
+            p.append(f'<text x="{col_w[0] / 2:.1f}" y="{cy:.1f}" '
                      f'font-family="{_FONT}" font-size="{fs_n:.1f}" '
                      f'fill="#000000" text-anchor="middle" '
                      f'dominant-baseline="central">{esc(name)}</text>')
-        if cas:
-            cas_y = cy + 14 if name else cy
-            p.append(f'<text x="{col_w[0] / 2:.1f}" y="{cas_y:.1f}" '
-                     f'font-family="{_FONT}" font-size="15" fill="#000000" '
-                     f'text-anchor="middle" dominant-baseline="central">'
-                     f'CAS {esc(cas)}</text>')
         un = (ent.get("un") or "").strip()
         if un:
             p.append(f'<text x="{col_x[1] + col_w[1] / 2:.1f}" y="{cy:.1f}" '

@@ -166,7 +166,8 @@ with tab_sign:
                 "그림문자가 자동 입력됩니다")
     st.caption(f"내장 물질정보 {len(CHEM_DB)}종(물질명·별칭·CAS 번호로 검색)은 참고용 "
                "요약이므로, 표지 제작 전에 해당 제품의 MSDS와 대조해 확인하세요. "
-               "추가한 뒤 모든 항목을 직접 수정할 수 있습니다.")
+               "추가한 뒤 모든 항목을 직접 수정할 수 있습니다. CAS 번호는 교차 "
+               "확인용 조회 정보로, 표지판에는 표기되지 않습니다.")
     s1, s2 = st.columns([3, 1])
     chem_q = s1.text_input("화학물질명", key="chem_q",
                            placeholder="예: 황산, 톨루엔, 가성소다, 7664-93-9")
@@ -216,7 +217,9 @@ with tab_sign:
         sid = ent["id"]
         e1, e2, e3, e4 = st.columns([2, 1.2, 1, 0.5])
         ent["name"] = e1.text_input("물질명", ent["name"], key=f"sub_nm_{sid}")
-        ent["cas"] = e2.text_input("CAS 번호", ent["cas"], key=f"sub_cas_{sid}")
+        ent["cas"] = e2.text_input("CAS 번호 (확인용)", ent["cas"],
+                                   key=f"sub_cas_{sid}",
+                                   help="교차 확인용 — 표지판에는 표기되지 않습니다.")
         ent["un"] = e3.text_input("국제연합번호(UN No.)", ent["un"],
                                   key=f"sub_un_{sid}")
         e4.markdown("<div style='height:1.9em'></div>", unsafe_allow_html=True)

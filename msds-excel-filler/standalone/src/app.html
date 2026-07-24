@@ -1061,19 +1061,14 @@ function buildSignSvg(entries, manager, phone, phone2){
   rows.forEach((ent, ri) => {
     const cy = tableY + headH + rowH * ri + rowH / 2;
     const name = (ent.name || "").trim();
-    const cas = (ent.cas || "").trim();
+    // ent.cas는 교차 확인용 조회 정보일 뿐, 표지판에는 표기하지 않는다
     if (name){
       const fsN = Math.min(24, (colW[0] - 24) / Math.max(signTextUnits(name), 1));
-      const ny = cas ? cy - 12 : cy;        // CAS가 있으면 두 줄로 나눠 쓴다
-      p.push(`<text x="${(colW[0] / 2).toFixed(1)}" y="${ny.toFixed(1)}" ` +
+      p.push(`<text x="${(colW[0] / 2).toFixed(1)}" y="${cy.toFixed(1)}" ` +
              `font-family="${SIGN_FONT}" font-size="${fsN.toFixed(1)}" ` +
              `fill="#000000" text-anchor="middle" ` +
              `dominant-baseline="central">${esc(name)}</text>`);
     }
-    if (cas)
-      p.push(`<text x="${(colW[0] / 2).toFixed(1)}" y="${(name ? cy + 14 : cy).toFixed(1)}" ` +
-             `font-family="${SIGN_FONT}" font-size="15" fill="#000000" ` +
-             `text-anchor="middle" dominant-baseline="central">CAS ${esc(cas)}</text>`);
     const un = (ent.un || "").trim();
     if (un)
       p.push(`<text x="${(colX[1] + colW[1] / 2).toFixed(1)}" y="${cy.toFixed(1)}" ` +
@@ -1121,7 +1116,7 @@ const $sgName = document.getElementById("sgName");
 
 function rebuildManualList(){
   let h = manual.size
-    ? '<label class="f">표에 들어갈 물질 — 모든 항목을 직접 수정할 수 있습니다 (그림문자는 눌러 켜고 끕니다)</label>' : "";
+    ? '<label class="f">표에 들어갈 물질 — 모든 항목을 직접 수정할 수 있습니다 (그림문자는 눌러 켜고 끕니다 · CAS 번호는 교차 확인용으로 표지판에는 표기되지 않습니다)</label>' : "";
   for (const [id, ent] of manual){
     const pics = Object.keys(PICTOGRAM_NAMES).map(code => `
       <label class="${ent.pictograms.includes(code) ? "on" : ""}"
@@ -1131,7 +1126,8 @@ function rebuildManualList(){
         <img src="data:image/png;base64,${GHS_IMG[code]}"></label>`).join("");
     h += `<div class="mrow">
       <input type="text" data-mnm="${id}" value="${esc(ent.name)}" placeholder="물질명">
-      <input type="text" data-mcas="${id}" value="${esc(ent.cas)}" placeholder="CAS 번호">
+      <input type="text" data-mcas="${id}" value="${esc(ent.cas)}"
+             placeholder="CAS 번호 (확인용)" title="교차 확인용 — 표지판에는 표기되지 않습니다">
       <input type="text" data-mun="${id}" value="${esc(ent.un)}" placeholder="국제연합번호">
       <div class="mpics">${pics}</div>
       <button class="mdel" data-mdel="${id}" type="button">삭제</button></div>`;
@@ -1173,7 +1169,8 @@ const $sgMsg = document.getElementById("sgMsg");
 let chemResults = [];
 document.getElementById("sgDbHint").textContent =
   `내장 물질정보 ${CHEM_DB.length}종(물질명·별칭·CAS 번호로 검색)은 참고용 요약이므로, ` +
-  "표지 제작 전에 해당 제품의 MSDS와 대조해 확인하세요. 추가한 뒤 모든 항목을 직접 수정할 수 있습니다.";
+  "표지 제작 전에 해당 제품의 MSDS와 대조해 확인하세요. 추가한 뒤 모든 항목을 직접 수정할 수 " +
+  "있습니다. CAS 번호는 교차 확인용 조회 정보로, 표지판에는 표기되지 않습니다.";
 { // 물질명 입력창 자동완성 목록
   const dl = document.getElementById("chemList");
   dl.innerHTML = CHEM_DB.map(e =>
