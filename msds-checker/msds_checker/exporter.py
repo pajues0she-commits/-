@@ -92,7 +92,8 @@ def export_excel(
     # ---------------------------------------------------------- 시트2: 연도별 판정
     if years and rows:
         ws2 = wb.create_sheet("연도별 판정")
-        ws2["A1"] = "연도별 변경 판정 (▲ = 직전 연도 대비 변경, — = 해당 연도에 없음)"
+        ws2["A1"] = ("연도별 변경 판정 (▲ = 직전 연도 대비 변경, — = 해당 연도에 없음) · "
+                     "정보등록: 제조사/성분·함량 변경 시에만 ○ 대상, 변경없음은 ✕ 비대상")
         ws2["A1"].font = Font(bold=True, size=12)
         ws2["A2"] = f"작성부서: {department or '-'}   작성자: {author or '-'}   출력일: {date.today().isoformat()}"
 
@@ -106,23 +107,25 @@ def export_excel(
             c.alignment = center
 
         for ri, row in enumerate(rows, start=1):
+            is_reg = row.kind == "registration"
             label_cell = ws2.cell(row=header_row2 + ri, column=1, value=row.label)
             label_cell.border = border
-            if row.kind == "manufacturer":
+            if row.kind == "manufacturer" or is_reg:
                 label_cell.font = Font(bold=True)
             for ci, (v, ch) in enumerate(zip(row.values, row.changed), start=2):
                 c = ws2.cell(row=header_row2 + ri, column=ci,
-                             value=f"▲ {v}" if ch else v)
+                             value=v if is_reg else (f"▲ {v}" if ch else v))
                 c.border = border
                 c.alignment = center
                 if ch:
                     c.font = changed_font
                     c.fill = changed_fill
             verdict = ws2.cell(row=header_row2 + ri, column=len(cols2),
-                               value="변경" if row.any_changed else "변경없음")
+                               value="" if is_reg
+                               else ("변경" if row.any_changed else "변경없음"))
             verdict.border = border
             verdict.alignment = center
-            if row.any_changed:
+            if row.any_changed and not is_reg:
                 verdict.font = changed_font
 
         ws2.column_dimensions["A"].width = 28

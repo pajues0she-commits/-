@@ -55,6 +55,21 @@ class TestParser(unittest.TestCase):
         self.assertEqual(rec.year, 2023)
         self.assertEqual(len(rec.ingredients), 4)
 
+    def test_parse_oci_style_pdf_layout(self):
+        """실제 PDF에서 나타난 레이아웃: '물질명' 라벨, 'O 회 사 명 :' 표기,
+        열 단위로 뒤섞여 추출된 구성성분 표."""
+        rec = parse_file(sample("MSDS_차아염소산나트륨_2025.txt"))
+        self.assertEqual(rec.product, "차아염소산나트륨 12.6%(SODIUM HYPOCHLORITE 12.6%)")
+        self.assertEqual(rec.manufacturer, "OCI㈜")  # 사업장명 등 꼬리표 제거
+        self.assertEqual(rec.doc_year, 2025)
+        by_cas = {i.cas: i for i in rec.ingredients}
+        self.assertIn("7681-52-9", by_cas)
+        self.assertIn("7732-18-5", by_cas)
+        self.assertEqual(by_cas["7681-52-9"].content, "12.6")   # 뒤섞인 표 재조합
+        self.assertEqual(by_cas["7732-18-5"].content, "87.4")
+        self.assertEqual(by_cas["7732-18-5"].name, "물")
+        self.assertEqual(by_cas["7681-52-9"].name, "차아염소산나트륨(SODIUM HYPOCHLORITE)")
+
     def test_year_from_filename_fallback(self):
         import tempfile
         with tempfile.NamedTemporaryFile(
@@ -104,11 +119,49 @@ class TestComparator(unittest.TestCase):
         self.assertEqual(comps, [])
         self.assertTrue(any("2개 이상" in w for w in warns))
 
+    def test_registration_verdict_rule(self):
+        """제조사·성분함량 변경이 없으면 정보등록 비대상."""
+        from msds_checker.comparator import (
+            REG_CHECK, REG_EXEMPT, REG_TARGET, registration_verdict,
+        )
+        self.assertEqual(registration_verdict(UNCHANGED, UNCHANGED)[0], REG_EXEMPT)
+        self.assertEqual(registration_verdict(CHANGED, UNCHANGED)[0], REG_TARGET)
+        self.assertEqual(registration_verdict(UNCHANGED, CHANGED)[0], REG_TARGET)
+        self.assertEqual(registration_verdict(CHANGED, CHANGED)[0], REG_TARGET)
+        self.assertEqual(registration_verdict(UNKNOWN, UNCHANGED)[0], REG_CHECK)
+
+    def test_registration_in_comparisons(self):
+        # 2022→2023 함량변경 → 대상 / 2023→2024 제조사변경 → 대상
+        self.assertEqual(self.comparisons[0].registration_verdict, "○ 등록대상")
+        self.assertIn("성분·함량 변경", self.comparisons[0].registration_detail)
+        self.assertEqual(self.comparisons[1].registration_verdict, "○ 등록대상")
+        self.assertIn("제조사 변경", self.comparisons[1].registration_detail)
+
+    def test_registration_exempt_when_no_change(self):
+        """같은 내용의 MSDS가 연도만 다르면 비대상(✕)."""
+        import copy
+        a = parse_file(sample("MSDS_신나A_2022.txt"))
+        b = copy.deepcopy(a)
+        b.year = 2023
+        comps, _ = compare_all([a, b])
+        self.assertEqual(comps[0].registration_verdict, "✕ 비대상")
+        _, rows, _ = build_matrix([a, b])
+        reg = rows[0]
+        self.assertEqual(reg.kind, "registration")
+        self.assertEqual(reg.values[0], "최초등록 · ○ 대상")
+        self.assertEqual(reg.values[1], "✕ 비대상(변경없음)")
+
     def test_matrix(self):
         years, rows, _ = build_matrix(self.records)
         self.assertEqual(years, [2022, 2023, 2024])
-        # 첫 행은 제조사, 2024년에만 변경 표시
-        mfr = rows[0]
+        # 첫 행은 정보등록 판정
+        reg = rows[0]
+        self.assertEqual(reg.label, "정보등록 판정")
+        self.assertEqual(reg.values,
+                         ["최초등록 · ○ 대상", "○ 등록대상(함량변경)",
+                          "○ 등록대상(제조사변경)"])
+        # 다음 행은 제조사, 2024년에만 변경 표시
+        mfr = rows[1]
         self.assertEqual(mfr.label, "제조사")
         self.assertEqual(mfr.values,
                          ["대한케미칼(주)", "대한케미칼(주)", "한국정밀화학 주식회사"])
@@ -133,13 +186,17 @@ class TestComparator(unittest.TestCase):
         self.assertEqual(lines[0], "항목,2022년,2023년,2024년,변경 여부")
         self.assertEqual(len(lines), 1 + len(rows))
         self.assertIn("▲ 한국정밀화학 주식회사", csv_text)
+        self.assertIn("정보등록 판정", lines[1])
+        self.assertIn("○ 등록대상(제조사변경)", lines[1])
 
     def test_report_and_csv(self):
         report = build_report(self.records, self.comparisons, self.warnings)
         self.assertIn("2022년 → 2023년", report)
         self.assertIn("변경", report)
+        self.assertIn("정보등록: ○ 등록대상", report)
         csv_text = build_csv(self.comparisons)
         self.assertIn("제조사 판정", csv_text)
+        self.assertIn("정보등록 판정", csv_text)
         self.assertEqual(len(csv_text.strip().splitlines()), 3)  # 헤더 + 2행
 
 
@@ -255,9 +312,12 @@ class TestExporter(unittest.TestCase):
         self.assertEqual(ws["J7"].value, "안전보건팀")
         self.assertEqual(ws["K7"].value, "홍길동")
         ws2 = wb["연도별 판정"]
-        self.assertEqual(ws2["A5"].value, "제조사")
-        self.assertEqual(ws2["D5"].value, "▲ 한국정밀화학 주식회사")
-        self.assertEqual(ws2["E5"].value, "변경")
+        self.assertEqual(ws2["A5"].value, "정보등록 판정")     # 첫 행: 정보등록 판정
+        self.assertEqual(ws2["B5"].value, "최초등록 · ○ 대상")
+        self.assertEqual(ws2["D5"].value, "○ 등록대상(제조사변경)")
+        self.assertEqual(ws2["A6"].value, "제조사")
+        self.assertEqual(ws2["D6"].value, "▲ 한국정밀화학 주식회사")
+        self.assertEqual(ws2["E6"].value, "변경")
 
 
 if __name__ == "__main__":

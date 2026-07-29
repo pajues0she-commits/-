@@ -11,6 +11,26 @@ UNKNOWN = "판정불가"
 CHANGED = "변경"
 UNCHANGED = "변경없음"
 
+# 정보등록 판정: 제조사나 구성성분·함량이 변경된 경우에만 등록 대상이며,
+# 변경이 없으면 정보등록 대상이 아니다.
+REG_TARGET = "○ 등록대상"
+REG_EXEMPT = "✕ 비대상"
+REG_CHECK = "? 확인필요"
+
+
+def registration_verdict(mfr_verdict: str, ing_verdict: str) -> tuple[str, str]:
+    """(판정, 사유)를 반환. 변경 없음 → 정보등록 비대상."""
+    changed = []
+    if mfr_verdict == CHANGED:
+        changed.append("제조사 변경")
+    if ing_verdict == CHANGED:
+        changed.append("성분·함량 변경")
+    if changed:
+        return REG_TARGET, "·".join(changed)
+    if UNKNOWN in (mfr_verdict, ing_verdict):
+        return REG_CHECK, "추출 실패 항목이 있어 원문 확인 필요"
+    return REG_EXEMPT, "제조사·성분함량 변경 없음"
+
 
 @dataclass
 class IngredientDiff:
@@ -34,6 +54,8 @@ class YearComparison:
     manufacturer_detail: str = ""
     ingredient_verdict: str = UNKNOWN
     ingredient_diff: IngredientDiff = field(default_factory=IngredientDiff)
+    registration_verdict: str = REG_CHECK  # ○ 등록대상 / ✕ 비대상 / ? 확인필요
+    registration_detail: str = ""
 
 
 def _normalize_content(content: str) -> str:
@@ -94,6 +116,9 @@ def compare_records(prev: MsdsRecord, curr: MsdsRecord) -> YearComparison:
     else:
         comp.ingredient_verdict = UNKNOWN
 
+    comp.registration_verdict, comp.registration_detail = registration_verdict(
+        comp.manufacturer_verdict, comp.ingredient_verdict
+    )
     return comp
 
 
@@ -131,8 +156,8 @@ def compare_all(records: list[MsdsRecord]) -> tuple[list[YearComparison], list[s
 @dataclass
 class MatrixRow:
     """연도별 매트릭스의 한 행. values/changed는 연도 오름차순."""
-    label: str            # "제조사" 또는 "성분명 (CAS)"
-    kind: str             # "manufacturer" | "ingredient"
+    label: str            # "정보등록 판정" / "제조사" / "성분명 (CAS)"
+    kind: str             # "registration" | "manufacturer" | "ingredient"
     values: list[str]     # 연도별 표시 값 ("—" = 해당 연도에 없음)
     changed: list[bool]   # 직전 연도 대비 변경 여부 (첫 연도는 항상 False)
 
@@ -193,6 +218,33 @@ def build_matrix(records: list[MsdsRecord]) -> tuple[list[int], list[MatrixRow],
                 changed.append(False)
         rows.append(MatrixRow(labels[key], "ingredient", values, changed))
 
+    # 정보등록 판정 행 (맨 위): 변경이 없으면 등록 비대상
+    ing_rows = [r for r in rows if r.kind == "ingredient"]
+    reg_values, reg_changed = [], []
+    for i, y in enumerate(years):
+        if i == 0:
+            reg_values.append("최초등록 · ○ 대상")
+            reg_changed.append(False)
+            continue
+        mfr_ch = mfr_changed[i]
+        ing_ch = any(r.changed[i] for r in ing_rows)
+        rec = grouped[y]
+        prev_rec = grouped[years[i - 1]]
+        if mfr_ch and ing_ch:
+            v = f"{REG_TARGET}(제조사·함량변경)"
+        elif ing_ch:
+            v = f"{REG_TARGET}(함량변경)"
+        elif mfr_ch:
+            v = f"{REG_TARGET}(제조사변경)"
+        elif (not rec.manufacturer or not prev_rec.manufacturer
+              or not rec.ingredients or not prev_rec.ingredients):
+            v = f"{REG_CHECK}(추출실패)"
+        else:
+            v = f"{REG_EXEMPT}(변경없음)"
+        reg_values.append(v)
+        reg_changed.append(mfr_ch or ing_ch)
+    rows.insert(0, MatrixRow("정보등록 판정", "registration", reg_values, reg_changed))
+
     return years, rows, warnings
 
 
@@ -222,13 +274,16 @@ def build_report(records: list[MsdsRecord], comparisons: list[YearComparison],
             lines.append(f"        ⚠ {w}")
     lines.append("")
 
-    lines.append("[연도별 판정]")
+    lines.append("[연도별 판정]  ※ 정보등록: 제조사 또는 성분·함량 변경 시에만 등록 대상")
     if not comparisons:
         lines.append("  (비교할 연도 쌍이 없습니다)")
     for c in comparisons:
         lines.append(f"  ● {c.year_from}년 → {c.year_to}년")
         lines.append(f"    - 제조사: {c.manufacturer_verdict}  ({c.manufacturer_detail})")
         lines.append(f"    - 성분:   {c.ingredient_verdict}")
+        lines.append(
+            f"    - 정보등록: {c.registration_verdict}  ({c.registration_detail})"
+        )
         d = c.ingredient_diff
         for i in d.added:
             lines.append(f"        + 추가: {_fmt_ing(i)}")
@@ -259,6 +314,9 @@ def build_matrix_csv(years: list[int], rows: list[MatrixRow]) -> str:
     w = csv.writer(buf)
     w.writerow(["항목"] + [f"{y}년" for y in years] + ["변경 여부"])
     for r in rows:
+        if r.kind == "registration":
+            w.writerow([r.label] + list(r.values) + [""])
+            continue
         cells = [f"▲ {v}" if ch else v for v, ch in zip(r.values, r.changed)]
         w.writerow([r.label] + cells + ["변경" if r.any_changed else "변경없음"])
     return buf.getvalue()
@@ -272,13 +330,15 @@ def build_csv(comparisons: list[YearComparison]) -> str:
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(["기준연도", "비교연도", "제조사 판정", "제조사 상세",
-                "성분 판정", "추가 성분", "삭제 성분", "함유량 변경"])
+                "성분 판정", "정보등록 판정", "정보등록 사유",
+                "추가 성분", "삭제 성분", "함유량 변경"])
     for c in comparisons:
         d = c.ingredient_diff
         w.writerow([
             c.year_from, c.year_to,
             c.manufacturer_verdict, c.manufacturer_detail,
             c.ingredient_verdict,
+            c.registration_verdict, c.registration_detail,
             "; ".join(_fmt_ing(i) for i in d.added),
             "; ".join(_fmt_ing(i) for i in d.removed),
             "; ".join(f"{b.name or b.cas}: {a.content}→{b.content}"

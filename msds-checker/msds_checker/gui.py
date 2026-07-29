@@ -123,12 +123,19 @@ class App:
             self.root.dnd_bind("<<Drop>>", self._on_drop)
 
         # 중단: 연도×항목 변경 매트릭스
-        mid = ttk.LabelFrame(paned, text="연도별 판정 결과  (▲ = 직전 연도 대비 변경,  — = 해당 연도에 없음)")
+        mid = ttk.LabelFrame(
+            paned,
+            text="연도별 판정 결과  (▲ = 직전 연도 대비 변경 · "
+                 "정보등록: 제조사/성분·함량 변경 시에만 ○ 대상, 변경없음은 ✕ 비대상)",
+        )
         self.result_tree = ttk.Treeview(mid, columns=(), show="tree headings", height=6)
         self.result_tree.heading("#0", text="항목")
         self.result_tree.column("#0", width=230, anchor="w")
         self.result_tree.tag_configure("changed", foreground="#b91c1c")
         self.result_tree.tag_configure("mfr", font=("맑은 고딕", 10, "bold"))
+        self.result_tree.tag_configure(
+            "reg", font=("맑은 고딕", 10, "bold"), background="#eef2ff"
+        )
         rsb = ttk.Scrollbar(mid, orient="vertical", command=self.result_tree.yview)
         self.result_tree.configure(yscrollcommand=rsb.set)
         self.result_tree.pack(side="left", fill="both", expand=True)
@@ -330,12 +337,17 @@ class App:
             self.result_tree.heading(c, text=f"{c}년")
             self.result_tree.column(c, width=140, anchor="center")
         for row in getattr(self, "matrix_rows", []):
-            values = [
-                f"▲ {v}" if ch else v
-                for v, ch in zip(row.values, row.changed)
-            ]
+            if row.kind == "registration":
+                values = list(row.values)  # 판정 기호가 있으므로 ▲ 없이 표시
+            else:
+                values = [
+                    f"▲ {v}" if ch else v
+                    for v, ch in zip(row.values, row.changed)
+                ]
             tags = []
-            if row.any_changed:
+            if row.kind == "registration":
+                tags.append("reg")
+            elif row.any_changed:
                 tags.append("changed")
             if row.kind == "manufacturer":
                 tags.append("mfr")
