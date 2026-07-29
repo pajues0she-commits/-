@@ -19,6 +19,8 @@ CRITERIA_REGISTER = [
     "협력업체가 반입하여 당사 시설/장비에 취급하는 경우(설비 세정약품 등)",
     "구성원이 작업 시 취급하는 화학물질(분석키트, 유/무상 샘플 등) "
     "(일반 소매점에서 일반 소비자 대상으로 판매되는 물질은 제외)",
+    "단, 기존 등록 물질에서 제조사나 구성성분 및 함량의 변경이 없는 경우는 "
+    "정보등록 대상이 아님",
 ]
 
 _WS_RX = re.compile(r"\s+")
@@ -39,21 +41,27 @@ def comp_key(components) -> tuple:
     return tuple(sorted(keys))
 
 
-def assess(name: str, components, db, consumer_product: bool = False) -> dict:
+def assess(name: str, components, db, consumer_product: bool = False,
+           manufacturer: str = "") -> dict:
     """도입검토·정보등록 대상 여부를 판독한다.
 
     db: 기존 등록 목록 [{"name", "manufacturer", "components", ...}]
     consumer_product: 일반 소매점에서 일반 소비자 대상으로 판매되는 물질 여부
+    manufacturer: 제조사 — 기존 등록과 제조사·구성성분이 모두 같으면
+                  정보등록 대상이 아니다(변경 없음).
     반환: {"review": bool, "review_label", "review_reason",
            "register": bool, "register_label", "register_reason",
            "same_name": [기존 등록], "same_comp": [기존 등록]}
     """
     key = comp_key(components)
     nm = _norm(name)
+    mf = _norm(manufacturer)
     same_name = [r for r in db or []
                  if nm and _norm(r.get("name")) == nm]
     same_comp = [r for r in db or []
                  if key and comp_key(r.get("components")) == key]
+    # 제조사와 구성성분·함량이 모두 같은 기존 등록 (= 변경 없음)
+    same_all = [r for r in same_comp if _norm(r.get("manufacturer")) == mf]
 
     if same_comp:
         review, review_label = False, "도입검토 제외 가능"
@@ -73,6 +81,10 @@ def assess(name: str, components, db, consumer_product: bool = False) -> dict:
         register, register_label = False, "정보등록 제외"
         register_reason = ("일반 소매점에서 일반 소비자 대상으로 판매되는 "
                            "물질은 정보등록 대상에서 제외됩니다.")
+    elif same_all:
+        register, register_label = False, "정보등록 대상 아님"
+        register_reason = ("기존 등록 물질에서 제조사와 구성성분 및 함량의 "
+                           "변경이 없습니다 — 정보등록 대상이 아닙니다.")
     else:
         register, register_label = True, "정보등록 대상"
         register_reason = ("공정(시설/장비 등)·당사 보유 시설/장비·협력업체 반입·"

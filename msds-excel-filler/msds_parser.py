@@ -194,40 +194,46 @@ _FOOTER_RX = re.compile(
     r"|^\s*page\s*\d+"
     r"|^\s*-?\s*\d+\s*/\s*\d+\s*-?\s*$"
     r"|\(\s*\d+\s*쪽\s*(?:에서?|부터)\s*계속\s*\)"   # "(3 쪽에계속)", "(2 쪽부터계속)"
+    r"|^MSDS\b.*\d+\s*/\s*\d+\s*$"          # "MSDS 물질명 ... 개정번호 28 6/9"
     r"|continued\s+(?:on|from)\s+page", re.I)
 
 
 def clean_text(text: str) -> str:
     """페이지 푸터·"(N쪽에 계속)" 문구·반복되는 머리글(회사 상용구 등)을 제거한다."""
-    n_pages = text.count("\f") + 1
-    lines = text.replace("\f", "\n").splitlines()
-    counts = Counter(l.strip() for l in lines if len(l.strip()) > 1)
-    # 페이지마다 반복되는 짧은 머리글("물질안전보건자료", "KR" 등)은 페이지 수
-    # 기준으로, 긴 상용구는 3회 반복이면 제거한다.
-    boiler = {l for l, c in counts.items()
+    pages = text.split("\f") or [text]
+    n_pages = len(pages)
+    # 줄이 나타나는 "페이지 수"를 센다 — 같은 줄이 한 페이지 안에서 여러 번
+    # 나오는 것(예: 제조자/공급자 회사명 반복)은 본문이므로 세지 않는다.
+    page_count = Counter()
+    for pg in pages:
+        page_count.update({l.strip() for l in pg.splitlines()
+                           if len(l.strip()) > 1})
+    # 여러 페이지에서 반복되는 짧은 머리글("물질안전보건자료", "KR" 등)은
+    # 페이지 수 기준으로, 긴 상용구는 3개 페이지 반복이면 제거한다.
+    boiler = {l for l, c in page_count.items()
               if (len(l) > 10 and c >= 3) or c >= max(3, n_pages - 1)}
-    kept = [l for l in lines
+    kept = [l for l in text.replace("\f", "\n").splitlines()
             if l.strip() not in boiler and not _FOOTER_RX.search(l)]
     return "\n".join(kept)
 
 
 # ── 섹션 분리 ────────────────────────────────────────────────────────────
 _SECTION_KEYS = {
-    1: r"(?:화학제품과\s*회사|제품\s*및\s*회사|화학제품에\s*관한)",
-    2: r"유해성\s*[·ㆍ.,]?\s*위험성|위험\s*[·ㆍ.,]?\s*유해성",
+    1: r"(?:화학제품과\s*(?:제조\s*)?회사|제품\s*및\s*회사|화학제품에\s*관한)",
+    2: r"유해성?\s*[·ㆍ.,]?\s*위험성|위험\s*[·ㆍ.,]?\s*유해성",
     3: r"구성\s*성분|구성성분의\s*명칭",
     4: r"응급\s*조치\s*요령",
     5: r"폭발\s*[·ㆍ.]?\s*화재\s*시|화재\s*시\s*대처",
     6: r"누출\s*사고\s*시",
     7: r"취급\s*및\s*저장",
     8: r"노출\s*방지\s*및\s*개인\s*보호구|노출방지",
-    9: r"물리\s*화학적\s*특성",
+    9: r"물리\s*[·ㆍ.,]?\s*화학적\s*특성",
     10: r"안정성\s*및\s*반응성",
     11: r"독성에\s*관한\s*정보",
-    12: r"환경에\s*미치는\s*영향",
+    12: r"환경에\s*미치는\s*영향|환경\s*영향",
     13: r"폐기\s*시\s*주의사항|폐기시",
     14: r"운송에\s*필요한\s*정보",
-    15: r"법적\s*규제\s*현황",
+    15: r"법적\s*규제\s*현황|법규에\s*관한",
     16: r"그\s*밖의\s*참고사항|기타\s*참고사항",
 }
 
@@ -487,6 +493,9 @@ def extract_manufacturer(sec1: str) -> str:
             if not val or val.startswith(("/", "(", "·")) or \
                     re.search(r"정보\s*[:：]?\s*$", val) or len(val) < 2:
                 continue
+            # 회사명 뒤에 다른 항목이 이어지면("OCI㈜ 사업장명 : ...") 잘라낸다
+            val = re.split(r"\s+(?:사업장명?|주\s*소|담당\s*부서|연락처|전화|"
+                           r"TEL|FAX)\b", val)[0]
             return val[:60].strip()
     return ""
 
@@ -606,8 +615,12 @@ def parse_msds(pdf_source, source_name: str = "") -> MsdsData:
     whole = text
 
     # 1) 제품명 ──────────────────────────────────────────────
+    # 제품명 라벨이 없고 "물질명"으로 적는 형식(OCI 등)은 1항 안에서만 찾는다
+    # (3항 구성성분 표에도 "물질명"이 있으므로 전체 텍스트에서는 찾지 않는다)
     sec1 = sections.get(1, whole)
     m = re.search(r"제품명\s*[:：]?\s*([^\n]+)", sec1) or \
+        (re.search(r"물\s*질\s*명\s*[:：]\s*([^\n]+)", sec1)
+         if 1 in sections else None) or \
         re.search(r"제품명\s*[:：]?\s*([^\n]+)", whole)
     if m:
         data.product_name = re.sub(r"^[:：·ㆍ\-\s]+", "", m.group(1).strip())
@@ -645,8 +658,9 @@ def parse_msds(pdf_source, source_name: str = "") -> MsdsData:
         data.hazards = [NONE_TEXT]
         data.warnings.append("유해·위험문구를 찾지 못해 '해당없음'으로 표기했습니다.")
 
-    # 신호어 ("신호어 : 위험" / "신호어 위험" 모두 인식)
+    # 신호어 ("신호어 : 위험" / "신호어 위험" / 다음 줄에 "- 위험" 모두 인식)
     m = re.search(r"신호어\s*[:：]?\s*(위험|경고)", sec2) or \
+        re.search(r"신호어[^\n]*\n\s*[-–—·ㆍ○]*\s*(위험|경고)", sec2) or \
         re.search(r"신호어\s*[:：]?\s*(위험|경고)", whole)
     if m:
         data.signal_word = m.group(1)
@@ -761,22 +775,25 @@ def parse_msds(pdf_source, source_name: str = "") -> MsdsData:
     _ppe_common = [r"위생상", r"주\s*변\s*환경에\s*대한", r"환경\s*노출\s*방지",
                    _SUB_HEAD, r"^\s*(?:제\s*|항\s*)?9\s*[.):：]"]
     _BUL = r"[·ㆍ○●◦•∙\-–—*\s]*"
+    # "1) 호흡기 보호"처럼 번호가 붙는 형식(OCI 등)의 줄 머리 번호
+    _NUM = r"(?:\d{1,2}\s*[).]\s*)?"
     ppe = []
 
     def grab8(key):
-        # 정지: 다른 라벨이 줄 단독("눈 보호"), 줄 머리+콜론("눈 보호 : "),
-        # 줄 머리+공백+본문("눈 보호 눈에 자극을...") 형식으로 나올 때.
+        # 정지: 다른 라벨이 줄 단독("눈 보호", "2) 눈 보호"), 줄 머리+콜론
+        # ("눈 보호 : "), 줄 머리+공백+본문("눈 보호 눈에 자극을...") 형식일 때.
         stops = []
         for k, p in _ppe_labels.items():
             if k == key:
                 continue
-            stops.append(r"^\s*" + p + r"\s*[:：]?[ \t]*$")
+            stops.append(r"^\s*" + _NUM + p + r"\s*[:：]?[ \t]*$")
             stops.append(r"^" + _BUL + p + r"\s*[:：]")
-            stops.append(r"^\s*" + p + r"(?=[ \t])")
+            stops.append(r"^\s*" + _NUM + p + r"(?=[ \t])")
         stops += _ppe_common
-        # 시작: "라벨 :", 줄 단독 "라벨", 줄 머리 "라벨 본문..." 모두 지원
-        pat = (r"(?:" + _ppe_labels[key] + r"\s*[:：]|^\s*" + _ppe_labels[key]
-               + r"[ \t]*$|^\s*" + _ppe_labels[key] + r"(?=[ \t]))")
+        # 시작: "라벨 :", 줄 단독 "라벨"/"1) 라벨", 줄 머리 "라벨 본문..." 지원
+        pat = (r"(?:" + _ppe_labels[key] + r"\s*[:：]|^\s*" + _NUM
+               + _ppe_labels[key] + r"[ \t]*$|^\s*" + _NUM
+               + _ppe_labels[key] + r"(?=[ \t]))")
         block = grab_block(sec8, pat, stops)
         # 블록 안에서 같은 라벨이 반복되면("호흡기 보호 입자상 물질의...") 제거
         block = re.sub(r"(?m)^\s*" + _ppe_labels[key] + r"\s*[:：]?\s*", "",

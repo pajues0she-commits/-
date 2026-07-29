@@ -232,7 +232,8 @@ with tab_review:
                 "일반 소매점에서 일반 소비자 대상으로 판매되는 물질 (정보등록 제외)",
                 key=f"rv_cons_{name}")
 
-            res = assess(rv_nm, comps, review_db, consumer)
+            res = assess(rv_nm, comps, review_db, consumer,
+                         manufacturer=rv_mf)
             (st.warning if res["review"] else st.success)(
                 f"**{res['review_label']}** — {res['review_reason']}")
             (st.info if res["register"] else st.success)(
