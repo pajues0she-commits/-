@@ -113,6 +113,9 @@ def main():
     with open(os.path.join(ROOT, "assets", "risk_template.xlsx"), "rb") as f:
         html = html.replace("__RISK_TPL_B64__",
                             base64.b64encode(f.read()).decode())
+    with open(os.path.join(ROOT, "assets", "ci.png"), "rb") as f:
+        html = html.replace("__CI_B64__",
+                            base64.b64encode(f.read()).decode())
     html = html.replace("__KO_DICT_JSON__", json.dumps({
         "nouns": ko_spacing.NOUNS,
         "funcs": ko_spacing.FUNCS,

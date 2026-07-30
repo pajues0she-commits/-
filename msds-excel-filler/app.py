@@ -99,7 +99,12 @@ def _dash_stats(db):
     return stats
 
 
+_CI_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "assets", "ci.png")
+
 if menu == M_DASH:
+    if os.path.exists(_CI_PATH):                  # 회사 CI
+        st.image(_CI_PATH, width=229)
     _db = _load_review_db()
     stats = _dash_stats(_db)
     ty = str(datetime.date.today().year)
@@ -507,11 +512,11 @@ if menu == M_REVIEW:
                              if r.get("risk_done") else
                              ("대상 (미실시)" if not r.get("override") and
                               r.get("review") == "도입검토 대상" else "")),
-              "대상 아님(담당자 검토)": bool(r.get("override")),
+              "도입검토 대상 아님": bool(r.get("override")),
               "MSDS 파일": r.get("source", "")} for r in shown],
             hide_index=True, use_container_width=True, key="rv_db_edit",
             disabled=_db_cols,
-            column_config={"대상 아님(담당자 검토)":
+            column_config={"도입검토 대상 아님":
                            st.column_config.CheckboxColumn(
                                help="도입검토·정보등록 대상으로 판정되었지만 "
                                     "담당자 검토 결과 대상이 아니면 체크하세요 "
@@ -522,8 +527,8 @@ if menu == M_REVIEW:
             rec = next((r for r in review_db if r.get("id") == row["No."]),
                        None)
             if rec is not None and \
-                    bool(rec.get("override")) != bool(row["대상 아님(담당자 검토)"]):
-                rec["override"] = bool(row["대상 아님(담당자 검토)"])
+                    bool(rec.get("override")) != bool(row["도입검토 대상 아님"]):
+                rec["override"] = bool(row["도입검토 대상 아님"])
                 _ovr_changed = True
         if _ovr_changed:
             _save_review_db(review_db)
@@ -554,6 +559,7 @@ if menu == M_REVIEW:
                 rec = next(r for r in risk_targets if r.get("id") == rt_id)
                 st.session_state.risk_nonce = \
                     st.session_state.get("risk_nonce", 0) + 1
+                st.session_state.risk_score_reset = 0
                 st.session_state.risk_src = {
                     "name": rec.get("name", ""),
                     "manufacturer": rec.get("manufacturer", ""),
@@ -612,6 +618,7 @@ if menu == M_RISK:
                                source_name=rk_up.name)
                 st.session_state.risk_nonce = \
                     st.session_state.get("risk_nonce", 0) + 1
+                st.session_state.risk_score_reset = 0
                 st.session_state.risk_src = {
                     "name": d.product_name, "manufacturer": d.manufacturer,
                     "revision": d.revision_date, "components": d.components,
@@ -632,18 +639,34 @@ if menu == M_RISK:
         def _k(name):
             return f"rk{n}_{name}"
 
+        # ── 빨간 칸 표시 — 직접 입력이 필요하거나 MSDS 판독이 안 된(빈) 항목.
+        # 위젯 key에 붙는 st-key-* CSS 클래스로 해당 칸만 붉게 칠한다.
+        _red_empty = []
+
+        def _rmark(widget_key, value):
+            if value in ("", None, "(선택)"):
+                _red_empty.append(widget_key)
+
+        def _rtext(container, label, *args, **kw):
+            v = container.text_input(label, *args, **kw)
+            _rmark(kw["key"], (v or "").strip())
+            return v
+
         st.markdown(f"##### 🧪 평가 대상: {src.get('name') or '(미입력)'} "
                     f"〔{src.get('source', '')}〕")
+        st.caption("🔴 **빨간 칸** = 직접 입력이 필요한 항목 — MSDS에서 자동 "
+                   "인식되지 않았거나(판독 실패 포함) 아직 입력·선택하지 않은 "
+                   "항목입니다. 값을 채우면 빨간 표시가 사라집니다.")
 
         # ── 1. 기본정보 ──
         st.markdown("###### 1. 평가 대상 화학물질 기본정보")
         c1, c2, c3 = st.columns([1.6, 1.2, 0.9])
-        rk_name = c1.text_input("제품명 〔MSDS 1항〕", src.get("name", ""),
-                                key=_k("name"))
-        rk_mf = c2.text_input("제조사 〔MSDS 1항〕", src.get("manufacturer", ""),
-                              key=_k("mf"))
-        rk_rev = c3.text_input("MSDS 최신개정일자", src.get("revision", ""),
-                               key=_k("rev"), placeholder="YYYY-MM-DD")
+        rk_name = _rtext(c1, "제품명 〔MSDS 1항〕", src.get("name", ""),
+                         key=_k("name"))
+        rk_mf = _rtext(c2, "제조사 〔MSDS 1항〕", src.get("manufacturer", ""),
+                       key=_k("mf"))
+        rk_rev = _rtext(c3, "MSDS 최신개정일자", src.get("revision", ""),
+                        key=_k("rev"), placeholder="YYYY-MM-DD")
         comp_rows = st.data_editor(
             [{"성분명": c.get("name", ""), "CAS 번호": c.get("cas", ""),
               "함유량": c.get("content", "")}
@@ -657,11 +680,11 @@ if menu == M_RISK:
                     if (r.get("성분명") or r.get("CAS 번호") or
                         r.get("함유량") or "").strip()]
         c1, c2, c3 = st.columns(3)
-        rk_dept = c1.text_input("취급부서 / 공정", key=_k("dept"))
-        rk_store = c2.text_input("저장·보관(예정) 장소", key=_k("store"))
-        rk_purpose = c3.text_input("도입 배경 or 목적", key=_k("purpose"))
-        rk_hcodes = st.text_input(
-            "★ H-Code (유해위험문구) 〔MSDS 2항 — 자동 인식, 수정 가능〕",
+        rk_dept = _rtext(c1, "취급부서 / 공정", key=_k("dept"))
+        rk_store = _rtext(c2, "저장·보관(예정) 장소", key=_k("store"))
+        rk_purpose = _rtext(c3, "도입 배경 or 목적", key=_k("purpose"))
+        rk_hcodes = _rtext(
+            st, "★ H-Code (유해위험문구) 〔MSDS 2항 — 자동 인식, 수정 가능〕",
             src.get("hcodes", ""), key=_k("hcodes"),
             help="쉼표/공백으로 구분. H314·H340·H350·H360은 구분까지 표기 "
                  "(예: H350 Cat1A). 자동 인식 시 구분 1만 있으면 보수적으로 "
@@ -692,17 +715,18 @@ if menu == M_RISK:
                         rk_vals[key] = st.selectbox(full, opts, index=idx,
                                                     key=_k(key))
                     else:
-                        rk_vals[key] = st.text_input(
-                            full, auto, key=_k(key), placeholder="없음",
+                        rk_vals[key] = _rtext(
+                            st, full, auto, key=_k(key), placeholder="없음",
                             help=f"MSDS {sec} — 숫자만 입력, 없으면 비워두세요"
                                  + (" (자동 인식됨)" if auto else ""))
 
         refs = RL.ref_scores(rk_vals)
 
         # ── 3. 분야별 평가 (②③④) ──
-        st.markdown("###### 3. 분야별 위험성평가 — 유해성 점수는 [참고값]으로 "
-                    "미리 채워지며 조정할 수 있습니다")
-        if st.button("🔄 유해성 점수를 현재 [참고값]으로 재설정",
+        st.markdown("###### 3. 분야별 위험성평가 — **[참고값]은 자동 계산**되며 "
+                    "유해성 점수는 기본 **(선택)** 입니다. 참고값을 확인한 뒤 "
+                    "작성자가 항목별 위험성을 직접 선택해 주세요")
+        if st.button("🔄 유해성 점수를 현재 [참고값]으로 일괄 채우기",
                      key=_k("score_reset_btn")):
             st.session_state.risk_score_reset = \
                 st.session_state.get("risk_score_reset", 0) + 1
@@ -722,6 +746,7 @@ if menu == M_RISK:
             sel = cc[i].selectbox(plabel, range(len(disp)),
                                   format_func=lambda x, d=disp: d[x],
                                   key=_k(f"pc_{i}"))
+            _rmark(_k(f"pc_{i}"), None if sel == 0 else sel)
             common_poss.append(sel - 1 if sel > 0 else None)
 
         sheets_payload = {}
@@ -733,16 +758,18 @@ if menu == M_RISK:
                     r = refs[skey][i]
                     a, b, c, dcol = st.columns([2.4, 0.7, 0.8, 1.6])
                     a.markdown(f"**{i + 1}. [{grp}]** {item}")
-                    b.markdown(f"참고값: **{r if r else '—'}**")
-                    sc = c.selectbox("유해성 점수", [1, 2, 3, 4, 5],
-                                     index=(r or 1) - 1,
+                    b.markdown(f"참고값(자동): **{r if r else '—'}**")
+                    # 기본 (선택) — 참고값을 확인하고 작성자가 직접 선택
+                    sc = c.selectbox("유해성 점수", ["(선택)", 1, 2, 3, 4, 5],
+                                     index=(r or 1) if rn else 0,
                                      key=_k(f"{skey}s{rn}_{i}"),
                                      label_visibility="collapsed")
+                    _rmark(_k(f"{skey}s{rn}_{i}"), sc)
                     note = dcol.text_input(
                         "비고", key=_k(f"{skey}note_{i}"),
                         placeholder="참고값과 다르게 평가한 사유",
                         label_visibility="collapsed")
-                    scores.append(sc)
+                    scores.append(None if sc == "(선택)" else sc)
                     notes.append(note.strip())
                 st.markdown("**가능성 산정** — ① 취급 횟수·② 1회 취급량은 "
                             "위의 공통 입력이 자동 반영됩니다")
@@ -750,9 +777,11 @@ if menu == M_RISK:
                 disp = ["(선택)"] + [
                     f"{j + 1}점 — {o}".replace("\n", " ")
                     for j, o in enumerate(popts[2])]
-                sel = st.selectbox(meta["poss_labels"][2], range(len(disp)),
+                sel = st.selectbox(meta["poss_labels"][2],
+                                   range(len(disp)),
                                    format_func=lambda x, d=disp: d[x],
                                    key=_k(f"{skey}p_2"))
+                _rmark(_k(f"{skey}p_2"), None if sel == 0 else sel)
                 poss = [common_poss[0], common_poss[1],
                         sel - 1 if sel > 0 else None]
 
@@ -800,6 +829,11 @@ if menu == M_RISK:
                                f"{sres['mit']['new_score']:.2f}점")
                 m5.metric("최종 위험도", f"{sres['final_risk']} "
                                         f"({sres['final_level']})")
+                if sres["score_missing"]:
+                    st.warning(f"유해성 점수 미선택 {sres['score_missing']}건 "
+                               "— [참고값(자동)]을 확인하고 항목별 점수를 직접 "
+                               "선택해 주세요 (미선택 항목은 0점으로 계산되어 "
+                               "위험도가 낮게 나옵니다).")
                 if sres["poss_missing"]:
                     st.warning("가능성 평가 항목(공통 2개 + 환경 1개)을 모두 "
                                "선택해 주세요.")
@@ -814,7 +848,7 @@ if menu == M_RISK:
                 # 고위험 항목 추천 저감대책
                 recs = []
                 for i, (grp, item) in enumerate(meta["items"]):
-                    if sh["scores"][i] >= 4:
+                    if (sh["scores"][i] or 0) >= 4:
                         recs.append((f"유해성 {i + 1}. {item}",
                                      sh["scores"][i], meta["rec"][i]))
                 for j, pl in enumerate(meta["poss_labels"]):
@@ -848,14 +882,33 @@ if menu == M_RISK:
          else st.success)(verdict)
         st.caption(RL.OVERALL_CRITERIA)
         c1, c2, c3, c4 = st.columns(4)
-        ev_type = c1.text_input("평가유형", key=_k("evtype"),
-                                placeholder="예: 신규 도입")
+        ev_type = _rtext(c1, "평가유형", key=_k("evtype"),
+                         placeholder="예: 신규 도입")
         ev_date = c2.date_input("평가일자", value=None, key=_k("evdate"),
                                 format="YYYY-MM-DD")
-        ev_dept = c3.text_input("평가부서", key=_k("evdept"))
-        ev_by = c4.text_input("평가자", key=_k("evby"))
+        _rmark(_k("evdate"), ev_date)
+        ev_dept = _rtext(c3, "평가부서", key=_k("evdept"))
+        ev_by = _rtext(c4, "평가자", key=_k("evby"))
         opinion = st.text_area("[기안] 평가자 의견", key=_k("opinion"),
                                height=80)
+        _rmark(_k("opinion"), opinion.strip())
+
+        # 빈 항목 빨간 칸 표시 — 위젯 key의 st-key-* 클래스로 지목
+        if _red_empty:
+            _sels = ",\n".join(
+                f'.st-key-{k} :is('
+                'div[data-testid="stTextInputRootElement"],'
+                'div[data-testid="stTextAreaRootElement"],'
+                '[class*="react-aria-ComboBox"]>div,'
+                'div[data-baseweb="input"])'
+                for k in _red_empty)
+            st.markdown("<style>" + _sels +
+                        "{background:#fff1f1 !important;"
+                        "border:1px solid #e05555 !important;}\n" +
+                        ",\n".join(f".st-key-{k} input, .st-key-{k} textarea"
+                                    for k in _red_empty) +
+                        "{background:transparent !important;}</style>",
+                        unsafe_allow_html=True)
 
         payload = {
             "basic": {"name": rk_name.strip(), "manufacturer": rk_mf.strip(),

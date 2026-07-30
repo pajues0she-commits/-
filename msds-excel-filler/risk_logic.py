@@ -541,7 +541,9 @@ def evaluate(vals: dict, sheets: dict) -> dict:
     finals, fatal_total = [], 0
     for key, meta in SHEETS.items():
         sh = sheets.get(key, {})
-        scores = sh.get("scores") or [r or 1 for r in refs[key]]
+        raw = sh.get("scores") or [r or 1 for r in refs[key]]
+        # 미선택(None)은 빈칸 → 양식 수식(SUM/MAX)과 동일하게 0으로 계산
+        scores = [int(s) if s else 0 for s in raw]
         hz = hazard_summary(scores)
         poss_idx = sh.get("poss") or [None, None, None]
         pscore = sum((i + 1) for i in poss_idx if i is not None)
@@ -558,6 +560,7 @@ def evaluate(vals: dict, sheets: dict) -> dict:
             "final_level": final_level(final_risk),
             "final_allow": final_risk <= 8,
             "poss_missing": any(i is None for i in poss_idx),
+            "score_missing": sum(1 for s in scores if not s),
         }
     out["verdict"] = overall_verdict(finals, fatal_total)
     out["fatal_total"] = fatal_total
@@ -666,7 +669,8 @@ def fill_template(template_bytes: bytes, payload: dict) -> bytes:
         sh = sheets.get(key, {})
         x = zin.read("xl/worksheets/" + fname).decode("utf-8")
         for i, s in enumerate(sh.get("scores") or []):
-            x = _set_cell(x, "F%d" % (8 + i), int(s))
+            if s:                                 # 미선택은 빈칸 유지
+                x = _set_cell(x, "F%d" % (8 + i), int(s))
         for i, note in enumerate(sh.get("notes") or []):
             if note:
                 x = _set_cell(x, "M%d" % (8 + i), note, numeric=False)
