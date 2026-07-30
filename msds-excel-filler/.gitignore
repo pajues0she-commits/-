@@ -2,3 +2,5 @@ __pycache__/
 *.pyc
 .streamlit/
 review_db.json
+dist/
+launcher/app.html
