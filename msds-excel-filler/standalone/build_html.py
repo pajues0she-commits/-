@@ -20,6 +20,7 @@ from chem_db import CHEM_DB  # noqa: E402
 from ghs_data import H_STATEMENTS  # noqa: E402
 from review_logic import CRITERIA_REGISTER, CRITERIA_REVIEW  # noqa: E402
 import ko_spacing  # noqa: E402
+import risk_logic  # noqa: E402
 
 VENDOR = os.path.join(HERE, "vendor")
 OUT = os.path.join(HERE, "MSDS_관리요령_작성기.html")
@@ -91,6 +92,26 @@ def main():
     html = html.replace("__REVIEW_CRITERIA_JSON__", json.dumps(
         {"review": CRITERIA_REVIEW, "register": CRITERIA_REGISTER},
         ensure_ascii=False))
+    # 화학물질 위험성평가 — 기준 데이터·엑셀 양식 원본 (risk_logic.py)
+    html = html.replace("__RISK_DATA_JSON__", json.dumps({
+        "db": risk_logic.RISK_DB,
+        "possFreq": risk_logic.POSS_FREQ,
+        "possAmount": risk_logic.POSS_AMOUNT,
+        "env": risk_logic._ENV,
+        "waterReact": risk_logic.WATER_REACT_OPTIONS,
+        "decomp": risk_logic.DECOMP_OPTIONS,
+        "iarc": risk_logic.IARC_OPTIONS,
+        "pbt": risk_logic.PBT_OPTIONS,
+        "fields": risk_logic.RISK_FIELDS,
+        "groups": risk_logic.RISK_GROUPS,
+        "autoCodes": risk_logic.AUTO_CODES,
+        "autoLabels": risk_logic.AUTO_LABELS,
+        "sheets": risk_logic.SHEETS,
+        "tiers": risk_logic.TIERS,
+    }, ensure_ascii=False))
+    with open(os.path.join(ROOT, "assets", "risk_template.xlsx"), "rb") as f:
+        html = html.replace("__RISK_TPL_B64__",
+                            base64.b64encode(f.read()).decode())
     html = html.replace("__KO_DICT_JSON__", json.dumps({
         "nouns": ko_spacing.NOUNS,
         "funcs": ko_spacing.FUNCS,

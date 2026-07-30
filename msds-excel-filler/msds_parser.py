@@ -140,6 +140,8 @@ class MsdsData:
     components: list = field(default_factory=list)       # 구성성분(3항)
     #   components: [{"name": 성분명, "cas": CAS번호, "content": 함유량}]
     revision_date: str = ""                              # 최종 개정일자(16항 등)
+    hcodes: str = ""                                     # 2항 H-code 목록(구분 포함)
+    risk: dict = field(default_factory=dict)             # 위험성평가용 수치(8·9·11·12항)
     warnings: list = field(default_factory=list)         # 파싱 경고 메시지
 
 
@@ -598,6 +600,170 @@ def extract_revision_date(text: str) -> str:
     return best
 
 
+# ── 위험성평가용 데이터 추출 (2·8·9·11·12항) ────────────────────────────
+_HCAT_CLASSES = [                       # 구분(Cat) 표기가 필요한 H-code
+    ("H314", r"피부\s*부식성"),
+    ("H340", r"(?:생식\s*세포\s*)?변이원성"),
+    ("H350", r"발암성"),
+    ("H360", r"생식\s*독성"),
+]
+_NO_DATA_RX = re.compile(
+    r"자료\s*없음|해당\s*없음|없\s*음|측정\s*불가|않음|안\s*됨|비인화성|무기물")
+_NUM_RX = re.compile(r"-?\d+(?:[.,]\d+)?")
+
+
+def extract_hcodes(sec2: str) -> str:
+    """2항의 H-code 목록 — H314/H340/H350/H360은 구분(Cat)까지 붙인다.
+
+    위험성평가 양식(①기초Data C17)에 그대로 넣을 수 있는 형식.
+    구분 표기("발암성 : 구분1A" 등)를 찾으면 "H350 Cat1A"처럼 보강하고,
+    구분 1만 있고 A/B가 없으면 보수적으로 1A로 본다(수정 가능)."""
+    codes = sorted(set(re.findall(r"H\d{3}", sec2 or "")))
+    out = []
+    for c in codes:
+        cls = next((rx for code, rx in _HCAT_CLASSES if code == c), None)
+        if cls:
+            m = re.search(cls + r"[^\n]{0,60}?구분\s*[:：]?\s*1\s*([AB])?",
+                          sec2)
+            if m:
+                out.append(f"{c} Cat1{m.group(1) or ('' if c == 'H314' else 'A')}")
+                continue
+        out.append(c)
+    return ", ".join(out)
+
+
+def _risk_num(line: str, after: int = 0) -> str:
+    """라벨 뒤 텍스트에서 첫 숫자(부호 포함)를 찾는다. 없거나 '자료없음'류면 ''."""
+    tail = line[after:]
+    if _NO_DATA_RX.search(tail):
+        return ""
+    m = _NUM_RX.search(tail)
+    return m.group(0).replace(",", "") if m else ""
+
+
+def _line_field(sec: str, label_rx: str) -> str:
+    """9항처럼 '라벨 : 값' 한 줄 형식에서 값(첫 숫자)을 찾는다."""
+    for m in re.finditer(label_rx, sec):
+        line = sec[m.end():].split("\n", 1)[0]
+        v = _risk_num(line)
+        if v:
+            return v
+        if _NO_DATA_RX.search(line):
+            return ""
+    return ""
+
+
+_VP_UNITS = [                            # 증기압 단위 → mmHg 환산 계수
+    (r"㎜\s*Hg|mm\s*Hg|torr", 1.0),
+    (r"㎪|kPa", 7.50062),
+    (r"hPa|㍱", 0.750062),
+    (r"㎩|(?<![khKH])Pa(?![a-z])", 1 / 133.322),
+    (r"atm", 760.0),
+    (r"bar", 750.062),
+]
+
+
+def _vapor_mmhg(sec9: str) -> str:
+    for m in re.finditer(r"증\s*기\s*압", sec9):
+        line = sec9[m.end():].split("\n", 1)[0]
+        nm = _NUM_RX.search(line)
+        if not nm:
+            continue
+        v = float(nm.group(0).replace(",", ""))
+        unit_part = line[nm.end():nm.end() + 12]
+        factor = 1.0
+        for rx, f in _VP_UNITS:
+            if re.search(rx, unit_part):
+                factor = f
+                break
+        v = round(v * factor, 3)
+        return f"{v:g}"
+    return ""
+
+
+def _tox_line(sec: str, subject_rx: str, marker_rx: str, unit_rx: str,
+              exclude_rx: str = "") -> str:
+    """11·12항 — 주제어와 LD50/LC50 등이 같은 줄에 있는 값을 찾는다."""
+    for line in (sec or "").split("\n"):
+        if not re.search(subject_rx, line):
+            continue
+        if exclude_rx and re.search(exclude_rx, line):
+            continue
+        m = re.search(marker_rx + r"\D{0,25}?(-?\d[\d,]*(?:\.\d+)?)\s*" +
+                      unit_rx, line)
+        if m:
+            return m.group(1).replace(",", "")
+    return ""
+
+
+def extract_risk_data(sections: dict) -> dict:
+    """위험성평가(①기초Data)용 수치 데이터를 MSDS 8·9·11·12항에서 추출한다.
+
+    찾지 못한 항목은 빈 문자열 — 작성자가 직접 입력한다."""
+    out = {}
+    sec8 = sections.get(8, "")
+    sec9 = sections.get(9, "")
+    sec11 = sections.get(11, "")
+    sec12 = sections.get(12, "")
+
+    # 8항 — 노출기준 TWA (STEL 앞부분만, 첫 TWA 줄)
+    for line in sec8.split("\n"):
+        if not re.search(r"TWA", line, re.I):
+            continue
+        part = re.split(r"STEL|C\s*[:：]", line, flags=re.I)[0]
+        ppm = re.search(r"(\d[\d,]*(?:\.\d+)?)\s*ppm", part, re.I)
+        mg = re.search(r"(\d[\d,]*(?:\.\d+)?)\s*(?:㎎|mg)\s*/\s*(?:㎥|m³|m3)",
+                       part, re.I)
+        if ppm or mg:
+            out["twa_ppm"] = ppm.group(1).replace(",", "") if ppm else ""
+            out["twa_mg"] = mg.group(1).replace(",", "") if mg else ""
+            break
+
+    # 9항 — 물리화학적 특성 (라벨 : 값)
+    out["flash"] = _line_field(sec9, r"인\s*화\s*점")
+    out["boiling"] = _line_field(sec9, r"끓는\s*점")
+    out["ait"] = _line_field(sec9, r"자연\s*발화\s*온도|자연발화점")
+    out["vapor"] = _vapor_mmhg(sec9)
+    out["logkow"] = _line_field(
+        sec9, r"옥탄올[^\n]{0,10}물\s*분배\s*계수|분배\s*계수|log\s*Kow")
+    out["decomp_temp"] = _line_field(sec9, r"분해\s*온도")
+
+    # 11항 — 독성 데이터
+    out["ld50_oral"] = _tox_line(sec11, r"경구", r"LD\s*50",
+                                 r"(?:㎎|mg)\s*/\s*(?:㎏|kg)")
+    out["ld50_dermal"] = _tox_line(sec11, r"경피", r"LD\s*50",
+                                   r"(?:㎎|mg)\s*/\s*(?:㎏|kg)")
+    out["lc50_vapor"] = _tox_line(sec11, r"흡입|증기", r"LC\s*50",
+                                  r"(?:㎎|mg)\s*/\s*(?:ℓ|L)",
+                                  exclude_rx=r"분진|미스트")
+    out["lc50_dust"] = _tox_line(sec11, r"분진|미스트", r"LC\s*50",
+                                 r"(?:㎎|mg)\s*/\s*(?:ℓ|L)")
+    m = re.search(r"IARC[^\n]{0,40}?(?:Group|그룹)\s*(1|2A|2B|3)\b",
+                  sec11, re.I) or \
+        re.search(r"IARC[^\n]{0,40}?(1|2A|2B|3)\s*군", sec11)
+    out["iarc"] = f"IARC Group{m.group(1).upper()}" if m else ""
+
+    # 12항 — 환경 데이터
+    out["fish_lc50"] = _tox_line(sec12, r"어류", r"[LE]C\s*50", r"(?:㎎|mg)")
+    out["daphnia_ec50"] = _tox_line(sec12, r"물벼룩|갑각류", r"[LE]C\s*50",
+                                    r"(?:㎎|mg)")
+    out["bcf"] = _tox_line(sec12, r"BCF|생물\s*농축\s*계수", r"(?:BCF|계수)",
+                           r"") or _line_field(sec12, r"농축성\s*[:：]")
+    out["biodeg"] = _tox_line(sec12, r"생분해", r"생분해\S*", r"") \
+        if re.search(r"생분해[^\n]*\d[\d,.]*\s*%", sec12) else ""
+    if out["biodeg"]:
+        m = re.search(r"생분해[^\n]*?(\d[\d,]*(?:\.\d+)?)\s*%", sec12)
+        out["biodeg"] = m.group(1).replace(",", "") if m else ""
+    out["koc"] = _tox_line(sec12, r"Koc", r"Koc", r"") or \
+        _line_field(sec12, r"토양\s*이동성")
+    out["dt50"] = _tox_line(sec12, r"DT\s*50|반감기", r"(?:DT\s*50|반감기)",
+                            r"")
+    out["pbt"] = ""
+    if re.search(r"vPvB[^\n]{0,20}(해당(?!\s*없)|물질임)", sec12):
+        out["pbt"] = "vPvB 해당"
+    return {k: v for k, v in out.items()}
+
+
 def _content_mid(content):
     """함유량 문자열의 대푯값(단일값 또는 범위 중간값). 없으면 None."""
     nums = [float(x.replace(",", "."))
@@ -848,6 +1014,9 @@ def parse_msds(pdf_source, source_name: str = "") -> MsdsData:
 
     # 2) 유해성·위험성 ───────────────────────────────────────
     sec2 = sections.get(2, whole)
+    # 위험성평가 메뉴용 — H-code(구분 포함)·8/9/11/12항 수치 데이터
+    data.hcodes = extract_hcodes(sec2)
+    data.risk = extract_risk_data(sections)
     h_codes = sorted(set(re.findall(r"H\d{3}", sec2)))
 
     hz_block = grab_block(

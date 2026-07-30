@@ -18,6 +18,7 @@ from chem_db import CHEM_DB, search_chem
 from sign_writer import build_sign_svg
 from review_logic import (CRITERIA_REVIEW, CRITERIA_REGISTER, assess,
                           components_text)
+import risk_logic as RL
 
 st.set_page_config(page_title="MSDS 자동 작성 도구", page_icon="🧪",
                    layout="wide")
@@ -37,9 +38,9 @@ def _pic_label(code: str) -> str:
     return f"{code} {PICTOGRAM_NAMES.get(code, '')}"
 
 
-tab_manage, tab_review, tab_sign = st.tabs(
+tab_manage, tab_review, tab_risk, tab_sign = st.tabs(
     ["📋 화학물질 작업공정별 관리요령", "🔍 화학물질 도입검토",
-     "🚧 유해화학물질 규격표지"])
+     "🧪 화학물질 위험성평가", "🚧 유해화학물질 규격표지"])
 
 with tab_manage:
     uploaded = st.file_uploader("MSDS PDF 업로드 (여러 파일 가능)", type=["pdf"],
@@ -319,6 +320,22 @@ with tab_review:
                 f"**{res['review_label']}** — {res['review_reason']}")
             (st.info if res["register"] else st.success)(
                 f"**{res['register_label']}** — {res['register_reason']}")
+            if res["review"]:
+                # 도입검토 대상 → 위험성평가 메뉴로 이동
+                if st.button("🧪 화학물질 위험성평가 작성 — 이 MSDS로 시작",
+                             key=f"rv_risk_{name}",
+                             help="도입검토 대상 물질은 위험성평가를 진행합니다. "
+                                  "이 MSDS의 인식 결과를 「화학물질 위험성평가」 "
+                                  "메뉴로 가져갑니다."):
+                    st.session_state.risk_nonce = \
+                        st.session_state.get("risk_nonce", 0) + 1
+                    st.session_state.risk_src = {
+                        "name": rv_nm.strip(), "manufacturer": rv_mf.strip(),
+                        "revision": rv_rev.strip(), "components": comps,
+                        "hcodes": data.hcodes, "vals": dict(data.risk),
+                        "source": name}
+                    st.success("가져왔습니다 — 상단의 「🧪 화학물질 위험성평가」 "
+                               "탭에서 이어서 작성하세요.")
 
             prior = res["same_name"] or res["same_comp"]
             if prior:
@@ -443,6 +460,282 @@ with tab_review:
             file_name="화학물질_도입검토.xlsx",
             mime="application/vnd.openxmlformats-officedocument."
                  "spreadsheetml.sheet")
+
+# ── 화학물질 위험성평가 ─────────────────────────────────────────────────
+_RISK_TPL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              "assets", "risk_template.xlsx")
+
+with tab_risk:
+    st.markdown("도입검토 대상 화학물질의 **위험성평가**(물리화학적 · 환경오염 · "
+                "작업자 안전보건, 유해성×가능성)를 작성합니다. MSDS에서 자동 "
+                "인식한 값(H-Code·물리화학 특성·독성·환경 데이터)이 미리 채워지며, "
+                "자동 인식되지 않은 항목은 직접 입력합니다. 완성된 평가는 "
+                "**위험성평가 엑셀 양식**으로 내려받을 수 있습니다(양식 수식·서식 "
+                "그대로 유지).")
+
+    rk_up = st.file_uploader("MSDS PDF 업로드 (위험성평가 대상 물질)",
+                             type=["pdf"], accept_multiple_files=False,
+                             key="risk_upload",
+                             help="「화학물질 도입검토」에서 판독한 MSDS는 카드의 "
+                                  "「위험성평가 작성」 버튼으로 바로 가져올 수 "
+                                  "있습니다.")
+    if rk_up is not None and \
+            st.session_state.get("risk_up_done") != rk_up.name:
+        with st.spinner(f"{rk_up.name} 분석 중..."):
+            try:
+                d = parse_msds(io.BytesIO(rk_up.getvalue()),
+                               source_name=rk_up.name)
+                st.session_state.risk_nonce = \
+                    st.session_state.get("risk_nonce", 0) + 1
+                st.session_state.risk_src = {
+                    "name": d.product_name, "manufacturer": d.manufacturer,
+                    "revision": d.revision_date, "components": d.components,
+                    "hcodes": d.hcodes, "vals": dict(d.risk),
+                    "source": rk_up.name}
+                st.session_state.risk_up_done = rk_up.name
+            except Exception as e:
+                st.error(f"PDF를 읽지 못했습니다: {e}")
+
+    src = st.session_state.get("risk_src")
+    if not src:
+        st.info("MSDS를 업로드하거나, 「화학물질 도입검토」 메뉴에서 도입검토 "
+                "대상으로 판정된 카드의 「🧪 화학물질 위험성평가 작성」 버튼으로 "
+                "시작하세요.")
+    else:
+        n = st.session_state.get("risk_nonce", 0)
+
+        def _k(name):
+            return f"rk{n}_{name}"
+
+        st.markdown(f"##### 🧪 평가 대상: {src.get('name') or '(미입력)'} "
+                    f"〔{src.get('source', '')}〕")
+
+        # ── 1. 기본정보 ──
+        st.markdown("###### 1. 평가 대상 화학물질 기본정보")
+        c1, c2, c3 = st.columns([1.6, 1.2, 0.9])
+        rk_name = c1.text_input("제품명 〔MSDS 1항〕", src.get("name", ""),
+                                key=_k("name"))
+        rk_mf = c2.text_input("제조사 〔MSDS 1항〕", src.get("manufacturer", ""),
+                              key=_k("mf"))
+        rk_rev = c3.text_input("MSDS 최신개정일자", src.get("revision", ""),
+                               key=_k("rev"), placeholder="YYYY-MM-DD")
+        comp_rows = st.data_editor(
+            [{"성분명": c.get("name", ""), "CAS 번호": c.get("cas", ""),
+              "함유량": c.get("content", "")}
+             for c in src.get("components") or []] or
+            [{"성분명": "", "CAS 번호": "", "함유량": ""}],
+            num_rows="dynamic", key=_k("comps"), use_container_width=True)
+        rk_comps = [{"name": (r.get("성분명") or "").strip(),
+                     "cas": (r.get("CAS 번호") or "").strip(),
+                     "content": (r.get("함유량") or "").strip()}
+                    for r in comp_rows
+                    if (r.get("성분명") or r.get("CAS 번호") or
+                        r.get("함유량") or "").strip()]
+        c1, c2, c3 = st.columns(3)
+        rk_dept = c1.text_input("취급부서 / 공정", key=_k("dept"))
+        rk_store = c2.text_input("저장·보관(예정) 장소", key=_k("store"))
+        rk_purpose = c3.text_input("도입 배경 or 목적", key=_k("purpose"))
+        rk_hcodes = st.text_input(
+            "★ H-Code (유해위험문구) 〔MSDS 2항 — 자동 인식, 수정 가능〕",
+            src.get("hcodes", ""), key=_k("hcodes"),
+            help="쉼표/공백으로 구분. H314·H340·H350·H360은 구분까지 표기 "
+                 "(예: H350 Cat1A). 자동 인식 시 구분 1만 있으면 보수적으로 "
+                 "1A로 채웁니다.")
+
+        # ── 2. MSDS 세션별 데이터 ──
+        st.markdown("###### 2. MSDS 세션별 데이터 〔8·9·11·12항 자동 인식, "
+                    "나머지 직접 입력〕")
+        auto_vals = src.get("vals") or {}
+        rk_vals = {"hcodes": rk_hcodes}
+        with st.expander("H-Code 자동 판정 결과 (①기초Data D23~D40)"):
+            ac = RL.auto_codes(rk_hcodes)
+            st.dataframe([{"항목": RL.AUTO_LABELS[k], "판정": v}
+                          for k, v in ac.items() if v != "없음"] or
+                         [{"항목": "-", "판정": "해당 없음"}],
+                         hide_index=True, use_container_width=True)
+        for grp_label, keys in RL.RISK_GROUPS:
+            st.markdown(f"**▶ {grp_label}**")
+            cols = st.columns(4)
+            for i, key in enumerate(keys):
+                _, cell, label, kind, unit, sec = RL.RISK_FIELD_BY_KEY[key]
+                auto = str(auto_vals.get(key, "") or "")
+                full = f"{label}" + (f" ({unit})" if unit else "")
+                with cols[i % 4]:
+                    if kind == "select":
+                        opts = RL.SELECT_OPTIONS[key]
+                        idx = opts.index(auto) if auto in opts else 0
+                        rk_vals[key] = st.selectbox(full, opts, index=idx,
+                                                    key=_k(key))
+                    else:
+                        rk_vals[key] = st.text_input(
+                            full, auto, key=_k(key), placeholder="없음",
+                            help=f"MSDS {sec} — 숫자만 입력, 없으면 비워두세요"
+                                 + (" (자동 인식됨)" if auto else ""))
+
+        refs = RL.ref_scores(rk_vals)
+
+        # ── 3. 분야별 평가 (②③④) ──
+        st.markdown("###### 3. 분야별 위험성평가 — 유해성 점수는 [참고값]으로 "
+                    "미리 채워지며 조정할 수 있습니다")
+        if st.button("🔄 유해성 점수를 현재 [참고값]으로 재설정",
+                     key=_k("score_reset_btn")):
+            st.session_state.risk_score_reset = \
+                st.session_state.get("risk_score_reset", 0) + 1
+        rn = st.session_state.get("risk_score_reset", 0)
+        sheets_payload = {}
+        summary_rows = []
+        for skey, meta in RL.SHEETS.items():
+            with st.expander(f"{meta['title']}", expanded=False):
+                scores, notes = [], []
+                for i, (grp, item) in enumerate(meta["items"]):
+                    r = refs[skey][i]
+                    a, b, c, dcol = st.columns([2.4, 0.7, 0.8, 1.6])
+                    a.markdown(f"**{i + 1}. [{grp}]** {item}")
+                    b.markdown(f"참고값: **{r if r else '—'}**")
+                    sc = c.selectbox("유해성 점수", [1, 2, 3, 4, 5],
+                                     index=(r or 1) - 1,
+                                     key=_k(f"{skey}s{rn}_{i}"),
+                                     label_visibility="collapsed")
+                    note = dcol.text_input(
+                        "비고", key=_k(f"{skey}note_{i}"),
+                        placeholder="참고값과 다르게 평가한 사유",
+                        label_visibility="collapsed")
+                    scores.append(sc)
+                    notes.append(note.strip())
+                st.markdown("**가능성 산정** — 취급 횟수 · 1회 취급량 · "
+                            "공정 환경")
+                popts = RL.poss_options(skey)
+                pcols = st.columns(3)
+                poss = []
+                for i, label in enumerate(meta["poss_labels"]):
+                    disp = ["(선택)"] + [
+                        f"{j + 1}점 — {o}".replace("\n", " ")
+                        for j, o in enumerate(popts[i])]
+                    sel = pcols[i].selectbox(label, range(len(disp)),
+                                             format_func=lambda x, d=disp: d[x],
+                                             key=_k(f"{skey}p_{i}"))
+                    poss.append(sel - 1 if sel > 0 else None)
+
+                # 저감대책 선택 (⑥ 저감대책DB)
+                st.markdown("**위험성 저감대책** — 허용 불가(위험도 9 이상)면 "
+                            "필수, 각 위계에서 최대 3개")
+                mit = {}
+                mcols = st.columns(4 if meta["has_ppe"] else 3)
+                ti = 0
+                for tier, tlabel, tkor in RL.TIERS:
+                    if tier == "ppe" and not meta["has_ppe"]:
+                        continue
+                    opts = [d["no"] for d in RL.RISK_DB
+                            if d["field"] == meta["field"] and
+                            d["tier"] == tkor]
+                    mit[tier] = mcols[ti].multiselect(
+                        tlabel, opts, key=_k(f"{skey}m_{tier}"),
+                        max_selections=3,
+                        format_func=lambda no: (
+                            f"{no} ({RL.RISK_DB_BY_NO[no]['reduce']}) "
+                            f"{RL.RISK_DB_BY_NO[no]['text']}"))
+                    ti += 1
+
+                sheets_payload[skey] = {"scores": scores, "notes": notes,
+                                        "poss": poss, "mit": mit}
+
+        result = RL.evaluate(rk_vals, sheets_payload)
+
+        for skey, meta in RL.SHEETS.items():
+            sres = result["sheets"][skey]
+            sh = sheets_payload[skey]
+            with st.expander(f"📊 {meta['title']} — 결과: 위험도 "
+                             f"{sres['final_risk']} ({sres['final_level']})",
+                             expanded=True):
+                m1, m2, m3, m4, m5 = st.columns(5)
+                m1.metric("유해성 등급", sres["hazard"]["grade"],
+                          help=f"합계 {sres['hazard']['total']} + 가중치 "
+                               f"{sres['hazard']['weight']} = "
+                               f"{sres['hazard']['final']}점")
+                m2.metric("가능성 등급 (전)", sres["poss_grade"],
+                          help=f"가능성 점수 {sres['poss_score']}점")
+                m3.metric("위험도 (전)", f"{sres['risk']} ({sres['level']})")
+                m4.metric("가능성 등급 (저감 후)", sres["mit"]["new_grade"],
+                          help=f"저감 {sres['mit']['reduction']:+.2f}점 → "
+                               f"{sres['mit']['new_score']:.2f}점")
+                m5.metric("최종 위험도", f"{sres['final_risk']} "
+                                        f"({sres['final_level']})")
+                if sres["poss_missing"]:
+                    st.warning("가능성 평가 3개 항목을 모두 선택해 주세요.")
+                (st.success if sres["final_allow"] else st.error)(
+                    "✅ 허용 가능 (위험도 8 이하)" if sres["final_allow"]
+                    else "🟠 허용 불가 — 저감대책을 적용해 위험도를 8 이하로 "
+                         "낮춘 후 도입 가능")
+                # 고위험 항목 추천 저감대책
+                recs = []
+                for i, (grp, item) in enumerate(meta["items"]):
+                    if sh["scores"][i] >= 4:
+                        recs.append((f"유해성 {i + 1}. {item}",
+                                     sh["scores"][i], meta["rec"][i]))
+                for j, pl in enumerate(meta["poss_labels"]):
+                    pv = sh["poss"][j]
+                    if pv is not None and pv + 1 >= 4:
+                        recs.append((f"가능성 {pl}", pv + 1,
+                                     meta["rec"][8 + j]))
+                if recs:
+                    st.markdown("**[참고] 고위험 항목(4점↑) 추천 저감대책**")
+                    st.dataframe(
+                        [{"항목": nm, "점수": sc,
+                          "공학": rec[0] or "—", "운영": rec[1] or "—",
+                          "행정": rec[2] or "—", "보호구": rec[3] or "—"}
+                         for nm, sc, rec in recs],
+                        hide_index=True, use_container_width=True)
+            summary_rows.append({
+                "분야": meta["title"][2:], "유해성 등급": sres["hazard"]["grade"],
+                "가능성 등급(전)": sres["poss_grade"],
+                "가능성 등급(후)": sres["mit"]["new_grade"],
+                "위험수준/위험도": f"{sres['final_level']} / "
+                                   f"{sres['final_risk']}",
+                "치명 항목 수": str(sres["hazard"]["fatal"] or "")})
+
+        # ── 4. 종합결과 ──
+        st.divider()
+        st.markdown("###### 4. 종합결과")
+        st.dataframe(summary_rows, hide_index=True, use_container_width=True)
+        verdict = result["verdict"]
+        (st.error if "허용 불가" in verdict or "고위험" in verdict
+         else st.warning if "중위험" in verdict else st.success)(verdict)
+        st.caption("적용 기준 — 1-3점: 도입 가능 | 4-8점: 도입 가능(추가 "
+                   "저감대책 검토 권장) | 9-16점: 허용 불가 | 17-25점: 허용 "
+                   "불가. 치명항목(유해성 5점)이 1개 이상이면 위험도와 무관하게 "
+                   "SHE부서 검토자 반영하여 결재를 진행합니다.")
+        c1, c2, c3, c4 = st.columns(4)
+        ev_type = c1.text_input("평가유형", key=_k("evtype"),
+                                placeholder="예: 신규 도입")
+        ev_date = c2.date_input("평가일자", value=None, key=_k("evdate"),
+                                format="YYYY-MM-DD")
+        ev_dept = c3.text_input("평가부서", key=_k("evdept"))
+        ev_by = c4.text_input("평가자", key=_k("evby"))
+        opinion = st.text_area("[기안] 평가자 의견", key=_k("opinion"),
+                               height=80)
+
+        payload = {
+            "basic": {"name": rk_name.strip(), "manufacturer": rk_mf.strip(),
+                      "revision": rk_rev.strip(), "components": rk_comps,
+                      "dept": rk_dept.strip(), "storage": rk_store.strip(),
+                      "purpose": rk_purpose.strip(),
+                      "hcodes": rk_hcodes.strip()},
+            "vals": rk_vals, "sheets": sheets_payload,
+            "meta": {"ev_type": ev_type.strip(),
+                     "ev_date": str(ev_date) if ev_date else "",
+                     "ev_dept": ev_dept.strip(), "ev_by": ev_by.strip(),
+                     "opinion": opinion.strip()}}
+        with open(_RISK_TPL_PATH, "rb") as _tf:
+            _tpl = _tf.read()
+        st.download_button(
+            "⬇️ 위험성평가 엑셀 다운로드 (양식 자동 작성)",
+            RL.fill_template(_tpl, payload),
+            file_name=f"화학물질_위험성평가_{rk_name.strip() or '미입력'}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument."
+                 "spreadsheetml.sheet", type="primary",
+            help="첨부 양식과 동일한 수식·서식의 엑셀 파일에 입력값이 자동 "
+                 "기입됩니다. 엑셀에서 열면 수식이 재계산되어 화면과 동일한 "
+                 "결과가 표시됩니다.")
 
 with tab_sign:
     st.markdown("**화학물질관리법 시행규칙 [별표 2] 유해화학물질의 표시방법**(제12조제2항 관련) "

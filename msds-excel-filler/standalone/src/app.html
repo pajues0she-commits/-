@@ -158,6 +158,31 @@
   .rvconsumer { display: flex; align-items: center; gap: 6px; margin-top: 12px;
                 font-size: 12.5px; color: #345; }
   .rvconsumer input { width: auto; }
+  /* 화학물질 위험성평가 */
+  .rkfs { border: 1px solid #dde5ec; border-radius: 10px; background: #fff;
+          margin-top: 16px; padding: 14px 18px; }
+  .rkfs > h3 { margin: 0 0 10px; font-size: 15px; color: #1a3a5c; }
+  .rkgrid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .rkgrid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .rkrow { display: grid; grid-template-columns: 2.4fr 0.7fr 0.8fr 1.6fr;
+           gap: 8px; align-items: center; padding: 6px 0;
+           border-bottom: 1px dashed #e3e9f0; }
+  .rkrow .rkref { color: #667; font-size: 13px; }
+  .rkres { background: #f4f8fc; border: 1px solid #dde5ec; border-radius: 8px;
+           padding: 10px 14px; margin-top: 12px; display: flex; gap: 18px;
+           flex-wrap: wrap; }
+  .rkres b { font-size: 17px; }
+  .rkres .m { min-width: 110px; }
+  .rkres .m .t { font-size: 12px; color: #667; }
+  .rkok { color: #1d7a35; font-weight: 700; margin-top: 8px; }
+  .rkbad { color: #c0392b; font-weight: 700; margin-top: 8px; }
+  .rkverdict { border-radius: 8px; padding: 12px 16px; margin-top: 12px;
+               font-weight: 700; white-space: pre-line; }
+  .rkverdict.ok { background: #e7f6ec; border: 1px solid #bfe5cc; }
+  .rkverdict.warn { background: #fff7e0; border: 1px solid #f0dfa0; }
+  .rkverdict.bad { background: #fdeceb; border: 1px solid #f2c4c0; }
+  .rkmit select { margin-top: 4px; }
+  .rkauto { color: #1a5f9e; font-size: 11px; margin-left: 4px; }
 </style>
 </head>
 <body>
@@ -166,7 +191,9 @@
   <p>① <b>화학물질 작업공정별 관리요령</b> 메뉴에서 MSDS PDF를 올리면 항목을 자동 추출해
      엑셀 양식을 만들고, ② <b>화학물질 도입검토</b> 메뉴에서는 MSDS에서 물질명·제조사·
      주요성분을 자동 인식해 도입검토·정보등록 대상 여부를 판독하고 누적 관리하며,
-     ③ <b>유해화학물질 규격표지</b> 메뉴에서는 화학물질명만 입력하면
+     ③ <b>화학물질 위험성평가</b> 메뉴에서는 도입검토 대상 물질의 위험성평가
+     (유해성×가능성)를 작성해 평가 양식 엑셀로 내려받고,
+     ④ <b>유해화학물질 규격표지</b> 메뉴에서는 화학물질명만 입력하면
      CAS 번호·국제연합번호·그림문자가 자동 입력된 표지판 시안(화학물질관리법 시행규칙
      별표 2)을 만듭니다.
      모든 처리는 이 브라우저 안에서만 이루어지며 파일이 외부로 전송되지 않습니다.</p>
@@ -175,6 +202,7 @@
   <div class="tabs">
     <button id="tabBtnManage" class="on">📋 화학물질 작업공정별 관리요령</button>
     <button id="tabBtnReview">🔍 화학물질 도입검토</button>
+    <button id="tabBtnRisk">🧪 화학물질 위험성평가</button>
     <button id="tabBtnSign">🚧 유해화학물질 규격표지</button>
   </div>
   <div id="tabManage" class="tabpanel">
@@ -236,6 +264,22 @@
             style="background:#d9534f;">🗑 표시된 등록 모두 삭제</button>
     <button id="rvXlsx" class="rvsave" type="button" hidden>⬇️ 엑셀로 내보내기
       (등록 목록 + 업로드 비교표)</button>
+  </div>
+  <div id="tabRisk" class="tabpanel" hidden>
+    <p class="signnote" style="margin-top:14px;">도입검토 대상 화학물질의
+      <b>위험성평가</b>(물리화학적 · 환경오염 · 작업자 안전보건, 유해성×가능성)를
+      작성합니다. MSDS에서 자동 인식한 값(H-Code · 물리화학 특성 · 독성 · 환경
+      데이터)이 미리 채워지며, 자동 인식되지 않은 항목은 직접 입력합니다. 완성된
+      평가는 <b>위험성평가 엑셀 양식</b>으로 내려받을 수 있습니다(양식 수식·서식
+      그대로 유지 — 엑셀에서 열면 수식이 재계산되어 화면과 동일한 결과가 표시됩니다).</p>
+    <label class="dropzone" id="rkDz" style="margin-top:14px;">
+      📄 여기를 클릭하거나 MSDS PDF 파일을 끌어다 놓으세요 (위험성평가 대상 물질 1개)
+      <input type="file" id="rkFileInput" accept="application/pdf">
+    </label>
+    <p class="hint" id="rkEmpty" style="margin:14px 4px;">MSDS를 업로드하거나,
+      「화학물질 도입검토」 메뉴에서 도입검토 대상으로 판정된 카드의
+      「🧪 화학물질 위험성평가 작성」 버튼으로 시작하세요.</p>
+    <div id="rkBody" hidden></div>
   </div>
   <div id="tabSign" class="tabpanel" hidden>
     <p class="signnote"><b>화학물질관리법 시행규칙 [별표 2] 유해화학물질의 표시방법</b>(제12조제2항 관련)
@@ -847,6 +891,154 @@ function extractRevisionDate(text){
   return best;
 }
 
+/* ── 위험성평가용 데이터 추출 (2·8·9·11·12항 — msds_parser.py 이식) ── */
+const HCAT_CLASSES = [                     // 구분(Cat) 표기가 필요한 H-code
+  ["H314", "피부\\s*부식성"],
+  ["H340", "(?:생식\\s*세포\\s*)?변이원성"],
+  ["H350", "발암성"],
+  ["H360", "생식\\s*독성"],
+];
+const NO_DATA_RX =
+  /자료\s*없음|해당\s*없음|없\s*음|측정\s*불가|않음|안\s*됨|비인화성|무기물/;
+const RNUM_RX = /-?\d+(?:[.,]\d+)?/;
+
+// 2항 H-code 목록 — H314/H340/H350/H360은 구분(Cat)까지 붙인다.
+// 구분 1만 있고 A/B가 없으면 보수적으로 1A로 본다(수정 가능).
+function extractHcodes(sec2){
+  const codes = [...new Set((sec2 || "").match(/H\d{3}/g) || [])].sort();
+  const out = [];
+  for (const c of codes){
+    const cls = HCAT_CLASSES.find(x => x[0] === c);
+    if (cls){
+      const m = new RegExp(cls[1] + "[^\\n]{0,60}?구분\\s*[:：]?\\s*1\\s*([AB])?")
+        .exec(sec2);
+      if (m){
+        out.push(`${c} Cat1${m[1] || (c === "H314" ? "" : "A")}`);
+        continue;
+      }
+    }
+    out.push(c);
+  }
+  return out.join(", ");
+}
+
+function riskNum(tail){
+  if (NO_DATA_RX.test(tail)) return "";
+  const m = RNUM_RX.exec(tail);
+  return m ? m[0].replace(/,/g, "") : "";
+}
+
+// 9항처럼 "라벨 : 값" 한 줄 형식에서 값(첫 숫자)을 찾는다
+function lineField(sec, labelRx){
+  const rx = new RegExp(labelRx, "g");
+  let m;
+  while ((m = rx.exec(sec || ""))){
+    const line = sec.slice(m.index + m[0].length).split("\n", 1)[0];
+    const v = riskNum(line);
+    if (v) return v;
+    if (NO_DATA_RX.test(line)) return "";
+  }
+  return "";
+}
+
+const VP_UNITS = [                          // 증기압 단위 → mmHg 환산 계수
+  ["㎜\\s*Hg|mm\\s*Hg|torr", 1.0],
+  ["㎪|kPa", 7.50062],
+  ["hPa|㍱", 0.750062],
+  ["㎩|(?<![khKH])Pa(?![a-z])", 1 / 133.322],
+  ["atm", 760.0],
+  ["bar", 750.062],
+];
+function vaporMmhg(sec9){
+  const rx = /증\s*기\s*압/g;
+  let m;
+  while ((m = rx.exec(sec9 || ""))){
+    const line = sec9.slice(m.index + m[0].length).split("\n", 1)[0];
+    const nm = RNUM_RX.exec(line);
+    if (!nm) continue;
+    let v = parseFloat(nm[0].replace(/,/g, ""));
+    const unitPart = line.slice(nm.index + nm[0].length,
+                               nm.index + nm[0].length + 12);
+    let factor = 1.0;
+    for (const [urx, f] of VP_UNITS)
+      if (new RegExp(urx).test(unitPart)){ factor = f; break; }
+    v = Math.round(v * factor * 1000) / 1000;
+    return String(v);
+  }
+  return "";
+}
+
+// 11·12항 — 주제어와 LD50/LC50 등이 같은 줄에 있는 값을 찾는다
+function toxLine(sec, subjectRx, markerRx, unitRx, excludeRx){
+  for (const line of (sec || "").split("\n")){
+    if (!new RegExp(subjectRx).test(line)) continue;
+    if (excludeRx && new RegExp(excludeRx).test(line)) continue;
+    const m = new RegExp(markerRx + "\\D{0,25}?(-?\\d[\\d,]*(?:\\.\\d+)?)\\s*" +
+                         unitRx).exec(line);
+    if (m) return m[1].replace(/,/g, "");
+  }
+  return "";
+}
+
+// 위험성평가(①기초Data)용 수치 데이터 — 찾지 못한 항목은 "" (직접 입력)
+function extractRiskData(sections){
+  const out = {};
+  const sec8 = sections[8] || "", sec9 = sections[9] || "";
+  const sec11 = sections[11] || "", sec12 = sections[12] || "";
+
+  // 8항 — 노출기준 TWA (STEL 앞부분만, 첫 TWA 줄)
+  for (const line of sec8.split("\n")){
+    if (!/TWA/i.test(line)) continue;
+    const part = line.split(/STEL|C\s*[:：]/i)[0];
+    const ppm = /(\d[\d,]*(?:\.\d+)?)\s*ppm/i.exec(part);
+    const mg = /(\d[\d,]*(?:\.\d+)?)\s*(?:㎎|mg)\s*\/\s*(?:㎥|m³|m3)/i.exec(part);
+    if (ppm || mg){
+      out.twa_ppm = ppm ? ppm[1].replace(/,/g, "") : "";
+      out.twa_mg = mg ? mg[1].replace(/,/g, "") : "";
+      break;
+    }
+  }
+
+  // 9항 — 물리화학적 특성
+  out.flash = lineField(sec9, "인\\s*화\\s*점");
+  out.boiling = lineField(sec9, "끓는\\s*점");
+  out.ait = lineField(sec9, "자연\\s*발화\\s*온도|자연발화점");
+  out.vapor = vaporMmhg(sec9);
+  out.logkow = lineField(sec9,
+    "옥탄올[^\\n]{0,10}물\\s*분배\\s*계수|분배\\s*계수|log\\s*Kow");
+  out.decomp_temp = lineField(sec9, "분해\\s*온도");
+
+  // 11항 — 독성 데이터
+  out.ld50_oral = toxLine(sec11, "경구", "LD\\s*50",
+                          "(?:㎎|mg)\\s*\\/\\s*(?:㎏|kg)");
+  out.ld50_dermal = toxLine(sec11, "경피", "LD\\s*50",
+                            "(?:㎎|mg)\\s*\\/\\s*(?:㎏|kg)");
+  out.lc50_vapor = toxLine(sec11, "흡입|증기", "LC\\s*50",
+                           "(?:㎎|mg)\\s*\\/\\s*(?:ℓ|L)", "분진|미스트");
+  out.lc50_dust = toxLine(sec11, "분진|미스트", "LC\\s*50",
+                          "(?:㎎|mg)\\s*\\/\\s*(?:ℓ|L)");
+  let m = /IARC[^\n]{0,40}?(?:Group|그룹)\s*(1|2A|2B|3)\b/i.exec(sec11) ||
+          /IARC[^\n]{0,40}?(1|2A|2B|3)\s*군/.exec(sec11);
+  out.iarc = m ? `IARC Group${m[1].toUpperCase()}` : "";
+
+  // 12항 — 환경 데이터
+  out.fish_lc50 = toxLine(sec12, "어류", "[LE]C\\s*50", "(?:㎎|mg)");
+  out.daphnia_ec50 = toxLine(sec12, "물벼룩|갑각류", "[LE]C\\s*50",
+                             "(?:㎎|mg)");
+  out.bcf = toxLine(sec12, "BCF|생물\\s*농축\\s*계수", "(?:BCF|계수)", "") ||
+            lineField(sec12, "농축성\\s*[:：]");
+  out.biodeg = "";
+  if (/생분해[^\n]*\d[\d,.]*\s*%/.test(sec12)){
+    m = /생분해[^\n]*?(\d[\d,]*(?:\.\d+)?)\s*%/.exec(sec12);
+    out.biodeg = m ? m[1].replace(/,/g, "") : "";
+  }
+  out.koc = toxLine(sec12, "Koc", "Koc", "") ||
+            lineField(sec12, "토양\\s*이동성");
+  out.dt50 = toxLine(sec12, "DT\\s*50|반감기", "(?:DT\\s*50|반감기)", "");
+  out.pbt = /vPvB[^\n]{0,20}(해당(?!\s*없)|물질임)/.test(sec12) ? "vPvB 해당" : "";
+  return out;
+}
+
 // 함유량 문자열의 대푯값(단일값 또는 범위 중간값). 없으면 null.
 function contentMid(content){
   const nums = ((content || "").match(/\d+(?:[.,]\d+)?/g) || [])
@@ -1027,7 +1219,8 @@ function parseMsds(text, sourceName){
   const data = { sourceName, productName: "", signalWord: "", pictograms: [],
     hazards: [], precautions: [], ppe: [], inhalation: [], skinEye: [],
     ingestion: [], emergency: [], unNumber: "",
-    manufacturer: "", components: [], revisionDate: "", warnings: [] };
+    manufacturer: "", components: [], revisionDate: "",
+    hcodes: "", risk: {}, warnings: [] };
   if (text.trim().length < 50){
     data.warnings.push("PDF에서 텍스트를 추출하지 못했습니다. 스캔본(이미지) MSDS인 경우 " +
       "OCR 처리된 PDF를 사용하거나 항목을 직접 입력해 주세요.");
@@ -1078,6 +1271,9 @@ function parseMsds(text, sourceName){
   // 2) 유해성·위험성
   const sec2 = sections[2] || whole;
   const hCodes = [...new Set(sec2.match(/H\d{3}/g) || [])].sort();
+  // 위험성평가 메뉴용 — H-code(구분 포함)·8/9/11/12항 수치 데이터
+  data.hcodes = extractHcodes(sec2);
+  data.risk = extractRiskData(sections);
 
   const hzBlock = grabBlock(sec2, "유해\\s*[·ㆍ]?\\s*위험\\s*문구\\s*[:：]?",
     ["예방\\s*조치\\s*문구", "신호어", "그림\\s*문자", SUB_HEAD,
@@ -1830,6 +2026,7 @@ async function rvAddFiles(files){
     rvState.set(id, { id, source: f.name, name: rec.productName,
       manufacturer: rec.manufacturer, revision: rec.revisionDate,
       date: "", consumer: false, warnings,
+      hcodes: rec.hcodes, risk: rec.risk,   // 위험성평가로 가져갈 데이터
       components: rec.components.map(c => ({ ...c })) });
     $rvCards.appendChild(buildRvCard(id));
     renderRvComps(id);
@@ -1916,7 +2113,10 @@ function renderRvVerdict(id){
   st.lastRes = res;
   document.querySelector(`[data-rvverdict="${id}"]`).innerHTML =
     `<div class="${res.review ? "v-warn" : "v-ok"}"><b>${res.reviewLabel}</b> — ${esc(res.reviewReason)}</div>` +
-    `<div class="${res.register ? "v-info" : "v-ok"}"><b>${res.registerLabel}</b> — ${esc(res.registerReason)}</div>`;
+    `<div class="${res.register ? "v-info" : "v-ok"}"><b>${res.registerLabel}</b> — ${esc(res.registerReason)}</div>` +
+    (res.review ? `<button class="rvsave" data-rvrisk="${id}" type="button"
+       style="margin-top:8px;" title="이 MSDS의 인식 결과를 「화학물질 위험성평가」 메뉴로 가져갑니다.">
+       🧪 화학물질 위험성평가 작성 — 이 MSDS로 시작</button>` : "");
   const prior = res.sameName.length ? res.sameName : res.sameComp;
   document.querySelector(`[data-rvprior="${id}"]`).innerHTML =
     prior.length ? rvDiffHtml(prior[prior.length - 1], rvComps(st)) : "";
@@ -2135,6 +2335,14 @@ $rvCards.addEventListener("click", e => {
     renderRvCompare();
   } else if (t.dataset.rvsave){
     rvSave(t.dataset.rvsave);
+  } else if (t.dataset.rvrisk){
+    // 도입검토 대상 → 위험성평가 메뉴로 이동 (인식 결과를 가져간다)
+    const st = rvState.get(t.dataset.rvrisk);
+    rkLoad({ source: st.source, name: st.name,
+      manufacturer: st.manufacturer, revision: st.revision,
+      components: rvComps(st).map(c => ({ ...c })),
+      hcodes: st.hcodes || "", vals: st.risk || {} });
+    showTab("risk");
   }
 });
 $rvQ.addEventListener("input", renderRvDb);
@@ -2149,16 +2357,651 @@ document.getElementById("rvDbTable").addEventListener("click", e => {
 });
 renderRvDb();
 
+/* ══════════════ 화학물질 위험성평가 (risk_logic.py 이식) ══════════════
+   양식 수식을 문자 그대로 구현 — 내보낸 엑셀이 자체 수식으로 재계산하는
+   값과 화면 표시가 일치한다(엑셀의 텍스트>숫자 비교 규칙 포함). */
+const RISK = __RISK_DATA_JSON__;           // 기준 데이터 (risk_logic.py)
+const RISK_TPL_B64 = "__RISK_TPL_B64__";   // 위험성평가 엑셀 양식 원본
+const RISK_DB_BY_NO = Object.fromEntries(RISK.db.map(d => [d.no, d]));
+
+function rkNum(v){
+  const s = String(v == null ? "" : v).replace(/,/g, "").trim();
+  return /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(s)
+    ? parseFloat(s) : null;
+}
+// 엑셀 비교 규칙: 텍스트('없음' 등)는 어떤 숫자보다 크다
+const rkLt = (v, x) => { const n = rkNum(v); return n !== null && n < x; };
+const rkLe = (v, x) => { const n = rkNum(v); return n !== null && n <= x; };
+const rkGt = (v, x) => { const n = rkNum(v); return n !== null ? n > x : true; };
+const rkGe = (v, x) => { const n = rkNum(v); return n !== null ? n >= x : true; };
+const rkBlank = v => ["", "없음"].includes(String(v || "").trim());
+
+// ①시트 D23~D40 — H-Code 문자열에서 항목별 해당 코드 판정 (INDEX/MATCH+SEARCH)
+function rkAutoCodes(hcodes){
+  const text = (hcodes || "").toUpperCase();
+  const out = {};
+  for (const [key, codes] of RISK.autoCodes)
+    out[key] = codes.find(c => text.includes(c.toUpperCase())) || "없음";
+  return out;
+}
+
+// ②③④ 시트의 [참고값] 유해성(E8~E15) — 양식 수식 그대로
+function rkRefScores(v){
+  const d = rkAutoCodes(v.hcodes || "");
+  const WR = RISK.waterReact, DC = RISK.decomp;
+  const water = () => {
+    if (d.d26 === "H260" || d.d26 === "H261") return 5;
+    if (d.d27 === "H290") return 4;
+    return ({ [WR[3]]: 4, [WR[2]]: 3, [WR[1]]: 2 })[v.water_react] || 1;
+  };
+  const taboo = rkNum(v.taboo) || 0;
+  const s2 = [
+    water(),
+    Math.max({ H250: 5, H251: 4, H252: 3 }[d.d28] || 1,
+      rkLt(v.ait, 54) ? 5 : rkLt(v.ait, 100) ? 4 : rkLt(v.ait, 200) ? 3 : 1),
+    taboo >= 5 ? 4 : taboo >= 3 ? 3 : taboo >= 1 ? 2 : 1,
+    ({ [DC[4]]: 5, [DC[3]]: 4, [DC[2]]: 3, [DC[1]]: 2 })[v.decomp_prod] || 1,
+    Math.max(
+      ["H200","H201","H202","H203","H204","H205"].includes(d.d24) ? 5 :
+      ["H206","H240"].includes(d.d24) ? 4 :
+      ["H207","H241"].includes(d.d24) ? 3 :
+      ["H208","H242"].includes(d.d24) ? 2 : 1,
+      rkLt(v.decomp_temp, 100) ? 4 : rkLt(v.decomp_temp, 150) ? 3 :
+      rkLt(v.decomp_temp, 300) ? 2 : 1),
+    null,                                    // ②-6 저장 불안정성(직접 입력)
+    Math.max(
+      ["H220","H222","H224"].includes(d.d23) ? 5 :
+      ["H221","H223","H225","H228"].includes(d.d23) ? 4 :
+      d.d23 === "H226" ? 3 : d.d23 === "H227" ? 2 : 1,
+      rkGe(v.flash, 93) ? 1 : rkGe(v.flash, 60) ? 2 : rkGe(v.flash, 23) ? 3 :
+      (rkLt(v.flash, 23) && rkGt(v.boiling, 35)) ? 4 :
+      (rkLt(v.flash, 23) && rkLe(v.boiling, 35)) ? 5 : 1),
+    Math.max(
+      ["H200","H201","H202"].includes(d.d24) ? 5 :
+      ["H203","H204","H205"].includes(d.d24) ? 4 : 1,
+      { H270: 5, H271: 4, "H272 Cat2": 3, "H272 Cat3": 2 }[d.d25] || 1),
+  ];
+  const aqua = val => rkLe(val, 1) ? 5 : rkLe(val, 10) ? 4 :
+                      rkLe(val, 100) ? 3 : rkLe(val, 1000) ? 2 : 1;
+  const vnum = k => rkBlank(v[k]) ? null : rkNum(v[k]);
+  const dt50 = vnum("dt50"), biodeg = vnum("biodeg"), logkow = vnum("logkow"),
+        koc = vnum("koc"), bcf = vnum("bcf"), vapor = vnum("vapor");
+  const pbt = v.pbt || "";
+  const s3 = [
+    Math.max({ H400: 5, H401: 4, H402: 3 }[d.d38] || 1,
+             aqua(v.fish_lc50), aqua(v.daphnia_ec50)),
+    { H410: 5, H411: 4, H412: 3, H413: 2 }[d.d39] || 1,
+    Math.max(
+      dt50 === null ? 1 : dt50 > 180 ? 5 : dt50 > 60 ? 4 : dt50 > 28 ? 3 :
+        dt50 > 10 ? 2 : 1,
+      biodeg === null ? 1 : biodeg < 5 ? 5 : biodeg < 20 ? 4 :
+        biodeg < 40 ? 3 : biodeg < 60 ? 2 : 1),
+    Math.max(
+      logkow === null ? 1 : logkow < 2 ? 5 : logkow < 2.7 ? 4 :
+        logkow < 3.5 ? 3 : logkow < 4.5 ? 2 : 1,
+      koc === null ? 1 : koc < 50 ? 5 : koc < 200 ? 4 : koc < 1000 ? 3 :
+        koc < 5000 ? 2 : 1),
+    dt50 === null ? 1 : dt50 > 365 ? 5 : dt50 > 180 ? 4 : dt50 > 120 ? 3 :
+      dt50 > 60 ? 2 : 1,
+    Math.max(
+      pbt === "vPvB 해당" ? 5 : pbt === "PBT기준 3가지 해당" ? 4 : 1,
+      bcf === null ? 1 : bcf >= 5000 ? 5 : bcf >= 2000 ? 4 : bcf >= 500 ? 3 :
+        bcf >= 100 ? 2 : 1,
+      logkow === null ? 1 : logkow >= 5.2 ? 5 : logkow >= 4.7 ? 4 :
+        logkow >= 4 ? 3 : logkow >= 3.2 ? 2 : 1),
+    ({ "vPvB 해당": 5, "PBT기준 3가지 해당": 4, "PBT 2가지 해당": 3,
+       "PBT 1가지 해당": 2 })[pbt] || 1,
+    Math.max(d.d40 === "H420" ? 5 : 1,
+      vapor === null ? 1 : vapor >= 100 ? 4 : vapor >= 10 ? 3 :
+        vapor >= 1 ? 2 : 1),
+  ];
+  const s4 = [
+    Math.max({ H330: 5, H331: 4, H332: 3, H333: 3 }[d.d29] || 1,
+      rkLe(v.lc50_vapor, 0.5) ? 5 : rkLe(v.lc50_vapor, 2) ? 4 :
+        rkLe(v.lc50_vapor, 20) ? 3 : rkLe(v.lc50_vapor, 50) ? 2 : 1,
+      rkLe(v.lc50_dust, 0.5) ? 5 : rkLe(v.lc50_dust, 1) ? 4 :
+        rkLe(v.lc50_dust, 5) ? 3 : rkLe(v.lc50_dust, 12.5) ? 2 : 1),
+    Math.max(
+      ["H300","H310"].includes(d.d30) ? 5 :
+      ["H301","H304","H311"].includes(d.d30) ? 4 :
+      d.d30 === "H305" ? 3 : ["H302","H312"].includes(d.d30) ? 2 : 1,
+      rkLe(v.ld50_oral, 50) ? 5 : rkLe(v.ld50_oral, 300) ? 4 :
+        rkLe(v.ld50_oral, 1000) ? 3 : rkLe(v.ld50_oral, 2000) ? 2 : 1,
+      rkLe(v.ld50_dermal, 200) ? 5 : rkLe(v.ld50_dermal, 1000) ? 4 :
+        rkLe(v.ld50_dermal, 1500) ? 3 : rkLe(v.ld50_dermal, 2000) ? 2 : 1),
+    Math.max(
+      d.d31 === "H314 Cat1A" ? 5 :
+      ["H314 Cat1B","H314 Cat1"].includes(d.d31) ? 4 :
+      ["H315","H317"].includes(d.d31) ? 3 : d.d31 === "H316" ? 2 : 1,
+      { H318: 4, H319: 3, H320: 2 }[d.d32] || 1),
+    Math.max({ "H350 Cat1A": 5, "H350 Cat1B": 4, H351: 3 }[d.d33] || 1,
+      { "IARC Group1": 5, "IARC Group2A": 4, "IARC Group2B": 3,
+        "IARC Group3": 2 }[v.iarc] || 1),
+    { "H360 Cat1A": 5, "H360 Cat1B": 4, H361: 3, H362: 2 }[d.d34] || 1,
+    Math.max({ H370: 5, H371: 4, H372: 3, H373: 2 }[d.d35] || 1,
+      // 양식 수식 그대로("334" 비교) — D36은 "H334" 형태라 항상 1이 된다
+      { "334": 4, "335": 3, "336": 2 }[d.d36] || 1),
+    { "H340 Cat1A": 5, "H340 Cat1B": 4, H341: 3 }[d.d37] || 1,
+    Math.max(
+      rkLt(v.twa_mg, 0.1) ? 5 : rkLt(v.twa_mg, 1) ? 4 :
+        rkLt(v.twa_mg, 10) ? 3 : rkLt(v.twa_mg, 100) ? 2 : 1,
+      rkLt(v.twa_ppm, 0.05) ? 5 : rkLt(v.twa_ppm, 0.5) ? 4 :
+        rkLt(v.twa_ppm, 5) ? 3 : rkLt(v.twa_ppm, 50) ? 2 : 1),
+  ];
+  return { 2: s2, 3: s3, 4: s4 };
+}
+
+function rkHazard(scores){
+  const total = scores.reduce((a, b) => a + b, 0);
+  const mx = Math.max(...scores);
+  const weight = mx >= 5 ? 2 : mx >= 4 ? 1 : 0;
+  const final = Math.min(40, total + weight);
+  const grade = final < 8.5 ? 1 : final < 16.5 ? 2 : final < 24.5 ? 3 :
+                final < 33.5 ? 4 : 5;
+  return { total, weight, final, grade,
+           fatal: scores.filter(s => s >= 5).length };
+}
+const rkPossGrade = s => s < 3.5 ? 1 : s < 6.5 ? 2 : s < 9.5 ? 3 :
+                         s < 12.5 ? 4 : 5;
+const rkLevel = r => r < 3.5 ? "낮음" : r < 8.5 ? "보통" : r < 16.5 ? "높음" :
+                     "매우 높음";
+const rkFinalLevel = r => r < 3.5 ? "저" : r < 8.5 ? "중" : r < 16.5 ? "고" :
+                          "허용 불가";
+
+// 저감대책 적용 효과 — 양식 P59~T61 수식 그대로
+function rkMitEffect(mit, pscore, hasPpe){
+  const s = {};
+  for (const [tier] of RISK.tiers){
+    const reds = ((mit && mit[tier]) || []).slice(0, 3)
+      .map(no => (RISK_DB_BY_NO[no] || {}).reduce || 0);
+    while (reds.length < 3) reds.push(0);
+    const srt = [...reds].sort((a, b) => a - b);
+    s[tier] = srt[0] * 1 + srt[1] * 0.75 + srt[2] * 0.5;
+  }
+  let t = s.eng * 1 + s.op * 0.75 + s.adm * 0.5;
+  if (hasPpe) t += s.ppe * 0.5;
+  t = Math.max(t, -pscore * 0.6);            // 전체 감소량 상한 60%
+  const ns = Math.max(3, pscore + t);        // 하한 3점
+  return { reduction: t, newScore: ns, newGrade: rkPossGrade(ns) };
+}
+
+// ⑤ 종합결과 「검토 결과」(D16) 수식 그대로
+function rkVerdictText(finals, fatalTotal){
+  const m = Math.max(...finals);
+  const fatal = fatalTotal >= 1 ?
+    "\n🟠 치명항목(유해성 5점) 有  — SHE부서 검토자 반영 필요" : "";
+  if (m >= 17) return "🔴 허용 불가  — 원칙적 도입/취급 불가 (도입하려면 경영진 예외 승인 필수)";
+  if (m >= 10) return "🟠 고위험  — 저감대책 보강 후 재평가하여 위험도 감소 후 도입/취급 가능";
+  if (m >= 5) return "🟡 중위험 — 부서장 승인 후 도입/취급 가능 (추가 저감대책 검토 권장, 모니터링 지속)" + fatal;
+  return "🟢 저위험  — 부서장 승인 후 도입/취급 가능" + fatal;
+}
+
+function rkEvaluate(vals, sheets){
+  const refs = rkRefScores(vals);
+  const out = { refs, sheets: {} };
+  const finals = [];
+  let fatalTotal = 0;
+  for (const sk of Object.keys(RISK.sheets)){
+    const meta = RISK.sheets[sk], sh = sheets[sk] || {};
+    const scores = sh.scores || refs[sk].map(r => r || 1);
+    const hz = rkHazard(scores);
+    const poss = sh.poss || [null, null, null];
+    const pscore = poss.reduce((a, i) => a + (i === null ? 0 : i + 1), 0);
+    const pg = rkPossGrade(pscore);
+    const risk = hz.grade * pg;
+    const mit = rkMitEffect(sh.mit || {}, pscore, meta.has_ppe);
+    const finalRisk = hz.grade * mit.newGrade;
+    finals.push(finalRisk);
+    fatalTotal += hz.fatal;
+    out.sheets[sk] = { hazard: hz, possScore: pscore, possGrade: pg, risk,
+      level: rkLevel(risk), allow: risk <= 8, mit, finalRisk,
+      finalLevel: rkFinalLevel(finalRisk), finalAllow: finalRisk <= 8,
+      possMissing: poss.some(i => i === null) };
+  }
+  out.verdict = rkVerdictText(finals, fatalTotal);
+  out.fatalTotal = fatalTotal;
+  return out;
+}
+
+/* ── 위험성평가 UI ── */
+let rk = null;                              // 진행 중인 평가 상태
+const $rkBody = document.getElementById("rkBody");
+const rkSelOpts = k => ({ water_react: RISK.waterReact,
+  decomp_prod: RISK.decomp, iarc: RISK.iarc, pbt: RISK.pbt })[k];
+const rkPossOpts = sk => [RISK.possFreq, RISK.possAmount, RISK.env[sk]];
+
+function rkLoad(src){
+  const vals = {};
+  for (const f of RISK.fields){
+    const k = f[0];
+    if (f[3] === "select"){
+      const opts = rkSelOpts(k);
+      vals[k] = opts.includes((src.vals || {})[k]) ? src.vals[k] : opts[0];
+    } else vals[k] = String((src.vals || {})[k] || "");
+  }
+  rk = { source: src.source || "", name: src.name || "",
+    manufacturer: src.manufacturer || "", revision: src.revision || "",
+    components: (src.components || []).map(c => ({ ...c })),
+    dept: "", store: "", purpose: "", hcodes: src.hcodes || "", vals,
+    autoKeys: new Set(Object.keys(src.vals || {}).filter(
+      k => String(src.vals[k] || "").trim())),
+    evType: "", evDate: "", evDept: "", evBy: "", opinion: "", sheets: {} };
+  const refs = rkRefScores({ hcodes: rk.hcodes, ...rk.vals });
+  for (const sk of ["2", "3", "4"])
+    rk.sheets[sk] = { scores: refs[sk].map(r => r || 1),
+      notes: ["", "", "", "", "", "", "", ""],
+      poss: [null, null, null], mit: { eng: [], op: [], adm: [], ppe: [] } };
+  renderRkForm();
+}
+
+function rkResetScores(){
+  const refs = rkRefScores({ hcodes: rk.hcodes, ...rk.vals });
+  for (const sk of ["2", "3", "4"])
+    rk.sheets[sk].scores = refs[sk].map(r => r || 1);
+  renderRkForm();
+}
+
+function renderRkForm(){
+  document.getElementById("rkEmpty").hidden = !!rk;
+  $rkBody.hidden = !rk;
+  if (!rk) return;
+  const selHtml = (opts, cur, attrs) =>
+    `<select ${attrs}>` + opts.map(o =>
+      `<option value="${esc(o)}"${o === cur ? " selected" : ""}>${esc(o).replace(/\n/g, " ")}</option>`).join("") + "</select>";
+  let h = `
+    <div class="prev-title" style="margin-top:16px;">🧪 평가 대상:
+      ${esc(rk.name || "(미입력)")} 〔${esc(rk.source)}〕</div>
+    <div class="rkfs"><h3>1. 평가 대상 화학물질 기본정보</h3>
+      <div class="rkgrid3">
+        <div><label class="f">제품명<span class="ref">MSDS 1항</span></label>
+          <input type="text" data-rkb="name" value="${esc(rk.name)}"></div>
+        <div><label class="f">제조사<span class="ref">MSDS 1항</span></label>
+          <input type="text" data-rkb="manufacturer" value="${esc(rk.manufacturer)}"></div>
+        <div><label class="f">MSDS 최신개정일자</label>
+          <input type="text" data-rkb="revision" placeholder="YYYY-MM-DD"
+                 value="${esc(rk.revision)}"></div>
+      </div>
+      <label class="f">구성성분<span class="ref">MSDS 3항</span></label>
+      <div id="rkComps"></div>
+      <button class="rvcadd" id="rkCompAdd" type="button">＋ 성분 추가</button>
+      <div class="rkgrid3">
+        <div><label class="f">취급부서 / 공정</label>
+          <input type="text" data-rkb="dept" value="${esc(rk.dept)}"></div>
+        <div><label class="f">저장·보관(예정) 장소</label>
+          <input type="text" data-rkb="store" value="${esc(rk.store)}"></div>
+        <div><label class="f">도입 배경 or 목적</label>
+          <input type="text" data-rkb="purpose" value="${esc(rk.purpose)}"></div>
+      </div>
+      <label class="f">★ H-Code (유해위험문구)<span class="ref">MSDS 2항 —
+        자동 인식, 수정 가능</span></label>
+      <input type="text" data-rkb="hcodes" value="${esc(rk.hcodes)}"
+             title="쉼표/공백으로 코드 구분. H314·H340·H350·H360은 구분까지 표기 (예: H350 Cat1A)">
+      <div class="hint" id="rkAutoCodes"></div>
+    </div>
+    <div class="rkfs"><h3>2. MSDS 세션별 데이터 — 8·9·11·12항 자동 인식,
+      나머지 직접 입력 (숫자만, 없으면 비워두면 '없음'으로 기재)</h3>`;
+  for (const [glabel, keys] of RISK.groups){
+    h += `<label class="f" style="margin-top:10px;">▶ ${esc(glabel)}</label>
+      <div class="rkgrid4">`;
+    for (const k of keys){
+      const [, , label, kind, unit] = RISK.fields.find(f => f[0] === k);
+      const auto = rk.autoKeys.has(k) ?
+        '<span class="rkauto">✓자동</span>' : "";
+      h += `<div><label class="f" style="font-weight:400;">${esc(label)}${unit ? ` (${esc(unit)})` : ""}${auto}</label>`;
+      if (kind === "select")
+        h += selHtml(rkSelOpts(k), rk.vals[k], `data-rkv="${k}"`);
+      else
+        h += `<input type="text" data-rkv="${k}" placeholder="없음"
+               value="${esc(rk.vals[k])}">`;
+      h += `</div>`;
+    }
+    h += `</div>`;
+  }
+  h += `</div>
+    <div style="margin-top:12px;">
+      <button class="rvsave" id="rkScoreReset" type="button"
+        title="H-Code·MSDS 데이터를 수정한 뒤 참고값을 다시 반영하려면 누르세요.">
+        🔄 유해성 점수를 현재 [참고값]으로 재설정</button></div>`;
+  for (const sk of ["2", "3", "4"]){
+    const meta = RISK.sheets[sk], sh = rk.sheets[sk];
+    h += `<div class="rkfs"><h3>${esc(meta.title)}</h3>
+      <label class="f">Ⅰ. 유해성 산정 — 점수는 [참고값]으로 미리 채워지며
+        조정할 수 있습니다 (다르게 평가하면 비고에 사유 기재)</label>`;
+    meta.items.forEach((it, i) => {
+      h += `<div class="rkrow">
+        <div><b>${i + 1}. [${esc(it[0])}]</b> ${esc(it[1])}</div>
+        <div class="rkref">참고값 <b data-rkref="${sk}_${i}">—</b></div>
+        <div><select data-rks="${sk}" data-rki="${i}">${[1, 2, 3, 4, 5].map(
+          x => `<option${x === sh.scores[i] ? " selected" : ""}>${x}</option>`).join("")}</select></div>
+        <div><input type="text" data-rkn="${sk}" data-rki="${i}"
+          placeholder="비고 — 참고값과 다르게 평가한 사유"
+          value="${esc(sh.notes[i])}"></div>
+      </div>`;
+    });
+    h += `<label class="f" style="margin-top:12px;">Ⅱ. 가능성 산정</label>
+      <div class="rkgrid3">`;
+    const popts = rkPossOpts(sk);
+    meta.poss_labels.forEach((pl, i) => {
+      h += `<div><label class="f" style="font-weight:400;">${esc(pl)}</label>
+        <select data-rkp="${sk}" data-rki="${i}">
+          <option value="">(선택)</option>` +
+        popts[i].map((o, j) => `<option value="${j}"${sh.poss[i] === j ? " selected" : ""}>${j + 1}점 — ${esc(o).replace(/\n/g, " ")}</option>`).join("") +
+        `</select></div>`;
+    });
+    h += `</div>
+      <label class="f" style="margin-top:12px;">Ⅳ. 위험성 저감대책 —
+        허용 불가(위험도 9 이상)면 필수, 각 위계에서 최대 3개
+        (⑥ 저감대책DB)</label>
+      <div class="rkmit rkgrid${meta.has_ppe ? 4 : 3}">`;
+    for (const [tier, tlabel, tkor] of RISK.tiers){
+      if (tier === "ppe" && !meta.has_ppe) continue;
+      const opts = RISK.db.filter(d2 => d2.field === meta.field &&
+                                        d2.tier === tkor);
+      h += `<div><label class="f" style="font-weight:400;">${esc(tlabel)}</label>`;
+      for (let j = 0; j < 3; j++){
+        const cur = (sh.mit[tier] || [])[j] || "";
+        h += `<select data-rkm="${sk}" data-rkt="${tier}" data-rki="${j}">
+          <option value="">대책${j + 1} (선택)</option>` +
+          opts.map(d2 => `<option value="${esc(d2.no)}"${d2.no === cur ? " selected" : ""}>${esc(d2.no)} (${d2.reduce}) ${esc(d2.text)}</option>`).join("") +
+          `</select>`;
+      }
+      h += `</div>`;
+    }
+    h += `</div>
+      <div class="rkres" id="rkRes${sk}"></div>
+      <div id="rkAllow${sk}"></div>
+      <div id="rkRec${sk}"></div>
+    </div>`;
+  }
+  h += `
+    <div class="rkfs"><h3>종합결과</h3>
+      <div style="overflow-x:auto"><table class="rvt" id="rkSummary"></table></div>
+      <div class="rkverdict" id="rkVerdict"></div>
+      <div class="hint">적용 기준 — 1-3점: 도입 가능 | 4-8점: 도입 가능(추가
+        저감대책 검토 권장) | 9-16점: 허용 불가 | 17-25점: 허용 불가 ·
+        치명항목(유해성 5점)이 1개 이상이면 위험도와 무관하게 SHE부서 검토자
+        반영하여 결재를 진행합니다.</div>
+      <div class="rkgrid4" style="margin-top:10px;">
+        <div><label class="f">평가유형</label>
+          <input type="text" data-rkb="evType" placeholder="예: 신규 도입"
+                 value="${esc(rk.evType)}"></div>
+        <div><label class="f">평가일자</label>
+          <input type="date" data-rkb="evDate" value="${esc(rk.evDate)}"></div>
+        <div><label class="f">평가부서</label>
+          <input type="text" data-rkb="evDept" value="${esc(rk.evDept)}"></div>
+        <div><label class="f">평가자</label>
+          <input type="text" data-rkb="evBy" value="${esc(rk.evBy)}"></div>
+      </div>
+      <label class="f">[기안] 평가자 의견</label>
+      <textarea data-rkb="opinion" rows="3" style="width:100%;">${esc(rk.opinion)}</textarea>
+      <div style="margin-top:12px;">
+        <button class="rvsave" id="rkXlsx" type="button" style="background:#1a5f9e;">
+          ⬇️ 위험성평가 엑셀 다운로드 (양식 자동 작성)</button>
+      </div>
+    </div>`;
+  $rkBody.innerHTML = h;
+  renderRkComps();
+  renderRkResults();
+}
+
+function renderRkComps(){
+  if (!rk.components.length)
+    rk.components.push({ name: "", cas: "", content: "" });
+  document.getElementById("rkComps").innerHTML = rk.components.map((c, i) => `
+    <div class="rvcomp">
+      <input type="text" placeholder="성분명" data-rkc="name" data-rki="${i}" value="${esc(c.name)}">
+      <input type="text" placeholder="CAS 번호" data-rkc="cas" data-rki="${i}" value="${esc(c.cas)}">
+      <input type="text" placeholder="함유량(%)" data-rkc="content" data-rki="${i}" value="${esc(c.content)}">
+      <button data-rkcd="${i}" type="button" title="이 성분 삭제">🗑</button>
+    </div>`).join("");
+}
+
+function renderRkResults(){
+  if (!rk) return;
+  const vals = { hcodes: rk.hcodes, ...rk.vals };
+  const res = rkEvaluate(vals, rk.sheets);
+  const ac = rkAutoCodes(rk.hcodes);
+  const hits = Object.entries(ac).filter(([, v]) => v !== "없음")
+    .map(([k, v]) => `${RISK.autoLabels[k]}: ${v}`);
+  document.getElementById("rkAutoCodes").textContent =
+    "H-Code 자동 판정 — " + (hits.length ? hits.join(" · ") : "해당 없음");
+  for (const sk of ["2", "3", "4"]){
+    const meta = RISK.sheets[sk], sh = rk.sheets[sk],
+          sres = res.sheets[sk];
+    res.refs[sk].forEach((r, i) => {
+      const el = document.querySelector(`[data-rkref="${sk}_${i}"]`);
+      if (el) el.textContent = r || "—";
+    });
+    document.getElementById("rkRes" + sk).innerHTML = [
+      ["유해성 등급", sres.hazard.grade,
+       `합계 ${sres.hazard.total} + 가중 ${sres.hazard.weight} = ${sres.hazard.final}점`],
+      ["가능성 등급 (전)", sres.possGrade, `가능성 점수 ${sres.possScore}점`],
+      ["위험도 (전)", `${sres.risk} (${sres.level})`, ""],
+      ["가능성 등급 (저감 후)", sres.mit.newGrade,
+       `저감 ${sres.mit.reduction >= 0 ? "+" : ""}${sres.mit.reduction.toFixed(2)}점 → ${sres.mit.newScore.toFixed(2)}점`],
+      ["최종 위험도", `<b>${sres.finalRisk}</b> (${sres.finalLevel})`, ""],
+    ].map(([t, v, hint]) => `<div class="m" title="${esc(hint)}">
+      <div class="t">${t}</div><b>${v}</b></div>`).join("");
+    document.getElementById("rkAllow" + sk).innerHTML =
+      (sres.possMissing ?
+        `<div class="hint">⚠️ 가능성 평가 3개 항목을 모두 선택해 주세요.</div>` : "") +
+      (sres.finalAllow ?
+        `<div class="rkok">✅ 허용 가능 (위험도 8 이하)</div>` :
+        `<div class="rkbad">🟠 허용 불가 — 저감대책을 적용해 위험도를 8 이하로 낮춘 후 도입 가능</div>`);
+    const recs = [];
+    meta.items.forEach((it, i) => {
+      if (sh.scores[i] >= 4)
+        recs.push([`유해성 ${i + 1}. ${it[1]}`, sh.scores[i], meta.rec[i]]);
+    });
+    meta.poss_labels.forEach((pl, j) => {
+      if (sh.poss[j] !== null && sh.poss[j] + 1 >= 4)
+        recs.push([`가능성 ${pl}`, sh.poss[j] + 1, meta.rec[8 + j]]);
+    });
+    document.getElementById("rkRec" + sk).innerHTML = !recs.length ? "" :
+      `<div class="prev-title" style="font-size:13px;">[참고] 고위험 항목(4점↑)
+        추천 저감대책</div><div style="overflow-x:auto"><table class="rvt">
+      <tr><th>항목</th><th>점수</th><th>공학</th><th>운영</th><th>행정</th><th>보호구</th></tr>` +
+      recs.map(([nm2, sc, rec]) => `<tr><td>${esc(nm2)}</td><td>${sc}</td>` +
+        rec.map(no => `<td>${no ? esc(no + " " + (RISK_DB_BY_NO[no] || {}).text) : "—"}</td>`).join("") +
+        `</tr>`).join("") + "</table></div>";
+  }
+  document.getElementById("rkSummary").innerHTML =
+    "<tr><th>분야</th><th>유해성 등급</th><th>가능성 등급(전)</th>" +
+    "<th>가능성 등급(후)</th><th>위험수준/위험도</th><th>치명 항목 수</th></tr>" +
+    ["2", "3", "4"].map(sk => {
+      const sres = res.sheets[sk];
+      return `<tr><td>${esc(RISK.sheets[sk].title.slice(2))}</td>
+        <td>${sres.hazard.grade}</td><td>${sres.possGrade}</td>
+        <td>${sres.mit.newGrade}</td>
+        <td>${sres.finalLevel} / ${sres.finalRisk}</td>
+        <td>${sres.hazard.fatal || ""}</td></tr>`;
+    }).join("");
+  const vd = document.getElementById("rkVerdict");
+  vd.textContent = res.verdict;
+  vd.className = "rkverdict " + (res.verdict.startsWith("🟢") ? "ok" :
+    res.verdict.startsWith("🟡") ? "warn" : "bad");
+}
+
+$rkBody.addEventListener("input", e => {
+  const el = e.target, d = el.dataset;
+  if (!rk) return;
+  if (d.rkb !== undefined) rk[d.rkb] = el.value;
+  else if (d.rkv !== undefined) rk.vals[d.rkv] = el.value;
+  else if (d.rkc !== undefined) rk.components[+d.rki][d.rkc] = el.value;
+  else if (d.rks !== undefined) rk.sheets[d.rks].scores[+d.rki] = +el.value;
+  else if (d.rkn !== undefined) rk.sheets[d.rkn].notes[+d.rki] = el.value;
+  else if (d.rkp !== undefined)
+    rk.sheets[d.rkp].poss[+d.rki] = el.value === "" ? null : +el.value;
+  else if (d.rkm !== undefined){
+    const arr = rk.sheets[d.rkm].mit[d.rkt] || [];
+    while (arr.length < 3) arr.push("");
+    arr[+d.rki] = el.value;
+    rk.sheets[d.rkm].mit[d.rkt] = arr;
+  } else return;
+  renderRkResults();
+});
+$rkBody.addEventListener("click", e => {
+  const t = e.target;
+  if (!rk) return;
+  if (t.id === "rkCompAdd"){
+    rk.components.push({ name: "", cas: "", content: "" });
+    renderRkComps();
+  } else if (t.dataset.rkcd !== undefined){
+    rk.components.splice(+t.dataset.rkcd, 1);
+    renderRkComps();
+  } else if (t.id === "rkScoreReset"){
+    rkResetScores();
+  } else if (t.id === "rkXlsx"){
+    rkExport(t);
+  }
+});
+
+/* ── 위험성평가 엑셀 양식 자동 기입 (risk_logic.fill_template 이식) ──
+   양식 zip의 시트 XML에서 입력 셀만 바꾼다(스타일·수식·서식 그대로 유지). */
+function rkSetCell(xml, ref, value, numeric){
+  if (value === null || value === undefined) return xml;
+  const sval = String(value).trim();
+  if (!sval) return xml;
+  const rx = new RegExp('<c r="' + ref + '"([^>]*?)(?:\\/>|>[\\s\\S]*?<\\/c>)');
+  const m = rx.exec(xml);
+  if (!m) return xml;
+  const attrs = m[1].replace(/\s*t="[^"]*"/, "");
+  const num = numeric === false ? null : rkNum(sval);
+  let rep;
+  if (num !== null && numeric !== false){
+    rep = `<c r="${ref}"${attrs}><v>${num}</v></c>`;
+  } else {
+    const x = sval.replace(/&/g, "&amp;").replace(/</g, "&lt;")
+                  .replace(/>/g, "&gt;");
+    rep = `<c r="${ref}"${attrs} t="inlineStr"><is>` +
+          `<t xml:space="preserve">${x}</t></is></c>`;
+  }
+  return xml.slice(0, m.index) + rep + xml.slice(m.index + m[0].length);
+}
+
+async function rkExport(btn){
+  btn.disabled = true;
+  try {
+    const bytes = Uint8Array.from(atob(RISK_TPL_B64), c => c.charCodeAt(0));
+    const zip = await JSZip.loadAsync(bytes);
+    const get = p => zip.file(p).async("string");
+    let x = await get("xl/worksheets/sheet1.xml");
+    x = rkSetCell(x, "C5", rk.name, false);
+    x = rkSetCell(x, "C6", rk.manufacturer, false);
+    x = rkSetCell(x, "C7", rk.revision, false);
+    let comps = rk.components.filter(
+      c => (c.name || c.cas || c.content || "").trim());
+    if (comps.length > 5){                    // 양식 성분 행은 5개
+      comps = comps.slice(0, 5);
+      comps[4] = { name: rk.components.slice(4).map(c => c.name).join(", "),
+                   cas: "", content: "" };
+    }
+    comps.forEach((c, i) => {
+      x = rkSetCell(x, "C" + (9 + i), c.name, false);
+      x = rkSetCell(x, "D" + (9 + i), c.cas, false);
+      x = rkSetCell(x, "E" + (9 + i), c.content, false);
+    });
+    x = rkSetCell(x, "C14", rk.dept, false);
+    x = rkSetCell(x, "C15", rk.store, false);
+    x = rkSetCell(x, "C16", rk.purpose, false);
+    x = rkSetCell(x, "C17", rk.hcodes, false);
+    for (const [k, cell, , kind] of RISK.fields){
+      const v = String(rk.vals[k] || "").trim();
+      if (k === "taboo"){                     // 빈칸이면 0 (수식 오류 방지)
+        const n = rkNum(v);
+        x = rkSetCell(x, cell, n !== null ? Math.trunc(n) : 0);
+      } else if (kind === "num"){
+        x = rkSetCell(x, cell, rkNum(v) !== null ? v : "없음");
+      } else {
+        x = rkSetCell(x, cell, v || null, false);
+      }
+    }
+    zip.file("xl/worksheets/sheet1.xml", x);
+    const fnames = { 2: "sheet2.xml", 3: "sheet3.xml", 4: "sheet4.xml" };
+    for (const sk of ["2", "3", "4"]){
+      const sh = rk.sheets[sk], meta = RISK.sheets[sk];
+      let sx = await get("xl/worksheets/" + fnames[sk]);
+      sh.scores.forEach((s, i) => {
+        sx = rkSetCell(sx, "F" + (8 + i), Math.trunc(s));
+      });
+      sh.notes.forEach((note, i) => {
+        if (note) sx = rkSetCell(sx, "M" + (8 + i), note, false);
+      });
+      const popts = rkPossOpts(sk);
+      sh.poss.forEach((idx, i) => {
+        if (idx !== null)
+          sx = rkSetCell(sx, "D" + (24 + i), popts[i][idx], false);
+      });
+      const tierRows = { eng: 59, op: 60, adm: 61, ppe: 62 };
+      for (const tier of Object.keys(tierRows)){
+        if (tier === "ppe" && !meta.has_ppe) continue;
+        ((sh.mit[tier] || []).slice(0, 3)).forEach((no, j) => {
+          if (no) sx = rkSetCell(sx, "EGI"[j] + tierRows[tier], no, false);
+        });
+      }
+      zip.file("xl/worksheets/" + fnames[sk], sx);
+    }
+    let x5 = await get("xl/worksheets/sheet5.xml");
+    x5 = rkSetCell(x5, "D3", rk.evType, false);
+    x5 = rkSetCell(x5, "H3", rk.evDate, false);
+    x5 = rkSetCell(x5, "D4", rk.evDept, false);
+    x5 = rkSetCell(x5, "H4", rk.evBy, false);
+    x5 = rkSetCell(x5, "B57", rk.opinion, false);
+    zip.file("xl/worksheets/sheet5.xml", x5);
+    let wbx = await get("xl/workbook.xml");
+    if (!wbx.includes("fullCalcOnLoad"))      // 열 때 전체 재계산
+      wbx = wbx.replace("<calcPr ", '<calcPr fullCalcOnLoad="1" ');
+    zip.file("xl/workbook.xml", wbx);
+    const blob = await zip.generateAsync({ type: "blob",
+      compression: "DEFLATE", mimeType:
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    downloadBlob(blob,
+      `화학물질_위험성평가_${(rk.name || "미입력").trim()}.xlsx`);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// 위험성평가 탭에서 직접 MSDS 업로드
+const rkDz = document.getElementById("rkDz");
+const rkFi = document.getElementById("rkFileInput");
+rkDz.addEventListener("dragover", e => { e.preventDefault(); rkDz.classList.add("drag"); });
+rkDz.addEventListener("dragleave", () => rkDz.classList.remove("drag"));
+rkDz.addEventListener("drop", e => {
+  e.preventDefault(); rkDz.classList.remove("drag");
+  const f = [...e.dataTransfer.files].find(f2 => /\.pdf$/i.test(f2.name));
+  if (f) rkAddFile(f);
+});
+rkFi.addEventListener("change", () => {
+  if (rkFi.files[0]) rkAddFile(rkFi.files[0]);
+  rkFi.value = "";
+});
+async function rkAddFile(f){
+  let rec;
+  try {
+    rec = parseMsds(await extractText(await f.arrayBuffer()), f.name);
+  } catch (err){
+    rec = parseMsds("", f.name);
+  }
+  rkLoad({ source: f.name, name: rec.productName,
+    manufacturer: rec.manufacturer, revision: rec.revisionDate,
+    components: rec.components.map(c => ({ ...c })),
+    hcodes: rec.hcodes || "", vals: rec.risk || {} });
+}
+
 /* ── 메뉴 전환 ── */
 const $btnManage = document.getElementById("tabBtnManage");
 const $btnReview = document.getElementById("tabBtnReview");
+const $btnRisk = document.getElementById("tabBtnRisk");
 const $btnSign = document.getElementById("tabBtnSign");
 function showTab(which){
-  const map = { manage: "tabManage", review: "tabReview", sign: "tabSign" };
+  const map = { manage: "tabManage", review: "tabReview", risk: "tabRisk",
+                sign: "tabSign" };
   for (const [k, pid] of Object.entries(map))
     document.getElementById(pid).hidden = k !== which;
   $btnManage.classList.toggle("on", which === "manage");
   $btnReview.classList.toggle("on", which === "review");
+  $btnRisk.classList.toggle("on", which === "risk");
   $btnSign.classList.toggle("on", which === "sign");
   // 하단 엑셀 다운로드 바는 관리요령 메뉴에서만 보인다
   document.body.classList.toggle("signview", which !== "manage");
@@ -2166,6 +3009,7 @@ function showTab(which){
 }
 $btnManage.addEventListener("click", () => showTab("manage"));
 $btnReview.addEventListener("click", () => showTab("review"));
+$btnRisk.addEventListener("click", () => showTab("risk"));
 $btnSign.addEventListener("click", () => showTab("sign"));
 renderSign();
 
