@@ -198,23 +198,24 @@ def _review_xlsx(db, upload_rows) -> bytes:
     ws = wb.active
     ws.title = "등록 목록"
     fill_sheet(ws,
-               ["No.", "작성일", "화학물질명", "제조사", "주요성분 및 함량",
-                "도입검토", "정보등록", "MSDS 파일"],
+               ["No.", "작성일", "화학물질명", "제조사", "MSDS 개정일자",
+                "주요성분 및 함량", "도입검토", "정보등록", "MSDS 파일"],
                [[r.get("id"), r.get("date", ""), r.get("name", ""),
-                 r.get("manufacturer", ""),
+                 r.get("manufacturer", ""), r.get("revision", ""),
                  components_text(r.get("components", [])),
                  r.get("review", ""), r.get("register", ""),
                  r.get("source", "")] for r in db],
-               [6, 12, 30, 22, 50, 16, 16, 30])
+               [6, 12, 30, 22, 14, 50, 16, 16, 30])
     if upload_rows:
         ws2 = wb.create_sheet("업로드 비교표")
         fill_sheet(ws2,
-                   ["파일", "화학물질명", "제조사", "주요성분 및 함량",
-                    "작성일", "도입검토", "정보등록"],
+                   ["파일", "화학물질명", "제조사", "MSDS 개정일자",
+                    "주요성분 및 함량", "작성일", "도입검토", "정보등록"],
                    [[r["파일"], r["화학물질명"], r["제조사"],
-                     r["주요성분 및 함량"], r["작성일"], r["도입검토"],
-                     r["정보등록"]] for r in upload_rows],
-                   [30, 30, 22, 50, 12, 16, 16])
+                     r.get("MSDS 개정일자", ""), r["주요성분 및 함량"],
+                     r["작성일"], r["도입검토"], r["정보등록"]]
+                    for r in upload_rows],
+                   [30, 30, 22, 14, 50, 12, 16, 16])
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
@@ -279,12 +280,17 @@ with tab_review:
     for name, data in st.session_state.review_parsed.items():
         with st.expander(f"📄 {name} — {data.product_name or '제품명 미확인'}",
                          expanded=len(st.session_state.review_parsed) == 1):
-            c1, c2, c3 = st.columns([1.6, 1.3, 1])
+            c1, c2, c3, c4 = st.columns([1.5, 1.2, 0.9, 0.9])
             rv_nm = c1.text_input("화학물질명", data.product_name,
                                   key=f"rv_nm_{name}")
             rv_mf = c2.text_input("제조사", data.manufacturer,
                                   key=f"rv_mf_{name}")
-            rv_dt = c3.date_input("작성일 (직접 입력)", value=None,
+            rv_rev = c3.text_input("MSDS 개정일자", data.revision_date,
+                                   key=f"rv_rev_{name}",
+                                   placeholder="YYYY-MM-DD",
+                                   help="MSDS의 최종 개정일자 — 개정일자가 "
+                                        "변경되면 정보등록 대상입니다.")
+            rv_dt = c4.date_input("작성일 (직접 입력)", value=None,
                                   key=f"rv_dt_{name}", format="YYYY-MM-DD",
                                   help="연도부터 날짜까지 작성자가 직접 입력합니다.")
             if not data.components:
@@ -308,7 +314,7 @@ with tab_review:
                 key=f"rv_cons_{name}")
 
             res = assess(rv_nm, comps, review_db, consumer,
-                         manufacturer=rv_mf)
+                         manufacturer=rv_mf, revision_date=rv_rev)
             (st.warning if res["review"] else st.success)(
                 f"**{res['review_label']}** — {res['review_reason']}")
             (st.info if res["register"] else st.success)(
@@ -351,7 +357,8 @@ with tab_review:
                     review_db.append({
                         "id": max([r.get("id", 0) for r in review_db] or [0]) + 1,
                         "date": str(rv_dt), "name": rv_nm.strip(),
-                        "manufacturer": rv_mf.strip(), "components": comps,
+                        "manufacturer": rv_mf.strip(),
+                        "revision": rv_rev.strip(), "components": comps,
                         "source": name,
                         "review": res["review_label"],
                         "register": res["register_label"]})
@@ -361,6 +368,7 @@ with tab_review:
                                f"(누적 {len(review_db)}건)")
 
             rv_rows.append({"파일": name, "화학물질명": rv_nm, "제조사": rv_mf,
+                            "MSDS 개정일자": rv_rev,
                             "주요성분 및 함량": components_text(comps),
                             "작성일": str(rv_dt) if rv_dt else "",
                             "도입검토": res["review_label"],
@@ -410,6 +418,7 @@ with tab_review:
             [{"No.": r.get("id"), "작성일": r.get("date", ""),
               "화학물질명": r.get("name", ""),
               "제조사": r.get("manufacturer", ""),
+              "MSDS 개정일자": r.get("revision", ""),
               "주요성분 및 함량": components_text(r.get("components", [])),
               "도입검토": r.get("review", ""), "정보등록": r.get("register", ""),
               "MSDS 파일": r.get("source", "")} for r in shown],

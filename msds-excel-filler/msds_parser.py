@@ -139,6 +139,7 @@ class MsdsData:
     manufacturer: str = ""                               # 제조사·공급자(1항)
     components: list = field(default_factory=list)       # 구성성분(3항)
     #   components: [{"name": 성분명, "cas": CAS번호, "content": 함유량}]
+    revision_date: str = ""                              # 최종 개정일자(16항 등)
     warnings: list = field(default_factory=list)         # 파싱 경고 메시지
 
 
@@ -576,6 +577,27 @@ def _row_name(before: str) -> str:
     return name
 
 
+_KDATE_RX = re.compile(
+    r"(\d{4})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]?\s*(\d{1,2})\s*일?")
+
+
+def extract_revision_date(text: str) -> str:
+    """MSDS 개정일자(최종 개정일자)를 찾는다 — 여러 날짜가 있으면 최신값.
+
+    "최종 개정일자 : 2024. 01. 26", "개정일자 2025년 01월 10일",
+    "27차 개정 : 2024/10/07" 형식을 모두 지원한다. 결과는 YYYY-MM-DD.
+    """
+    best = ""
+    for m in re.finditer(r"개정[^\n]{0,60}", text):
+        for dm in _KDATE_RX.finditer(m.group(0)):
+            y, mo, d = int(dm.group(1)), int(dm.group(2)), int(dm.group(3))
+            if 1990 <= y <= 2100 and 1 <= mo <= 12 and 1 <= d <= 31:
+                iso = f"{y:04d}-{mo:02d}-{d:02d}"
+                if iso > best:
+                    best = iso
+    return best
+
+
 def _content_mid(content):
     """함유량 문자열의 대푯값(단일값 또는 범위 중간값). 없으면 None."""
     nums = [float(x.replace(",", "."))
@@ -818,10 +840,11 @@ def parse_msds(pdf_source, source_name: str = "") -> MsdsData:
     if not data.product_name:
         data.warnings.append("제품명을 찾지 못했습니다.")
 
-    # 1항 제조사·3항 구성성분 — 화학물질 도입검토 메뉴에서 사용
+    # 1항 제조사·3항 구성성분·개정일자 — 화학물질 도입검토 메뉴에서 사용
     data.manufacturer = extract_manufacturer(sec1)
     data.components = drop_product_row(
         extract_components(sections.get(3, "")), data.product_name)
+    data.revision_date = extract_revision_date(whole)
 
     # 2) 유해성·위험성 ───────────────────────────────────────
     sec2 = sections.get(2, whole)

@@ -130,7 +130,7 @@
   details.rvcrit summary { cursor: pointer; font-weight: bold; color: #345; }
   details.rvcrit b { display: block; margin: 10px 0 2px; color: #163a5f; }
   details.rvcrit ol { margin: 4px 0 8px; padding-left: 22px; line-height: 1.6; }
-  .rvgrid { display: grid; grid-template-columns: 1.6fr 1.3fr 1fr; gap: 12px; }
+  .rvgrid { display: grid; grid-template-columns: 1.5fr 1.2fr 0.9fr 0.9fr; gap: 12px; }
   @media (max-width: 900px) { .rvgrid { grid-template-columns: 1fr; } }
   .rvcomp { display: grid; grid-template-columns: 1.6fr 1fr 0.8fr auto; gap: 8px;
             margin-top: 6px; align-items: center; }
@@ -829,6 +829,24 @@ function rowName(before){
   return name;
 }
 
+// MSDS 개정일자(최종 개정일자) — 여러 날짜가 있으면 최신값 (YYYY-MM-DD).
+// "최종 개정일자 : 2024. 01. 26", "개정일자 2025년 01월 10일", "27차 개정 :
+// 2024/10/07" 형식을 모두 지원한다.
+const KDATE_RX = /(\d{4})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]?\s*(\d{1,2})\s*일?/g;
+function extractRevisionDate(text){
+  let best = "";
+  for (const m of text.matchAll(/개정[^\n]{0,60}/g)){
+    for (const dm of m[0].matchAll(KDATE_RX)){
+      const y = +dm[1], mo = +dm[2], d = +dm[3];
+      if (y >= 1990 && y <= 2100 && mo >= 1 && mo <= 12 && d >= 1 && d <= 31){
+        const iso = `${String(y).padStart(4, "0")}-${String(mo).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+        if (iso > best) best = iso;
+      }
+    }
+  }
+  return best;
+}
+
 // 함유량 문자열의 대푯값(단일값 또는 범위 중간값). 없으면 null.
 function contentMid(content){
   const nums = ((content || "").match(/\d+(?:[.,]\d+)?/g) || [])
@@ -1009,7 +1027,7 @@ function parseMsds(text, sourceName){
   const data = { sourceName, productName: "", signalWord: "", pictograms: [],
     hazards: [], precautions: [], ppe: [], inhalation: [], skinEye: [],
     ingestion: [], emergency: [], unNumber: "",
-    manufacturer: "", components: [], warnings: [] };
+    manufacturer: "", components: [], revisionDate: "", warnings: [] };
   if (text.trim().length < 50){
     data.warnings.push("PDF에서 텍스트를 추출하지 못했습니다. 스캔본(이미지) MSDS인 경우 " +
       "OCR 처리된 PDF를 사용하거나 항목을 직접 입력해 주세요.");
@@ -1051,10 +1069,11 @@ function parseMsds(text, sourceName){
   if (!data.productName) data.warnings.push("제품명을 찾지 못했습니다.");
   let m;
 
-  // 1항 제조사·3항 구성성분 — 화학물질 도입검토 메뉴에서 사용
+  // 1항 제조사·3항 구성성분·개정일자 — 화학물질 도입검토 메뉴에서 사용
   data.manufacturer = extractManufacturer(sections[1] || whole);
   data.components = dropProductRow(extractComponents(sections[3] || ""),
                                    data.productName);
+  data.revisionDate = extractRevisionDate(whole);
 
   // 2) 유해성·위험성
   const sec2 = sections[2] || whole;
@@ -1714,17 +1733,25 @@ function rvCompKey(components){
 }
 
 // 도입검토·정보등록 대상 여부 판독 (review_logic.assess 이식)
-function rvAssess(name, components, db, consumer, manufacturer){
-  const key = rvCompKey(components), nm = rvNorm(name), mf = rvNorm(manufacturer);
+// · 성분 비교는 CAS 번호·함유량 기준 — 성분명 표기 차이(물/Water)는 같은 물질
+// · CAS·함유량·제조사 모두 동일 → 둘 다 대상 아님 (개정일자 변경 시 정보등록 대상)
+// · 구성성분이 동일해도 제조사가 변경되었으면 도입검토 대상
+function rvAssess(name, components, db, consumer, manufacturer, revisionDate){
+  const key = rvCompKey(components), nm = rvNorm(name),
+        mf = rvNorm(manufacturer), rev = rvNorm(revisionDate);
   const sameName = (db || []).filter(r => nm && rvNorm(r.name) === nm);
   const sameComp = (db || []).filter(r => key && rvCompKey(r.components) === key);
-  // 제조사와 구성성분·함량이 모두 같은 기존 등록 (= 변경 없음)
+  // CAS 번호·함유량에 더해 제조사까지 같은 기존 등록 (= 변경 없음)
   const sameAll = sameComp.filter(r => rvNorm(r.manufacturer) === mf);
   let review, reviewLabel, reviewReason;
-  if (sameComp.length){
-    review = false; reviewLabel = "도입검토 제외 가능";
-    reviewReason = "기존 등록 물질과 구성성분이 동일합니다(제조사 변경 등 구성성분이 " +
-                   "동일한 경우) — 도입검토를 제외할 수 있습니다.";
+  if (sameAll.length){
+    review = false; reviewLabel = "도입검토 대상 아님";
+    reviewReason = "기존 등록 물질과 CAS 번호·성분 함유량·제조사가 모두 동일합니다" +
+                   "(성분명 표기 차이는 무시) — 도입검토 대상이 아닙니다.";
+  } else if (sameComp.length){
+    review = true; reviewLabel = "도입검토 대상";
+    reviewReason = "기존 등록 물질과 CAS 번호·성분 함유량은 동일하지만 제조사가 " +
+                   "변경되었습니다 — 도입검토 대상입니다.";
   } else if (sameName.length){
     review = true; reviewLabel = "도입검토 대상";
     reviewReason = "같은 이름의 기존 등록 물질과 구성성분이 다릅니다 — 다른 물질로의 " +
@@ -1739,9 +1766,17 @@ function rvAssess(name, components, db, consumer, manufacturer){
     registerReason = "일반 소매점에서 일반 소비자 대상으로 판매되는 물질은 정보등록 " +
                      "대상에서 제외됩니다.";
   } else if (sameAll.length){
-    register = false; registerLabel = "정보등록 대상 아님";
-    registerReason = "기존 등록 물질에서 제조사와 구성성분 및 함량의 변경이 없습니다 — " +
-                     "정보등록 대상이 아닙니다.";
+    const priorRevs = sameAll.map(r => rvNorm(r.revision));
+    if (rev && priorRevs.every(pr => pr && pr !== rev)){
+      register = true; registerLabel = "정보등록 대상";
+      registerReason = "CAS 번호·성분 함유량·제조사는 동일하지만 MSDS 개정일자가 " +
+        `변경되었습니다(기존 ${sameAll[sameAll.length - 1].revision || "미상"} → ` +
+        `이번 ${revisionDate}) — 정보등록 대상입니다.`;
+    } else {
+      register = false; registerLabel = "정보등록 대상 아님";
+      registerReason = "기존 등록과 CAS 번호·성분 함유량·제조사가 동일하고 MSDS " +
+                       "개정일자 변경이 없습니다 — 정보등록 대상이 아닙니다.";
+    }
   } else {
     register = true; registerLabel = "정보등록 대상";
     registerReason = "공정(시설/장비 등)·당사 보유 시설/장비·협력업체 반입·구성원 작업 시 " +
@@ -1793,7 +1828,8 @@ async function rvAddFiles(files){
     if (!rec.components.length)
       warnings.push("구성성분(3항)을 자동 인식하지 못했습니다. 아래 표에 직접 입력해 주세요.");
     rvState.set(id, { id, source: f.name, name: rec.productName,
-      manufacturer: rec.manufacturer, date: "", consumer: false, warnings,
+      manufacturer: rec.manufacturer, revision: rec.revisionDate,
+      date: "", consumer: false, warnings,
       components: rec.components.map(c => ({ ...c })) });
     $rvCards.appendChild(buildRvCard(id));
     renderRvComps(id);
@@ -1817,6 +1853,11 @@ function buildRvCard(id){
           <input type="text" data-rvid="${id}" data-rvkey="name" value="${esc(st.name)}"></div>
         <div><label class="f">제조사<span class="ref">MSDS 1항</span></label>
           <input type="text" data-rvid="${id}" data-rvkey="manufacturer" value="${esc(st.manufacturer)}"></div>
+        <div><label class="f">MSDS 개정일자<span class="ref">MSDS 16항 등</span></label>
+          <input type="text" data-rvid="${id}" data-rvkey="revision"
+                 placeholder="YYYY-MM-DD" value="${esc(st.revision || "")}"
+                 title="MSDS의 최종 개정일자 — 개정일자가 변경되면 정보등록 대상입니다.">
+        </div>
         <div><label class="f">작성일 (직접 입력)</label>
           <input type="date" data-rvid="${id}" data-rvkey="date" value="">
           <div class="hint">연도부터 날짜까지 작성자가 직접 입력합니다.</div></div>
@@ -1871,7 +1912,7 @@ function rvDiffHtml(last, comps){
 function renderRvVerdict(id){
   const st = rvState.get(id);
   const res = rvAssess(st.name, rvComps(st), loadRvDb(), st.consumer,
-                       st.manufacturer);
+                       st.manufacturer, st.revision);
   st.lastRes = res;
   document.querySelector(`[data-rvverdict="${id}"]`).innerHTML =
     `<div class="${res.review ? "v-warn" : "v-ok"}"><b>${res.reviewLabel}</b> — ${esc(res.reviewReason)}</div>` +
@@ -1890,10 +1931,11 @@ function renderRvCompare(){
   document.getElementById("rvBulk").hidden = !sts.length;
   document.getElementById("rvXlsx").hidden = !sts.length && !loadRvDb().length;
   tbl.innerHTML = !sts.length ? "" :
-    "<tr><th>파일</th><th>화학물질명</th><th>제조사</th><th>주요성분 및 함량</th>" +
-    "<th>작성일</th><th>도입검토</th><th>정보등록</th></tr>" +
+    "<tr><th>파일</th><th>화학물질명</th><th>제조사</th><th>MSDS 개정일자</th>" +
+    "<th>주요성분 및 함량</th><th>작성일</th><th>도입검토</th><th>정보등록</th></tr>" +
     sts.map(st => `<tr><td>${esc(st.source)}</td><td>${esc(st.name)}</td>` +
-      `<td>${esc(st.manufacturer)}</td><td>${esc(rvComponentsText(rvComps(st)))}</td>` +
+      `<td>${esc(st.manufacturer)}</td><td>${esc(st.revision || "")}</td>` +
+      `<td>${esc(rvComponentsText(rvComps(st)))}</td>` +
       `<td>${esc(st.date)}</td><td>${st.lastRes ? st.lastRes.reviewLabel : ""}</td>` +
       `<td>${st.lastRes ? st.lastRes.registerLabel : ""}</td></tr>`).join("");
 }
@@ -1918,9 +1960,11 @@ function renderRvDb(){
     `🗑 표시된 등록 ${shown.length}건 모두 삭제`;
   document.getElementById("rvDbTable").innerHTML = !shown.length ? "" :
     "<tr><th>No.</th><th>작성일</th><th>화학물질명</th><th>제조사</th>" +
+    "<th>MSDS 개정일자</th>" +
     "<th>주요성분 및 함량</th><th>도입검토</th><th>정보등록</th><th>MSDS 파일</th><th></th></tr>" +
     shown.map(r => `<tr><td>${r.id}</td><td>${esc(r.date || "")}</td>` +
       `<td>${esc(r.name || "")}</td><td>${esc(r.manufacturer || "")}</td>` +
+      `<td>${esc(r.revision || "")}</td>` +
       `<td>${esc(rvComponentsText(r.components))}</td><td>${esc(r.review || "")}</td>` +
       `<td>${esc(r.register || "")}</td><td>${esc(r.source || "")}</td>` +
       `<td><button class="rvdel2" data-rvdbdel="${r.id}" type="button">삭제</button></td></tr>`).join("");
@@ -2010,22 +2054,22 @@ document.getElementById("rvXlsx").addEventListener("click", async e => {
     };
     const db = loadRvDb();
     fillSheet(wb.addWorksheet("등록 목록"),
-      ["No.", "작성일", "화학물질명", "제조사", "주요성분 및 함량",
-       "도입검토", "정보등록", "MSDS 파일"],
+      ["No.", "작성일", "화학물질명", "제조사", "MSDS 개정일자",
+       "주요성분 및 함량", "도입검토", "정보등록", "MSDS 파일"],
       db.map(r => [r.id, r.date || "", r.name || "", r.manufacturer || "",
-        rvComponentsText(r.components), r.review || "", r.register || "",
-        r.source || ""]),
-      [6, 12, 30, 22, 50, 16, 16, 30]);
+        r.revision || "", rvComponentsText(r.components), r.review || "",
+        r.register || "", r.source || ""]),
+      [6, 12, 30, 22, 14, 50, 16, 16, 30]);
     const sts = [...rvState.values()];
     if (sts.length){
       fillSheet(wb.addWorksheet("업로드 비교표"),
-        ["파일", "화학물질명", "제조사", "주요성분 및 함량", "작성일",
-         "도입검토", "정보등록"],
-        sts.map(st => [st.source, st.name, st.manufacturer,
+        ["파일", "화학물질명", "제조사", "MSDS 개정일자", "주요성분 및 함량",
+         "작성일", "도입검토", "정보등록"],
+        sts.map(st => [st.source, st.name, st.manufacturer, st.revision || "",
           rvComponentsText(rvComps(st)), st.date,
           st.lastRes ? st.lastRes.reviewLabel : "",
           st.lastRes ? st.lastRes.registerLabel : ""]),
-        [30, 30, 22, 50, 12, 16, 16]);
+        [30, 30, 22, 14, 50, 12, 16, 16]);
     }
     const buf = await wb.xlsx.writeBuffer();
     downloadBlob(new Blob([buf], { type:
@@ -2050,9 +2094,11 @@ function rvSave(id){
   }
   const db = loadRvDb();
   const res = st.lastRes ||
-              rvAssess(st.name, rvComps(st), db, st.consumer, st.manufacturer);
+              rvAssess(st.name, rvComps(st), db, st.consumer, st.manufacturer,
+                       st.revision);
   db.push({ id: Math.max(0, ...db.map(r => r.id || 0)) + 1, date: st.date,
     name: st.name.trim(), manufacturer: (st.manufacturer || "").trim(),
+    revision: (st.revision || "").trim(),
     components: rvComps(st), source: st.source,
     review: res.reviewLabel, register: res.registerLabel });
   saveRvDb(db);
