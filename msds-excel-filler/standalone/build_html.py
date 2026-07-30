@@ -23,7 +23,7 @@ import ko_spacing  # noqa: E402
 import risk_logic  # noqa: E402
 
 VENDOR = os.path.join(HERE, "vendor")
-OUT = os.path.join(HERE, "MSDS_관리요령_작성기.html")
+OUT = os.path.join(HERE, "켐세이프_화학물질통합안전관리.html")
 FORM_SHEETS = 20  # 한 파일에서 처리 가능한 최대 물질 수
 
 

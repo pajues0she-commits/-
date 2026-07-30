@@ -3,6 +3,7 @@
 
 실행:  streamlit run app.py
 """
+import datetime
 import io
 import json
 import os
@@ -20,16 +21,18 @@ from review_logic import (CRITERIA_REVIEW, CRITERIA_REGISTER, assess,
                           components_text)
 import risk_logic as RL
 
-st.set_page_config(page_title="MSDS 자동 작성 도구", page_icon="🧪",
-                   layout="wide")
+st.set_page_config(page_title="켐세이프 — 화학물질 통합 안전관리",
+                   page_icon="🧪", layout="wide")
 
-st.title("🧪 MSDS 자동 작성 도구")
-st.caption("「화학물질 작업공정별 관리요령」 메뉴에서 MSDS PDF를 업로드하면 항목을 자동 "
+st.title("🧪 켐세이프 (ChemSafe) — 화학물질 통합 안전관리 도구")
+st.caption("「대시보드」에서 연간 도입검토·정보등록·위험성평가 현황을 확인하고, "
+           "「화학물질 작업공정별 관리요령」 메뉴에서 MSDS PDF를 업로드하면 항목을 자동 "
            "추출해 엑셀 양식을 만들고, 「화학물질 도입검토」 메뉴에서는 MSDS에서 물질명·"
            "제조사·주요성분을 자동 인식해 도입검토·정보등록 대상 여부를 판독하고 누적 "
-           "관리하며, 「유해화학물질 규격표지」 메뉴에서는 화학물질명만 입력하면 CAS 번호·"
-           "국제연합번호·그림문자가 자동 입력된 표지판 시안(화학물질관리법 시행규칙 "
-           "별표 2)을 만듭니다.")
+           "관리하며, 「화학물질 위험성평가」 메뉴에서는 도입검토 대상 물질의 위험성평가를 "
+           "작성해 평가 양식 엑셀로 내려받고, 「유해화학물질 규격표지」 메뉴에서는 "
+           "화학물질명만 입력하면 CAS 번호·국제연합번호·그림문자가 자동 입력된 표지판 "
+           "시안(화학물질관리법 시행규칙 별표 2)을 만듭니다.")
 
 _PIC_OPTIONS = [f"{code} {name}" for code, name in PICTOGRAM_NAMES.items()]
 
@@ -40,18 +43,93 @@ def _pic_label(code: str) -> str:
 
 # 메뉴 — 라디오 내비게이션 (도입검토 → 위험성평가 버튼으로 이동할 수 있도록
 # st.tabs 대신 사용: 프로그램에서 st.session_state.menu 변경으로 전환 가능)
-_MENUS = ["📋 화학물질 작업공정별 관리요령", "🔍 화학물질 도입검토",
-          "🧪 화학물질 위험성평가", "🚧 유해화학물질 규격표지"]
+M_DASH = "🏠 대시보드"
+M_MANAGE = "📋 화학물질 작업공정별 관리요령"
+M_REVIEW = "🔍 화학물질 도입검토"
+M_RISK = "🧪 화학물질 위험성평가"
+M_SIGN = "🚧 유해화학물질 규격표지"
+_MENUS = [M_DASH, M_MANAGE, M_REVIEW, M_RISK, M_SIGN]
 if "menu" not in st.session_state:
-    st.session_state.menu = _MENUS[0]
+    st.session_state.menu = M_DASH
 if st.session_state.get("menu_jump"):     # 버튼으로 메뉴 이동 (다음 실행에 반영)
     st.session_state.menu = st.session_state.pop("menu_jump")
 menu = st.radio("메뉴", _MENUS, horizontal=True, key="menu",
                 label_visibility="collapsed")
 st.markdown("<hr style='margin:0.2rem 0 1rem 0;'>", unsafe_allow_html=True)
 
+# 도입검토 등록 DB (누적 관리) — 대시보드·도입검토·위험성평가 메뉴 공용
+_REVIEW_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               "review_db.json")
+
+
+def _load_review_db():
+    try:
+        with open(_REVIEW_DB_PATH, encoding="utf-8") as f:
+            db = json.load(f)
+            return db if isinstance(db, list) else []
+    except Exception:
+        return []
+
+
+def _save_review_db(db):
+    with open(_REVIEW_DB_PATH, "w", encoding="utf-8") as f:
+        json.dump(db, f, ensure_ascii=False, indent=1)
+
+
+# ── 🏠 대시보드 ─────────────────────────────────────────────────────────
+def _rv_disp_label(r, key):
+    """담당자 검토 결과 '대상 아님' 체크 시 표시 문구."""
+    return "대상 아님(담당자 검토)" if r.get("override") else r.get(key, "")
+
+
+def _dash_stats(db):
+    """연도별 도입검토·정보등록·위험성평가 완료 건수 (담당자 검토 제외 반영)."""
+    stats = {}
+    for r in db:
+        if r.get("override"):
+            continue
+        y = (r.get("date") or "")[:4] or "미상"
+        s = stats.setdefault(y, {"review": 0, "register": 0, "done": 0})
+        if r.get("review") == "도입검토 대상":
+            s["review"] += 1
+            if r.get("risk_done"):
+                s["done"] += 1
+        if r.get("register") == "정보등록 대상":
+            s["register"] += 1
+    return stats
+
+
+if menu == M_DASH:
+    _db = _load_review_db()
+    stats = _dash_stats(_db)
+    ty = str(datetime.date.today().year)
+    cur = stats.get(ty, {"review": 0, "register": 0, "done": 0})
+    st.markdown("##### 🏠 대시보드 — 도입검토 · 정보등록 · 위험성평가 현황")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric(f"{ty}년 도입검토 건수", cur["review"],
+              help="올해 작성일 기준, 도입검토 대상으로 등록된 건수")
+    c2.metric(f"{ty}년 정보등록 건수", cur["register"],
+              help="올해 작성일 기준, 정보등록 대상으로 등록된 건수")
+    c3.metric(f"{ty}년 위험성평가 완료", f"{cur['done']} / {cur['review']}",
+              help="도입검토 대상 중 위험성평가를 완료(엑셀 다운로드)한 건수")
+    c4.metric("누적 등록", len(_db))
+    year_rows = [{"연도": y, "도입검토 건수": s["review"],
+                  "정보등록 건수": s["register"],
+                  "위험성평가 완료": s["done"],
+                  "위험성평가 미실시": s["review"] - s["done"]}
+                 for y, s in sorted(stats.items(), reverse=True)]
+    if year_rows:
+        st.markdown("###### 연도별 현황")
+        st.dataframe(year_rows, hide_index=True, use_container_width=True)
+        st.caption("등록된 화학물질(도입검토 메뉴)의 작성일 기준 집계입니다. "
+                   "담당자 검토 결과 '대상 아님'으로 체크된 등록은 집계에서 "
+                   "제외됩니다.")
+    else:
+        st.info("아직 등록된 화학물질이 없습니다 — 「화학물질 도입검토」 "
+                "메뉴에서 MSDS를 등록하면 여기에 집계됩니다.")
+
 uploaded = None
-if menu == _MENUS[0]:
+if menu == M_MANAGE:
     uploaded = st.file_uploader("MSDS PDF 업로드 (여러 파일 가능)", type=["pdf"],
                                 accept_multiple_files=True)
 
@@ -69,14 +147,14 @@ for f in uploaded or []:
                 data = MsdsData(source_name=f.name,
                                 warnings=[f"PDF를 읽지 못했습니다: {e}"])
         st.session_state.parsed[f.name] = data
-if menu == _MENUS[0]:
+if menu == M_MANAGE:
     for name in list(st.session_state.parsed):
         if name not in current_names:
             del st.session_state.parsed[name]
 
 records = []
 for name, data in (st.session_state.parsed.items()
-                   if menu == _MENUS[0] else []):
+                   if menu == M_MANAGE else []):
     with st.expander(
             f"📄 {name} — {data.product_name or '제품명 미확인'}",
             expanded=len(st.session_state.parsed) == 1):
@@ -139,7 +217,7 @@ for name, data in (st.session_state.parsed.items()
             st.markdown("##### 🔍 미리보기 (엑셀 양식과 동일)")
             st.markdown(preview_html(rec), unsafe_allow_html=True)
 
-if menu == _MENUS[0]:
+if menu == M_MANAGE:
     if records:
         st.divider()
         if st.button("📥 엑셀 파일 생성", type="primary"):
@@ -158,24 +236,6 @@ if menu == _MENUS[0]:
         st.info("MSDS PDF 파일을 업로드하면 여기에서 추출 결과를 확인하고 수정할 수 있습니다.")
 
 # ── 화학물질 도입검토 ────────────────────────────────────────────────────
-_REVIEW_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                               "review_db.json")
-
-
-def _load_review_db():
-    try:
-        with open(_REVIEW_DB_PATH, encoding="utf-8") as f:
-            db = json.load(f)
-            return db if isinstance(db, list) else []
-    except Exception:
-        return []
-
-
-def _save_review_db(db):
-    with open(_REVIEW_DB_PATH, "w", encoding="utf-8") as f:
-        json.dump(db, f, ensure_ascii=False, indent=1)
-
-
 def _review_xlsx(db, upload_rows) -> bytes:
     """도입검토 등록 목록(+현재 업로드 비교표)을 엑셀로 만든다."""
     import openpyxl
@@ -211,13 +271,15 @@ def _review_xlsx(db, upload_rows) -> bytes:
     ws.title = "등록 목록"
     fill_sheet(ws,
                ["No.", "작성일", "화학물질명", "제조사", "MSDS 개정일자",
-                "주요성분 및 함량", "도입검토", "정보등록", "MSDS 파일"],
+                "주요성분 및 함량", "도입검토", "정보등록", "위험성평가",
+                "MSDS 파일"],
                [[r.get("id"), r.get("date", ""), r.get("name", ""),
                  r.get("manufacturer", ""), r.get("revision", ""),
                  components_text(r.get("components", [])),
-                 r.get("review", ""), r.get("register", ""),
+                 _rv_disp_label(r, "review"), _rv_disp_label(r, "register"),
+                 (f"완료 ({r['risk_done']})" if r.get("risk_done") else ""),
                  r.get("source", "")] for r in db],
-               [6, 12, 30, 22, 14, 50, 16, 16, 30])
+               [6, 12, 30, 22, 14, 50, 16, 16, 16, 30])
     if upload_rows:
         ws2 = wb.create_sheet("업로드 비교표")
         fill_sheet(ws2,
@@ -233,7 +295,7 @@ def _review_xlsx(db, upload_rows) -> bytes:
     return buf.getvalue()
 
 
-if menu == _MENUS[1]:
+if menu == M_REVIEW:
     st.markdown("MSDS를 등록하면 **화학물질명·제조사·주요성분 및 함량**을 자동 인식해 "
                 "비교표를 만들고, 기존 등록 이력과 비교해 **도입검토 대상·정보등록 대상** "
                 "여부를 자동 판독합니다. 등록된 정보는 누적 관리되며, 같은 물질의 이전 "
@@ -332,22 +394,6 @@ if menu == _MENUS[1]:
                 f"**{res['review_label']}** — {res['review_reason']}")
             (st.info if res["register"] else st.success)(
                 f"**{res['register_label']}** — {res['register_reason']}")
-            if res["review"]:
-                # 도입검토 대상 → 「위험성 평가」 버튼으로 위험성평가 메뉴 이동
-                if st.button("🧪 위험성 평가 — 이 MSDS로 작성",
-                             key=f"rv_risk_{name}",
-                             help="도입검토 대상 물질은 위험성평가를 진행합니다. "
-                                  "이 MSDS의 인식 결과를 가지고 「화학물질 "
-                                  "위험성평가」 메뉴로 이동합니다."):
-                    st.session_state.risk_nonce = \
-                        st.session_state.get("risk_nonce", 0) + 1
-                    st.session_state.risk_src = {
-                        "name": rv_nm.strip(), "manufacturer": rv_mf.strip(),
-                        "revision": rv_rev.strip(), "components": comps,
-                        "hcodes": data.hcodes, "vals": dict(data.risk),
-                        "source": name}
-                    st.session_state.menu_jump = _MENUS[2]
-                    st.rerun()
 
             prior = res["same_name"] or res["same_comp"]
             if prior:
@@ -390,7 +436,10 @@ if menu == _MENUS[1]:
                         "revision": rv_rev.strip(), "components": comps,
                         "source": name,
                         "review": res["review_label"],
-                        "register": res["register_label"]})
+                        "register": res["register_label"],
+                        # 위험성평가 연계용 — MSDS 인식 데이터·진행 상태
+                        "hcodes": data.hcodes, "risk": dict(data.risk),
+                        "risk_done": "", "override": False})
                     _save_review_db(review_db)
                     bulk_saved.append(name)
                     st.success(f"「{rv_nm.strip()}」을(를) 등록했습니다. "
@@ -443,15 +492,79 @@ if menu == _MENUS[1]:
         return q in blob
     shown = [r for r in review_db if _hit(r)]
     if shown:
-        st.dataframe(
+        _db_cols = ["No.", "작성일", "화학물질명", "제조사", "MSDS 개정일자",
+                    "주요성분 및 함량", "도입검토", "정보등록", "위험성평가",
+                    "MSDS 파일"]
+        edited = st.data_editor(
             [{"No.": r.get("id"), "작성일": r.get("date", ""),
               "화학물질명": r.get("name", ""),
               "제조사": r.get("manufacturer", ""),
               "MSDS 개정일자": r.get("revision", ""),
               "주요성분 및 함량": components_text(r.get("components", [])),
-              "도입검토": r.get("review", ""), "정보등록": r.get("register", ""),
+              "도입검토": _rv_disp_label(r, "review"),
+              "정보등록": _rv_disp_label(r, "register"),
+              "위험성평가": (f"✅ 위험성평가 완료 ({r['risk_done']})"
+                             if r.get("risk_done") else
+                             ("대상 (미실시)" if not r.get("override") and
+                              r.get("review") == "도입검토 대상" else "")),
+              "대상 아님(담당자 검토)": bool(r.get("override")),
               "MSDS 파일": r.get("source", "")} for r in shown],
-            use_container_width=True, hide_index=True)
+            hide_index=True, use_container_width=True, key="rv_db_edit",
+            disabled=_db_cols,
+            column_config={"대상 아님(담당자 검토)":
+                           st.column_config.CheckboxColumn(
+                               help="도입검토·정보등록 대상으로 판정되었지만 "
+                                    "담당자 검토 결과 대상이 아니면 체크하세요 "
+                                    "— 표시가 '대상 아님(담당자 검토)'으로 "
+                                    "바뀌고 대시보드 집계에서 제외됩니다.")})
+        _ovr_changed = False
+        for row in edited:
+            rec = next((r for r in review_db if r.get("id") == row["No."]),
+                       None)
+            if rec is not None and \
+                    bool(rec.get("override")) != bool(row["대상 아님(담당자 검토)"]):
+                rec["override"] = bool(row["대상 아님(담당자 검토)"])
+                _ovr_changed = True
+        if _ovr_changed:
+            _save_review_db(review_db)
+            st.rerun()
+
+        # 도입검토 대상 → 「위험성 평가」 (담당자 검토 '대상 아님' 제외)
+        risk_targets = [r for r in shown
+                        if r.get("review") == "도입검토 대상" and
+                        not r.get("override")]
+        if risk_targets:
+            rk1, rk2 = st.columns([1.8, 1.6])
+
+            def _rt_label(i):
+                r = next(x for x in risk_targets if x.get("id") == i)
+                return (f"{i} — {r.get('name', '')}" +
+                        (" (위험성평가 완료)" if r.get("risk_done") else ""))
+            rt_id = rk1.selectbox("위험성평가 대상 (도입검토 대상 등록)",
+                                  [r.get("id") for r in risk_targets],
+                                  format_func=_rt_label, key="rv_risk_sel")
+            rk2.markdown("<div style='height:1.75em'></div>",
+                         unsafe_allow_html=True)
+            if rk2.button("🧪 위험성 평가 — 선택한 등록으로 작성",
+                          key="rv_db_risk",
+                          help="등록된 MSDS 인식 결과를 가지고 「화학물질 "
+                               "위험성평가」 메뉴로 이동합니다. 위험성평가 "
+                               "엑셀을 다운로드하면 이 목록에 '위험성평가 "
+                               "완료'로 표시됩니다."):
+                rec = next(r for r in risk_targets if r.get("id") == rt_id)
+                st.session_state.risk_nonce = \
+                    st.session_state.get("risk_nonce", 0) + 1
+                st.session_state.risk_src = {
+                    "name": rec.get("name", ""),
+                    "manufacturer": rec.get("manufacturer", ""),
+                    "revision": rec.get("revision", ""),
+                    "components": rec.get("components", []),
+                    "hcodes": rec.get("hcodes", ""),
+                    "vals": dict(rec.get("risk") or {}),
+                    "source": rec.get("source", ""),
+                    "db_id": rec.get("id")}
+                st.session_state.menu_jump = M_RISK
+                st.rerun()
         d1, d2, d3 = st.columns([1, 1.6, 1.6])
         del_id = d1.selectbox("삭제할 등록 번호(No.)", [r.get("id") for r in shown],
                               key="rv_del_sel")
@@ -477,7 +590,7 @@ if menu == _MENUS[1]:
 _RISK_TPL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                               "assets", "risk_template.xlsx")
 
-if menu == _MENUS[2]:
+if menu == M_RISK:
     st.markdown("도입검토 대상 화학물질의 **위험성평가**(물리화학적 · 환경오염 · "
                 "작업자 안전보건, 유해성×가능성)를 작성합니다. MSDS에서 자동 "
                 "인식한 값(H-Code·물리화학 특성·독성·환경 데이터)이 미리 채워지며, "
@@ -757,17 +870,31 @@ if menu == _MENUS[2]:
                      "opinion": opinion.strip()}}
         with open(_RISK_TPL_PATH, "rb") as _tf:
             _tpl = _tf.read()
+
+        def _mark_risk_done(db_id=src.get("db_id")):
+            """등록된 화학물질에서 시작한 평가 → 다운로드 시 완료 표시."""
+            if not db_id:
+                return
+            db2 = _load_review_db()
+            for r in db2:
+                if r.get("id") == db_id:
+                    r["risk_done"] = str(datetime.date.today())
+            _save_review_db(db2)
+
         st.download_button(
             "⬇️ 위험성평가 엑셀 다운로드 (양식 자동 작성)",
             RL.fill_template(_tpl, payload),
             file_name=f"화학물질_위험성평가_{rk_name.strip() or '미입력'}.xlsx",
             mime="application/vnd.openxmlformats-officedocument."
                  "spreadsheetml.sheet", type="primary",
+            on_click=_mark_risk_done,
             help="첨부 양식과 동일한 수식·서식의 엑셀 파일에 입력값이 자동 "
                  "기입됩니다. 엑셀에서 열면 수식이 재계산되어 화면과 동일한 "
-                 "결과가 표시됩니다.")
+                 "결과가 표시됩니다."
+                 + (" 다운로드하면 등록된 화학물질 조회 목록에 '위험성평가 "
+                    "완료'로 표시됩니다." if src.get("db_id") else ""))
 
-if menu == _MENUS[3]:
+if menu == M_SIGN:
     st.markdown("**화학물질관리법 시행규칙 [별표 2] 유해화학물질의 표시방법**(제12조제2항 관련) "
                 "1호 — 보관·저장시설/진열·보관 장소 표지 시안을 만듭니다.  \n"
                 "규격: a=50cm, b=(3/2)a=75cm, c=(1/4)a=12.5cm, d=(1/4)a=12.5cm · "
