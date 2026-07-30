@@ -108,6 +108,7 @@ def main():
         "autoLabels": risk_logic.AUTO_LABELS,
         "sheets": risk_logic.SHEETS,
         "tiers": risk_logic.TIERS,
+        "criteria": risk_logic.OVERALL_CRITERIA,
     }, ensure_ascii=False))
     with open(os.path.join(ROOT, "assets", "risk_template.xlsx"), "rb") as f:
         html = html.replace("__RISK_TPL_B64__",

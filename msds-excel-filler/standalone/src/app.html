@@ -2114,9 +2114,11 @@ function renderRvVerdict(id){
   document.querySelector(`[data-rvverdict="${id}"]`).innerHTML =
     `<div class="${res.review ? "v-warn" : "v-ok"}"><b>${res.reviewLabel}</b> — ${esc(res.reviewReason)}</div>` +
     `<div class="${res.register ? "v-info" : "v-ok"}"><b>${res.registerLabel}</b> — ${esc(res.registerReason)}</div>` +
-    (res.review ? `<button class="rvsave" data-rvrisk="${id}" type="button"
-       style="margin-top:8px;" title="이 MSDS의 인식 결과를 「화학물질 위험성평가」 메뉴로 가져갑니다.">
-       🧪 화학물질 위험성평가 작성 — 이 MSDS로 시작</button>` : "");
+    // 도입검토 대상 → 「위험성 평가」 버튼 (이전 등록과 비교 위쪽)
+    (res.review ? `<div style="margin-top:8px;"><button class="rvsave"
+       data-rvrisk="${id}" type="button"
+       title="이 MSDS의 인식 결과를 가지고 「화학물질 위험성평가」 메뉴로 이동합니다.">
+       🧪 위험성 평가 — 이 MSDS로 작성</button></div>` : "");
   const prior = res.sameName.length ? res.sameName : res.sameComp;
   document.querySelector(`[data-rvprior="${id}"]`).innerHTML =
     prior.length ? rvDiffHtml(prior[prior.length - 1], rvComps(st)) : "";
@@ -2525,15 +2527,20 @@ function rkMitEffect(mit, pscore, hasPpe){
   return { reduction: t, newScore: ns, newGrade: rkPossGrade(ns) };
 }
 
-// ⑤ 종합결과 「검토 결과」(D16) 수식 그대로
+// ⑤ 종합결과 「검토 결과」 — 고위험일 경우에만 부서장 검토·안전보건관리책임자
+// 승인 하에 도입 가능. 치명항목에 대한 SHE부서 검토는 불요. (risk_logic.py)
+const RK_VERDICTS = {
+  ban: "🔴 허용 불가  — 원칙적 도입/취급 불가 (도입하려면 경영진 예외 승인 필수)",
+  high: "🟠 고위험  — 부서장 검토 및 안전보건관리책임자 승인 하에 도입/취급 가능 (저감대책 보강·재평가 권장)",
+  mid: "🟡 중위험 — 도입/취급 가능 (추가 저감대책 검토 권장, 모니터링 지속)",
+  low: "🟢 저위험  — 도입/취급 가능",
+};
 function rkVerdictText(finals, fatalTotal){
   const m = Math.max(...finals);
-  const fatal = fatalTotal >= 1 ?
-    "\n🟠 치명항목(유해성 5점) 有  — SHE부서 검토자 반영 필요" : "";
-  if (m >= 17) return "🔴 허용 불가  — 원칙적 도입/취급 불가 (도입하려면 경영진 예외 승인 필수)";
-  if (m >= 10) return "🟠 고위험  — 저감대책 보강 후 재평가하여 위험도 감소 후 도입/취급 가능";
-  if (m >= 5) return "🟡 중위험 — 부서장 승인 후 도입/취급 가능 (추가 저감대책 검토 권장, 모니터링 지속)" + fatal;
-  return "🟢 저위험  — 부서장 승인 후 도입/취급 가능" + fatal;
+  if (m >= 17) return RK_VERDICTS.ban;
+  if (m >= 10) return RK_VERDICTS.high;
+  if (m >= 5) return RK_VERDICTS.mid;
+  return RK_VERDICTS.low;
 }
 
 function rkEvaluate(vals, sheets){
@@ -2583,6 +2590,7 @@ function rkLoad(src){
     manufacturer: src.manufacturer || "", revision: src.revision || "",
     components: (src.components || []).map(c => ({ ...c })),
     dept: "", store: "", purpose: "", hcodes: src.hcodes || "", vals,
+    possCommon: [null, null],               // 취급 횟수·1회 취급량 (②③④ 공통)
     autoKeys: new Set(Object.keys(src.vals || {}).filter(
       k => String(src.vals[k] || "").trim())),
     evType: "", evDate: "", evDept: "", evBy: "", opinion: "", sheets: {} };
@@ -2599,6 +2607,17 @@ function rkResetScores(){
   for (const sk of ["2", "3", "4"])
     rk.sheets[sk].scores = refs[sk].map(r => r || 1);
   renderRkForm();
+}
+
+// 취급 횟수·1회 취급량(공통)을 각 시트 가능성에 반영한 평가용 시트 상태
+function rkMergedSheets(){
+  const out = {};
+  for (const sk of ["2", "3", "4"]){
+    const sh = rk.sheets[sk];
+    out[sk] = { ...sh,
+      poss: [rk.possCommon[0], rk.possCommon[1], sh.poss[2]] };
+  }
+  return out;
 }
 
 function renderRkForm(){
@@ -2661,7 +2680,17 @@ function renderRkForm(){
     <div style="margin-top:12px;">
       <button class="rvsave" id="rkScoreReset" type="button"
         title="H-Code·MSDS 데이터를 수정한 뒤 참고값을 다시 반영하려면 누르세요.">
-        🔄 유해성 점수를 현재 [참고값]으로 재설정</button></div>`;
+        🔄 유해성 점수를 현재 [참고값]으로 재설정</button></div>
+    <div class="rkfs"><h3>가능성 공통 입력 — 취급 횟수·1회 취급량은 한 번만
+      입력하면 ②③④ 세 분야에 모두 반영됩니다</h3>
+      <div class="rkgrid3">` +
+    [["① 취급 횟수 (공통)", RISK.possFreq], ["② 1회 취급량 (공통)", RISK.possAmount]]
+      .map(([pl, popt], i) =>
+        `<div><label class="f" style="font-weight:400;">${esc(pl)}</label>
+          <select data-rkpc="${i}"><option value="">(선택)</option>` +
+          popt.map((o, j) => `<option value="${j}"${rk.possCommon[i] === j ? " selected" : ""}>${j + 1}점 — ${esc(o).replace(/\n/g, " ")}</option>`).join("") +
+          `</select></div>`).join("") +
+    `</div></div>`;
   for (const sk of ["2", "3", "4"]){
     const meta = RISK.sheets[sk], sh = rk.sheets[sk];
     h += `<div class="rkfs"><h3>${esc(meta.title)}</h3>
@@ -2678,16 +2707,15 @@ function renderRkForm(){
           value="${esc(sh.notes[i])}"></div>
       </div>`;
     });
-    h += `<label class="f" style="margin-top:12px;">Ⅱ. 가능성 산정</label>
+    h += `<label class="f" style="margin-top:12px;">Ⅱ. 가능성 산정 —
+      ① 취급 횟수·② 1회 취급량은 위의 공통 입력이 자동 반영됩니다</label>
       <div class="rkgrid3">`;
     const popts = rkPossOpts(sk);
-    meta.poss_labels.forEach((pl, i) => {
-      h += `<div><label class="f" style="font-weight:400;">${esc(pl)}</label>
-        <select data-rkp="${sk}" data-rki="${i}">
-          <option value="">(선택)</option>` +
-        popts[i].map((o, j) => `<option value="${j}"${sh.poss[i] === j ? " selected" : ""}>${j + 1}점 — ${esc(o).replace(/\n/g, " ")}</option>`).join("") +
-        `</select></div>`;
-    });
+    h += `<div><label class="f" style="font-weight:400;">${esc(meta.poss_labels[2])}</label>
+      <select data-rkp="${sk}" data-rki="2">
+        <option value="">(선택)</option>` +
+      popts[2].map((o, j) => `<option value="${j}"${sh.poss[2] === j ? " selected" : ""}>${j + 1}점 — ${esc(o).replace(/\n/g, " ")}</option>`).join("") +
+      `</select></div>`;
     h += `</div>
       <label class="f" style="margin-top:12px;">Ⅳ. 위험성 저감대책 —
         허용 불가(위험도 9 이상)면 필수, 각 위계에서 최대 3개
@@ -2717,10 +2745,7 @@ function renderRkForm(){
     <div class="rkfs"><h3>종합결과</h3>
       <div style="overflow-x:auto"><table class="rvt" id="rkSummary"></table></div>
       <div class="rkverdict" id="rkVerdict"></div>
-      <div class="hint">적용 기준 — 1-3점: 도입 가능 | 4-8점: 도입 가능(추가
-        저감대책 검토 권장) | 9-16점: 허용 불가 | 17-25점: 허용 불가 ·
-        치명항목(유해성 5점)이 1개 이상이면 위험도와 무관하게 SHE부서 검토자
-        반영하여 결재를 진행합니다.</div>
+      <div class="hint">${esc(RISK.criteria)}</div>
       <div class="rkgrid4" style="margin-top:10px;">
         <div><label class="f">평가유형</label>
           <input type="text" data-rkb="evType" placeholder="예: 신규 도입"
@@ -2759,14 +2784,15 @@ function renderRkComps(){
 function renderRkResults(){
   if (!rk) return;
   const vals = { hcodes: rk.hcodes, ...rk.vals };
-  const res = rkEvaluate(vals, rk.sheets);
+  const merged = rkMergedSheets();
+  const res = rkEvaluate(vals, merged);
   const ac = rkAutoCodes(rk.hcodes);
   const hits = Object.entries(ac).filter(([, v]) => v !== "없음")
     .map(([k, v]) => `${RISK.autoLabels[k]}: ${v}`);
   document.getElementById("rkAutoCodes").textContent =
     "H-Code 자동 판정 — " + (hits.length ? hits.join(" · ") : "해당 없음");
   for (const sk of ["2", "3", "4"]){
-    const meta = RISK.sheets[sk], sh = rk.sheets[sk],
+    const meta = RISK.sheets[sk], sh = merged[sk],
           sres = res.sheets[sk];
     res.refs[sk].forEach((r, i) => {
       const el = document.querySelector(`[data-rkref="${sk}_${i}"]`);
@@ -2784,10 +2810,12 @@ function renderRkResults(){
       <div class="t">${t}</div><b>${v}</b></div>`).join("");
     document.getElementById("rkAllow" + sk).innerHTML =
       (sres.possMissing ?
-        `<div class="hint">⚠️ 가능성 평가 3개 항목을 모두 선택해 주세요.</div>` : "") +
+        `<div class="hint">⚠️ 가능성 평가 항목(공통 2개 + 환경 1개)을 모두 선택해 주세요.</div>` : "") +
       (sres.finalAllow ?
         `<div class="rkok">✅ 허용 가능 (위험도 8 이하)</div>` :
-        `<div class="rkbad">🟠 허용 불가 — 저감대책을 적용해 위험도를 8 이하로 낮춘 후 도입 가능</div>`);
+       sres.finalLevel === "고" ?
+        `<div class="rkbad" style="color:#b96b00;">🟠 고위험 — 부서장 검토 및 안전보건관리책임자 승인 하에 도입/취급 가능 (저감대책 보강 권장)</div>` :
+        `<div class="rkbad">🔴 허용 불가 — 저감대책을 적용해 위험도를 낮춘 후 도입 가능</div>`);
     const recs = [];
     meta.items.forEach((it, i) => {
       if (sh.scores[i] >= 4)
@@ -2819,7 +2847,8 @@ function renderRkResults(){
   const vd = document.getElementById("rkVerdict");
   vd.textContent = res.verdict;
   vd.className = "rkverdict " + (res.verdict.startsWith("🟢") ? "ok" :
-    res.verdict.startsWith("🟡") ? "warn" : "bad");
+    res.verdict.startsWith("🟡") || res.verdict.startsWith("🟠") ? "warn" :
+    "bad");
 }
 
 $rkBody.addEventListener("input", e => {
@@ -2830,6 +2859,8 @@ $rkBody.addEventListener("input", e => {
   else if (d.rkc !== undefined) rk.components[+d.rki][d.rkc] = el.value;
   else if (d.rks !== undefined) rk.sheets[d.rks].scores[+d.rki] = +el.value;
   else if (d.rkn !== undefined) rk.sheets[d.rkn].notes[+d.rki] = el.value;
+  else if (d.rkpc !== undefined)
+    rk.possCommon[+d.rkpc] = el.value === "" ? null : +el.value;
   else if (d.rkp !== undefined)
     rk.sheets[d.rkp].poss[+d.rki] = el.value === "" ? null : +el.value;
   else if (d.rkm !== undefined){
@@ -2879,6 +2910,24 @@ function rkSetCell(xml, ref, value, numeric){
   return xml.slice(0, m.index) + rep + xml.slice(m.index + m[0].length);
 }
 
+// 시트 XML 셀의 수식 교체 (⑤ D16 검토 결과 — 개정된 판정 기준 반영)
+function rkSetFormula(xml, ref, formula){
+  const rx = new RegExp('<c r="' + ref + '"([^>]*?)(?:\\/>|>[\\s\\S]*?<\\/c>)');
+  const m = rx.exec(xml);
+  if (!m) return xml;
+  const attrs = m[1].replace(/\s*t="[^"]*"/, "");
+  const f = formula.replace(/&/g, "&amp;").replace(/</g, "&lt;")
+                   .replace(/>/g, "&gt;");
+  const rep = `<c r="${ref}"${attrs}><f>${f}</f></c>`;
+  return xml.slice(0, m.index) + rep + xml.slice(m.index + m[0].length);
+}
+const RK_D16_MAX = "MAX('② 물리화학적 위험성'!E69,'③ 환경오염 위험성'!E68," +
+                   "'④ 작업자 안전보건'!E69)";
+const RK_D16_FORMULA =
+  `IF(${RK_D16_MAX}>=17,"${RK_VERDICTS.ban}",` +
+  `IF(${RK_D16_MAX}>=10,"${RK_VERDICTS.high}",` +
+  `IF(${RK_D16_MAX}>=5,"${RK_VERDICTS.mid}","${RK_VERDICTS.low}")))`;
+
 async function rkExport(btn){
   btn.disabled = true;
   try {
@@ -2918,8 +2967,9 @@ async function rkExport(btn){
     }
     zip.file("xl/worksheets/sheet1.xml", x);
     const fnames = { 2: "sheet2.xml", 3: "sheet3.xml", 4: "sheet4.xml" };
+    const merged = rkMergedSheets();
     for (const sk of ["2", "3", "4"]){
-      const sh = rk.sheets[sk], meta = RISK.sheets[sk];
+      const sh = merged[sk], meta = RISK.sheets[sk];
       let sx = await get("xl/worksheets/" + fnames[sk]);
       sh.scores.forEach((s, i) => {
         sx = rkSetCell(sx, "F" + (8 + i), Math.trunc(s));
@@ -2942,6 +2992,8 @@ async function rkExport(btn){
       zip.file("xl/worksheets/" + fnames[sk], sx);
     }
     let x5 = await get("xl/worksheets/sheet5.xml");
+    x5 = rkSetFormula(x5, "D16", RK_D16_FORMULA);
+    x5 = rkSetCell(x5, "B17", "  ▶ " + RISK.criteria, false);
     x5 = rkSetCell(x5, "D3", rk.evType, false);
     x5 = rkSetCell(x5, "H3", rk.evDate, false);
     x5 = rkSetCell(x5, "D4", rk.evDept, false);

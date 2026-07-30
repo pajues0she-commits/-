@@ -38,11 +38,20 @@ def _pic_label(code: str) -> str:
     return f"{code} {PICTOGRAM_NAMES.get(code, '')}"
 
 
-tab_manage, tab_review, tab_risk, tab_sign = st.tabs(
-    ["📋 화학물질 작업공정별 관리요령", "🔍 화학물질 도입검토",
-     "🧪 화학물질 위험성평가", "🚧 유해화학물질 규격표지"])
+# 메뉴 — 라디오 내비게이션 (도입검토 → 위험성평가 버튼으로 이동할 수 있도록
+# st.tabs 대신 사용: 프로그램에서 st.session_state.menu 변경으로 전환 가능)
+_MENUS = ["📋 화학물질 작업공정별 관리요령", "🔍 화학물질 도입검토",
+          "🧪 화학물질 위험성평가", "🚧 유해화학물질 규격표지"]
+if "menu" not in st.session_state:
+    st.session_state.menu = _MENUS[0]
+if st.session_state.get("menu_jump"):     # 버튼으로 메뉴 이동 (다음 실행에 반영)
+    st.session_state.menu = st.session_state.pop("menu_jump")
+menu = st.radio("메뉴", _MENUS, horizontal=True, key="menu",
+                label_visibility="collapsed")
+st.markdown("<hr style='margin:0.2rem 0 1rem 0;'>", unsafe_allow_html=True)
 
-with tab_manage:
+uploaded = None
+if menu == _MENUS[0]:
     uploaded = st.file_uploader("MSDS PDF 업로드 (여러 파일 가능)", type=["pdf"],
                                 accept_multiple_files=True)
 
@@ -60,13 +69,15 @@ for f in uploaded or []:
                 data = MsdsData(source_name=f.name,
                                 warnings=[f"PDF를 읽지 못했습니다: {e}"])
         st.session_state.parsed[f.name] = data
-for name in list(st.session_state.parsed):
-    if name not in current_names:
-        del st.session_state.parsed[name]
+if menu == _MENUS[0]:
+    for name in list(st.session_state.parsed):
+        if name not in current_names:
+            del st.session_state.parsed[name]
 
 records = []
-for name, data in st.session_state.parsed.items():
-    with tab_manage, st.expander(
+for name, data in (st.session_state.parsed.items()
+                   if menu == _MENUS[0] else []):
+    with st.expander(
             f"📄 {name} — {data.product_name or '제품명 미확인'}",
             expanded=len(st.session_state.parsed) == 1):
         for w in data.warnings:
@@ -128,7 +139,7 @@ for name, data in st.session_state.parsed.items():
             st.markdown("##### 🔍 미리보기 (엑셀 양식과 동일)")
             st.markdown(preview_html(rec), unsafe_allow_html=True)
 
-with tab_manage:
+if menu == _MENUS[0]:
     if records:
         st.divider()
         if st.button("📥 엑셀 파일 생성", type="primary"):
@@ -222,7 +233,7 @@ def _review_xlsx(db, upload_rows) -> bytes:
     return buf.getvalue()
 
 
-with tab_review:
+if menu == _MENUS[1]:
     st.markdown("MSDS를 등록하면 **화학물질명·제조사·주요성분 및 함량**을 자동 인식해 "
                 "비교표를 만들고, 기존 등록 이력과 비교해 **도입검토 대상·정보등록 대상** "
                 "여부를 자동 판독합니다. 등록된 정보는 누적 관리되며, 같은 물질의 이전 "
@@ -243,7 +254,6 @@ with tab_review:
 
     if "review_parsed" not in st.session_state:
         st.session_state.review_parsed = {}
-    rv_names = [f.name for f in rv_uploaded] if rv_uploaded else []
     for f in rv_uploaded or []:
         if f.name not in st.session_state.review_parsed:
             with st.spinner(f"{f.name} 분석 중..."):
@@ -253,9 +263,11 @@ with tab_review:
                     d = MsdsData(source_name=f.name,
                                  warnings=[f"PDF를 읽지 못했습니다: {e}"])
             st.session_state.review_parsed[f.name] = d
-    for n in list(st.session_state.review_parsed):
-        if n not in rv_names:
-            del st.session_state.review_parsed[n]
+    if rv_uploaded:                     # 업로더에서 뺀 파일만 카드 정리
+        rv_names = [f.name for f in rv_uploaded]
+        for n in list(st.session_state.review_parsed):
+            if n not in rv_names:
+                del st.session_state.review_parsed[n]
 
     # 일괄 작업 — 작성일 일괄 입력·일괄 등록 (업로드한 모든 MSDS 대상)
     bulk_save = False
@@ -321,12 +333,12 @@ with tab_review:
             (st.info if res["register"] else st.success)(
                 f"**{res['register_label']}** — {res['register_reason']}")
             if res["review"]:
-                # 도입검토 대상 → 위험성평가 메뉴로 이동
-                if st.button("🧪 화학물질 위험성평가 작성 — 이 MSDS로 시작",
+                # 도입검토 대상 → 「위험성 평가」 버튼으로 위험성평가 메뉴 이동
+                if st.button("🧪 위험성 평가 — 이 MSDS로 작성",
                              key=f"rv_risk_{name}",
                              help="도입검토 대상 물질은 위험성평가를 진행합니다. "
-                                  "이 MSDS의 인식 결과를 「화학물질 위험성평가」 "
-                                  "메뉴로 가져갑니다."):
+                                  "이 MSDS의 인식 결과를 가지고 「화학물질 "
+                                  "위험성평가」 메뉴로 이동합니다."):
                     st.session_state.risk_nonce = \
                         st.session_state.get("risk_nonce", 0) + 1
                     st.session_state.risk_src = {
@@ -334,8 +346,8 @@ with tab_review:
                         "revision": rv_rev.strip(), "components": comps,
                         "hcodes": data.hcodes, "vals": dict(data.risk),
                         "source": name}
-                    st.success("가져왔습니다 — 상단의 「🧪 화학물질 위험성평가」 "
-                               "탭에서 이어서 작성하세요.")
+                    st.session_state.menu_jump = _MENUS[2]
+                    st.rerun()
 
             prior = res["same_name"] or res["same_comp"]
             if prior:
@@ -465,7 +477,7 @@ with tab_review:
 _RISK_TPL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                               "assets", "risk_template.xlsx")
 
-with tab_risk:
+if menu == _MENUS[2]:
     st.markdown("도입검토 대상 화학물질의 **위험성평가**(물리화학적 · 환경오염 · "
                 "작업자 안전보건, 유해성×가능성)를 작성합니다. MSDS에서 자동 "
                 "인식한 값(H-Code·물리화학 특성·독성·환경 데이터)이 미리 채워지며, "
@@ -582,6 +594,23 @@ with tab_risk:
             st.session_state.risk_score_reset = \
                 st.session_state.get("risk_score_reset", 0) + 1
         rn = st.session_state.get("risk_score_reset", 0)
+
+        # 가능성 공통 입력 — 취급 횟수·1회 취급량은 ②③④ 세 분야 공통 적용
+        st.markdown("**가능성 공통 입력** — 취급 횟수와 1회 취급량은 한 번만 "
+                    "입력하면 물리화학·환경오염·작업자 안전보건 세 분야에 모두 "
+                    "반영됩니다 (분야별 ③ 환경 항목만 각각 선택)")
+        cc = st.columns(2)
+        common_poss = []
+        for i, (plabel, popt) in enumerate(
+                [("① 취급 횟수 (공통)", RL.POSS_FREQ),
+                 ("② 1회 취급량 (공통)", RL.POSS_AMOUNT)]):
+            disp = ["(선택)"] + [f"{j + 1}점 — {o}".replace("\n", " ")
+                                for j, o in enumerate(popt)]
+            sel = cc[i].selectbox(plabel, range(len(disp)),
+                                  format_func=lambda x, d=disp: d[x],
+                                  key=_k(f"pc_{i}"))
+            common_poss.append(sel - 1 if sel > 0 else None)
+
         sheets_payload = {}
         summary_rows = []
         for skey, meta in RL.SHEETS.items():
@@ -602,19 +631,17 @@ with tab_risk:
                         label_visibility="collapsed")
                     scores.append(sc)
                     notes.append(note.strip())
-                st.markdown("**가능성 산정** — 취급 횟수 · 1회 취급량 · "
-                            "공정 환경")
+                st.markdown("**가능성 산정** — ① 취급 횟수·② 1회 취급량은 "
+                            "위의 공통 입력이 자동 반영됩니다")
                 popts = RL.poss_options(skey)
-                pcols = st.columns(3)
-                poss = []
-                for i, label in enumerate(meta["poss_labels"]):
-                    disp = ["(선택)"] + [
-                        f"{j + 1}점 — {o}".replace("\n", " ")
-                        for j, o in enumerate(popts[i])]
-                    sel = pcols[i].selectbox(label, range(len(disp)),
-                                             format_func=lambda x, d=disp: d[x],
-                                             key=_k(f"{skey}p_{i}"))
-                    poss.append(sel - 1 if sel > 0 else None)
+                disp = ["(선택)"] + [
+                    f"{j + 1}점 — {o}".replace("\n", " ")
+                    for j, o in enumerate(popts[2])]
+                sel = st.selectbox(meta["poss_labels"][2], range(len(disp)),
+                                   format_func=lambda x, d=disp: d[x],
+                                   key=_k(f"{skey}p_2"))
+                poss = [common_poss[0], common_poss[1],
+                        sel - 1 if sel > 0 else None]
 
                 # 저감대책 선택 (⑥ 저감대책DB)
                 st.markdown("**위험성 저감대책** — 허용 불가(위험도 9 이상)면 "
@@ -661,11 +688,16 @@ with tab_risk:
                 m5.metric("최종 위험도", f"{sres['final_risk']} "
                                         f"({sres['final_level']})")
                 if sres["poss_missing"]:
-                    st.warning("가능성 평가 3개 항목을 모두 선택해 주세요.")
-                (st.success if sres["final_allow"] else st.error)(
-                    "✅ 허용 가능 (위험도 8 이하)" if sres["final_allow"]
-                    else "🟠 허용 불가 — 저감대책을 적용해 위험도를 8 이하로 "
-                         "낮춘 후 도입 가능")
+                    st.warning("가능성 평가 항목(공통 2개 + 환경 1개)을 모두 "
+                               "선택해 주세요.")
+                if sres["final_allow"]:
+                    st.success("✅ 허용 가능 (위험도 8 이하)")
+                elif sres["final_level"] == "고":
+                    st.warning("🟠 고위험 — 부서장 검토 및 안전보건관리책임자 "
+                               "승인 하에 도입/취급 가능 (저감대책 보강 권장)")
+                else:
+                    st.error("🔴 허용 불가 — 저감대책을 적용해 위험도를 낮춘 "
+                             "후 도입 가능")
                 # 고위험 항목 추천 저감대책
                 recs = []
                 for i, (grp, item) in enumerate(meta["items"]):
@@ -698,12 +730,10 @@ with tab_risk:
         st.markdown("###### 4. 종합결과")
         st.dataframe(summary_rows, hide_index=True, use_container_width=True)
         verdict = result["verdict"]
-        (st.error if "허용 불가" in verdict or "고위험" in verdict
-         else st.warning if "중위험" in verdict else st.success)(verdict)
-        st.caption("적용 기준 — 1-3점: 도입 가능 | 4-8점: 도입 가능(추가 "
-                   "저감대책 검토 권장) | 9-16점: 허용 불가 | 17-25점: 허용 "
-                   "불가. 치명항목(유해성 5점)이 1개 이상이면 위험도와 무관하게 "
-                   "SHE부서 검토자 반영하여 결재를 진행합니다.")
+        (st.error if "허용 불가" in verdict
+         else st.warning if "고위험" in verdict or "중위험" in verdict
+         else st.success)(verdict)
+        st.caption(RL.OVERALL_CRITERIA)
         c1, c2, c3, c4 = st.columns(4)
         ev_type = c1.text_input("평가유형", key=_k("evtype"),
                                 placeholder="예: 신규 도입")
@@ -737,7 +767,7 @@ with tab_risk:
                  "기입됩니다. 엑셀에서 열면 수식이 재계산되어 화면과 동일한 "
                  "결과가 표시됩니다.")
 
-with tab_sign:
+if menu == _MENUS[3]:
     st.markdown("**화학물질관리법 시행규칙 [별표 2] 유해화학물질의 표시방법**(제12조제2항 관련) "
                 "1호 — 보관·저장시설/진열·보관 장소 표지 시안을 만듭니다.  \n"
                 "규격: a=50cm, b=(3/2)a=75cm, c=(1/4)a=12.5cm, d=(1/4)a=12.5cm · "

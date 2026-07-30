@@ -504,19 +504,30 @@ def mitigation_effect(mit: dict, pscore: float, has_ppe: bool) -> dict:
             "new_grade": poss_grade(new_score)}
 
 
-def overall_verdict(final_risks, fatal_total) -> str:
-    """⑤ 종합결과 「검토 결과」(D16) 수식 그대로."""
+# ⑤ 종합결과 판정 문구 — 고위험일 경우에만 부서장 검토·안전보건관리책임자
+# 승인 하에 도입 가능. 치명항목에 대한 SHE부서 검토는 불요.
+VERDICT_BAN = ("🔴 허용 불가  — 원칙적 도입/취급 불가 "
+               "(도입하려면 경영진 예외 승인 필수)")
+VERDICT_HIGH = ("🟠 고위험  — 부서장 검토 및 안전보건관리책임자 승인 하에 "
+                "도입/취급 가능 (저감대책 보강·재평가 권장)")
+VERDICT_MID = "🟡 중위험 — 도입/취급 가능 (추가 저감대책 검토 권장, 모니터링 지속)"
+VERDICT_LOW = "🟢 저위험  — 도입/취급 가능"
+OVERALL_CRITERIA = ("적용 기준 — 1-4점: 저위험(도입 가능)  |  5-9점: "
+                    "중위험(도입 가능, 추가 저감대책 검토 권장)  |  10-16점: "
+                    "고위험 — 부서장 검토 및 안전보건관리책임자 승인 하에 "
+                    "도입/취급 가능  |  17-25점: 허용 불가(원칙적 도입 불가)")
+
+
+def overall_verdict(final_risks, fatal_total=0) -> str:
+    """⑤ 종합결과 「검토 결과」 — 내보낸 엑셀의 D16 수식과 동일."""
     m = max(final_risks)
-    fatal = ("\n🟠 치명항목(유해성 5점) 有  — SHE부서 검토자 반영 필요"
-             if fatal_total >= 1 else "")
     if m >= 17:
-        return "🔴 허용 불가  — 원칙적 도입/취급 불가 (도입하려면 경영진 예외 승인 필수)"
+        return VERDICT_BAN
     if m >= 10:
-        return "🟠 고위험  — 저감대책 보강 후 재평가하여 위험도 감소 후 도입/취급 가능"
+        return VERDICT_HIGH
     if m >= 5:
-        return ("🟡 중위험 — 부서장 승인 후 도입/취급 가능 "
-                "(추가 저감대책 검토 권장, 모니터링 지속)" + fatal)
-    return "🟢 저위험  — 부서장 승인 후 도입/취급 가능" + fatal
+        return VERDICT_MID
+    return VERDICT_LOW
 
 
 def evaluate(vals: dict, sheets: dict) -> dict:
@@ -582,6 +593,28 @@ def _set_cell(xml: str, ref: str, value, numeric=None) -> str:
         rep = ('<c r="%s"%s t="inlineStr"><is>'
                '<t xml:space="preserve">%s</t></is></c>') % (ref, attrs, esc)
     return xml[:m.start()] + rep + xml[m.end():]
+
+
+def _set_formula(xml: str, ref: str, formula: str) -> str:
+    """시트 XML 셀의 수식을 교체한다(스타일 유지)."""
+    rx = re.compile(r'<c r="%s"([^>]*?)(?:/>|>.*?</c>)' % re.escape(ref), re.S)
+    m = rx.search(xml)
+    if not m:
+        return xml
+    attrs = re.sub(r'\s*t="[^"]*"', "", m.group(1))
+    esc = (formula.replace("&", "&amp;").replace("<", "&lt;")
+           .replace(">", "&gt;"))
+    rep = '<c r="%s"%s><f>%s</f></c>' % (ref, attrs, esc)
+    return xml[:m.start()] + rep + xml[m.end():]
+
+
+# ⑤ D16 검토 결과 수식 — 개정된 판정 기준(고위험만 승인 하 도입 가능,
+# 치명항목 SHE부서 검토 불요)으로 양식 수식을 교체한다
+_D16_MAX = ("MAX('② 물리화학적 위험성'!E69,'③ 환경오염 위험성'!E68,"
+            "'④ 작업자 안전보건'!E69)")
+_D16_FORMULA = ('IF(%s>=17,"%s",IF(%s>=10,"%s",IF(%s>=5,"%s","%s")))'
+                % (_D16_MAX, VERDICT_BAN, _D16_MAX, VERDICT_HIGH,
+                   _D16_MAX, VERDICT_MID, VERDICT_LOW))
 
 
 def fill_template(template_bytes: bytes, payload: dict) -> bytes:
@@ -653,6 +686,8 @@ def fill_template(template_bytes: bytes, payload: dict) -> bytes:
         edits["xl/worksheets/" + fname] = x
 
     x = zin.read("xl/worksheets/sheet5.xml").decode("utf-8")
+    x = _set_formula(x, "D16", _D16_FORMULA)
+    x = _set_cell(x, "B17", "  ▶ " + OVERALL_CRITERIA, numeric=False)
     x = _set_cell(x, "D3", meta.get("ev_type", ""), numeric=False)
     x = _set_cell(x, "H3", meta.get("ev_date", ""), numeric=False)
     x = _set_cell(x, "D4", meta.get("ev_dept", ""), numeric=False)
