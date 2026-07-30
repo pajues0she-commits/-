@@ -529,6 +529,9 @@ def _row_name(before: str) -> str:
     토큰을 이어 붙이고, "수산화나트륨 수산화 나트륨"처럼 이름의 띄어쓰기
     변형(관용명)이 반복되면 앞부분만 남긴다.
     """
+    # "제조성분 무수암모니아 ..."처럼 행 머리에 붙는 구분 라벨은 뗀다
+    before = re.sub(r"^\s*(?:제\s*조\s*성\s*분|주\s*성\s*분|부\s*성\s*분)\s+",
+                    "", before)
     toks = before.split()
     if not toks:
         return ""
@@ -559,6 +562,39 @@ def _row_name(before: str) -> str:
         if nrm("".join(parts[:k])) == nrm("".join(parts[k:])):
             return " ".join(parts[:k])
     return name
+
+
+def _content_mid(content):
+    """함유량 문자열의 대푯값(단일값 또는 범위 중간값). 없으면 None."""
+    nums = [float(x.replace(",", "."))
+            for x in re.findall(r"\d+(?:[.,]\d+)?", content or "")]
+    if not nums:
+        return None
+    return sum(nums[:2]) / min(len(nums), 2)
+
+
+def drop_product_row(components, product_name: str):
+    """혼합물 MSDS가 제품 자체를 성분 행으로 함께 적는 경우 제품 행을 뺀다.
+
+    예: 암모니아수 MSDS가 "암모니아수 100%"와 제조 성분(무수암모니아 25%,
+    물 75%)을 모두 적는 형식 — 성분의 함량 합은 100%가 되어야 하므로,
+    나머지 성분 합이 100%(±5)이면 제품 행(이름이 제품명과 같거나 함량이
+    100%인 행)을 제외한다.
+    """
+    if len(components) < 3:
+        return components
+    pn = re.sub(r"\s+", "", product_name or "").lower()
+    for idx, c in enumerate(components):
+        nm = re.sub(r"\s+", "", c.get("name") or "").lower()
+        name_match = bool(nm and pn and (nm in pn or pn in nm))
+        if not (name_match or _content_mid(c.get("content")) == 100):
+            continue
+        rest = components[:idx] + components[idx + 1:]
+        mids = [_content_mid(r.get("content")) for r in rest]
+        if len(rest) >= 2 and all(m is not None for m in mids) \
+                and 95 <= sum(mids) <= 105:
+            return rest
+    return components
 
 
 def extract_components(sec3: str) -> list:
@@ -661,8 +697,35 @@ def extract_components(sec3: str) -> list:
                 add(name, cas, content)
             else:
                 # "성분명 (이명) CAS 함유량" — 행 형식
-                m = re.match(r"\s*(" + _CONTENT_TOK + r")", after)
-                add(_row_name(before), cas, m.group(1) if m else "")
+                m = re.match(r"\s*(" + _CONTENT_TOK + r")\s*(?:%|이상|이하)?\s*$",
+                             after) or re.match(r"\s*(" + _CONTENT_TOK + r")",
+                                                after)
+                content = m.group(1) if m else ""
+                if not content:
+                    # "CAS 식별번호 함유량" — 식별번호(KE-03964 등) 뒤에
+                    # 함유량이 오는 형식은 줄 끝에서 찾는다. 단 EC번호 꼬리
+                    # ("231-595-7"의 "595-7")를 함유량으로 오인하지 않도록
+                    # 숫자·붙임표 바로 뒤에서 시작하는 매치는 버린다.
+                    m = _CONTENT_RX.search(after)
+                    if m:
+                        pos = m.start(1) + \
+                            len(m.group(1)) - len(m.group(1).lstrip())
+                        if pos == 0 or after[pos - 1] not in "-0123456789":
+                            content = m.group(1).strip()
+                if not content and after.strip() in ("~", "-", "–", "—"):
+                    # 함유량 범위가 위·아래 줄에 세로로 걸친 형식(한국가스공사):
+                    #   "... 99.9994" / "성분명 CAS ~" / "... 99.9997"
+                    def _tail_num(j):
+                        if 0 <= j < len(lines):
+                            tm = re.search(r"(\d+(?:\.\d+)?)\s*%?\s*$",
+                                           lines[j].strip())
+                            return tm.group(1) if tm else ""
+                        return ""
+                    lo = _tail_num(i - 1) or _tail_num(i - 2)
+                    hi = _tail_num(i + 1) or _tail_num(i + 2)
+                    if lo and hi:
+                        content = f"{lo} ~ {hi}"
+                add(_row_name(before), cas, content)
 
     # 4) 영업비밀 성분 — CAS 자리에 "영업비밀"로 적는 행
     for line in lines:
@@ -673,8 +736,11 @@ def extract_components(sec3: str) -> list:
         if not m:
             continue
         name = _row_name(m.group(1))
-        # 문장("...은 영업비밀에 해당하므로...")은 성분 행이 아니다
-        if not name or re.search(r"법|따라|해당|비공개|승인|정보|자료", name):
+        # 문장·각주("...제19조(비밀유지 항목)에 의거한 영업비밀임" 등)는
+        # 성분 행이 아니다
+        if not name or name.startswith(("(", "※")) or re.search(
+                r"법|따라|해당|비공개|승인|정보|자료|의거|고시|기준|항목|"
+                r"비밀유지|명칭", name):
             continue
         cm2 = re.search(_CONTENT_TOK, m.group(2))
         add(name, "영업비밀", cm2.group(0) if cm2 else "")
@@ -742,7 +808,8 @@ def parse_msds(pdf_source, source_name: str = "") -> MsdsData:
 
     # 1항 제조사·3항 구성성분 — 화학물질 도입검토 메뉴에서 사용
     data.manufacturer = extract_manufacturer(sec1)
-    data.components = extract_components(sections.get(3, ""))
+    data.components = drop_product_row(
+        extract_components(sections.get(3, "")), data.product_name)
 
     # 2) 유해성·위험성 ───────────────────────────────────────
     sec2 = sections.get(2, whole)

@@ -173,6 +173,9 @@ def _review_xlsx(db, upload_rows) -> bytes:
     thin = Border(*[Side(style="thin")] * 4)
     head_fill = PatternFill("solid", fgColor="DDEBF7")
     head_font = Font(bold=True)
+    # 대상 셀 컬러마킹: 도입검토 대상 = 노랑, 정보등록 대상 = 초록
+    mark = {"도입검토 대상": PatternFill("solid", fgColor="FFEB9C"),
+            "정보등록 대상": PatternFill("solid", fgColor="C6EFCE")}
 
     def fill_sheet(ws, headers, rows, widths):
         ws.append(headers)
@@ -185,6 +188,9 @@ def _review_xlsx(db, upload_rows) -> bytes:
             for c in r:
                 c.border = thin
                 c.alignment = Alignment(vertical="center", wrap_text=True)
+                if c.value in mark:
+                    c.fill = mark[c.value]
+                    c.font = Font(bold=True)
         for i, w in enumerate(widths, 1):
             ws.column_dimensions[get_column_letter(i)].width = w
 
@@ -249,12 +255,15 @@ with tab_review:
         if n not in rv_names:
             del st.session_state.review_parsed[n]
 
-    # 작성일 일괄등록 — 업로드한 모든 MSDS에 같은 작성일을 한 번에 입력
+    # 일괄 작업 — 작성일 일괄 입력·일괄 등록 (업로드한 모든 MSDS 대상)
+    bulk_save = False
     if st.session_state.review_parsed:
-        b1, b2 = st.columns([1, 2.4])
+        b1, b2, b3 = st.columns([1, 1.6, 1.2])
         bulk_dt = b1.date_input("작성일 일괄 입력", value=None,
                                 key="rv_bulk_dt", format="YYYY-MM-DD")
         b2.markdown("<div style='height:1.75em'></div>",
+                    unsafe_allow_html=True)
+        b3.markdown("<div style='height:1.75em'></div>",
                     unsafe_allow_html=True)
         if b2.button("📅 업로드한 모든 MSDS에 작성일 적용", key="rv_bulk_btn"):
             if bulk_dt is None:
@@ -262,9 +271,11 @@ with tab_review:
             else:
                 for n in st.session_state.review_parsed:
                     st.session_state[f"rv_dt_{n}"] = bulk_dt
+        bulk_save = b3.button("💾 모든 MSDS 일괄 등록", key="rv_bulk_save")
 
     review_db = _load_review_db()
     rv_rows = []
+    bulk_saved, bulk_skipped = [], []
     for name, data in st.session_state.review_parsed.items():
         with st.expander(f"📄 {name} — {data.product_name or '제품명 미확인'}",
                          expanded=len(st.session_state.review_parsed) == 1):
@@ -329,11 +340,13 @@ with tab_review:
                              hide_index=True)
 
             if st.button("💾 등록 (누적 관리 목록에 저장)", type="primary",
-                         key=f"rv_save_{name}"):
+                         key=f"rv_save_{name}") or bulk_save:
                 if rv_dt is None:
                     st.error("작성일을 입력한 뒤 등록해 주세요.")
+                    bulk_skipped.append(name)
                 elif not rv_nm.strip():
                     st.error("화학물질명을 입력한 뒤 등록해 주세요.")
+                    bulk_skipped.append(name)
                 else:
                     review_db.append({
                         "id": max([r.get("id", 0) for r in review_db] or [0]) + 1,
@@ -343,6 +356,7 @@ with tab_review:
                         "review": res["review_label"],
                         "register": res["register_label"]})
                     _save_review_db(review_db)
+                    bulk_saved.append(name)
                     st.success(f"「{rv_nm.strip()}」을(를) 등록했습니다. "
                                f"(누적 {len(review_db)}건)")
 
@@ -351,6 +365,15 @@ with tab_review:
                             "작성일": str(rv_dt) if rv_dt else "",
                             "도입검토": res["review_label"],
                             "정보등록": res["register_label"]})
+
+    if bulk_save:
+        if bulk_saved:
+            st.success(f"일괄 등록 완료 — {len(bulk_saved)}건을 저장했습니다."
+                       + (f" ({len(bulk_skipped)}건은 작성일·화학물질명이 없어 "
+                          "건너뛰었습니다.)" if bulk_skipped else ""))
+        elif bulk_skipped:
+            st.warning("일괄 등록할 수 있는 항목이 없습니다 — 작성일과 "
+                       "화학물질명을 먼저 입력해 주세요.")
 
     if rv_rows:
         st.markdown("##### 📊 비교표 — 업로드한 MSDS")
@@ -361,15 +384,27 @@ with tab_review:
 
     st.divider()
     st.markdown("##### 🗂 등록된 화학물질 조회 (누적 관리)")
-    rv_q = st.text_input("물질명·제조사·CAS 번호로 검색", key="rv_q",
+    f1, f2, f3 = st.columns([2, 1, 1])
+    rv_q = f1.text_input("물질명·제조사·CAS 번호로 검색", key="rv_q",
                          placeholder="예: TOC BASE, 새론, 1310-73-2")
+    rv_from = f2.date_input("작성일 시작 (기간별 조회)", value=None,
+                            key="rv_from", format="YYYY-MM-DD")
+    rv_to = f3.date_input("작성일 종료 (기간별 조회)", value=None,
+                          key="rv_to", format="YYYY-MM-DD")
     q = rv_q.strip().lower()
 
     def _hit(r):
+        d = r.get("date", "")
+        if rv_from and (not d or d < str(rv_from)):
+            return False
+        if rv_to and (not d or d > str(rv_to)):
+            return False
+        if not q:
+            return True
         blob = " ".join([r.get("name", ""), r.get("manufacturer", ""),
                          components_text(r.get("components", []))]).lower()
         return q in blob
-    shown = [r for r in review_db if _hit(r)] if q else review_db
+    shown = [r for r in review_db if _hit(r)]
     if shown:
         st.dataframe(
             [{"No.": r.get("id"), "작성일": r.get("date", ""),
@@ -379,15 +414,19 @@ with tab_review:
               "도입검토": r.get("review", ""), "정보등록": r.get("register", ""),
               "MSDS 파일": r.get("source", "")} for r in shown],
             use_container_width=True, hide_index=True)
-        d1, d2 = st.columns([1, 3])
+        d1, d2, d3 = st.columns([1, 1.6, 1.6])
         del_id = d1.selectbox("삭제할 등록 번호(No.)", [r.get("id") for r in shown],
                               key="rv_del_sel")
         if d2.button("🗑️ 선택한 등록 삭제", key="rv_del_btn"):
             _save_review_db([r for r in review_db if r.get("id") != del_id])
             st.rerun()
+        if d3.button(f"🗑️ 표시된 {len(shown)}건 일괄 삭제", key="rv_del_all"):
+            ids = {r.get("id") for r in shown}
+            _save_review_db([r for r in review_db if r.get("id") not in ids])
+            st.rerun()
     else:
-        st.caption("등록된 화학물질이 없습니다." if not q
-                   else "검색 결과가 없습니다.")
+        st.caption("등록된 화학물질이 없습니다."
+                   if not (q or rv_from or rv_to) else "검색 결과가 없습니다.")
     if review_db or rv_rows:
         st.download_button(
             "⬇️ 엑셀로 내보내기 (등록 목록 + 업로드 비교표)",
