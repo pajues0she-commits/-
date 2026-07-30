@@ -164,6 +164,56 @@ def _save_review_db(db):
         json.dump(db, f, ensure_ascii=False, indent=1)
 
 
+def _review_xlsx(db, upload_rows) -> bytes:
+    """도입검토 등록 목록(+현재 업로드 비교표)을 엑셀로 만든다."""
+    import openpyxl
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.utils import get_column_letter
+
+    thin = Border(*[Side(style="thin")] * 4)
+    head_fill = PatternFill("solid", fgColor="DDEBF7")
+    head_font = Font(bold=True)
+
+    def fill_sheet(ws, headers, rows, widths):
+        ws.append(headers)
+        for c in ws[1]:
+            c.fill, c.font, c.border = head_fill, head_font, thin
+            c.alignment = Alignment(horizontal="center", vertical="center")
+        for row in rows:
+            ws.append(row)
+        for r in ws.iter_rows(min_row=2):
+            for c in r:
+                c.border = thin
+                c.alignment = Alignment(vertical="center", wrap_text=True)
+        for i, w in enumerate(widths, 1):
+            ws.column_dimensions[get_column_letter(i)].width = w
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "등록 목록"
+    fill_sheet(ws,
+               ["No.", "작성일", "화학물질명", "제조사", "주요성분 및 함량",
+                "도입검토", "정보등록", "MSDS 파일"],
+               [[r.get("id"), r.get("date", ""), r.get("name", ""),
+                 r.get("manufacturer", ""),
+                 components_text(r.get("components", [])),
+                 r.get("review", ""), r.get("register", ""),
+                 r.get("source", "")] for r in db],
+               [6, 12, 30, 22, 50, 16, 16, 30])
+    if upload_rows:
+        ws2 = wb.create_sheet("업로드 비교표")
+        fill_sheet(ws2,
+                   ["파일", "화학물질명", "제조사", "주요성분 및 함량",
+                    "작성일", "도입검토", "정보등록"],
+                   [[r["파일"], r["화학물질명"], r["제조사"],
+                     r["주요성분 및 함량"], r["작성일"], r["도입검토"],
+                     r["정보등록"]] for r in upload_rows],
+                   [30, 30, 22, 50, 12, 16, 16])
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
 with tab_review:
     st.markdown("MSDS를 등록하면 **화학물질명·제조사·주요성분 및 함량**을 자동 인식해 "
                 "비교표를 만들고, 기존 등록 이력과 비교해 **도입검토 대상·정보등록 대상** "
@@ -198,6 +248,20 @@ with tab_review:
     for n in list(st.session_state.review_parsed):
         if n not in rv_names:
             del st.session_state.review_parsed[n]
+
+    # 작성일 일괄등록 — 업로드한 모든 MSDS에 같은 작성일을 한 번에 입력
+    if st.session_state.review_parsed:
+        b1, b2 = st.columns([1, 2.4])
+        bulk_dt = b1.date_input("작성일 일괄 입력", value=None,
+                                key="rv_bulk_dt", format="YYYY-MM-DD")
+        b2.markdown("<div style='height:1.75em'></div>",
+                    unsafe_allow_html=True)
+        if b2.button("📅 업로드한 모든 MSDS에 작성일 적용", key="rv_bulk_btn"):
+            if bulk_dt is None:
+                st.warning("일괄 적용할 작성일을 먼저 선택해 주세요.")
+            else:
+                for n in st.session_state.review_parsed:
+                    st.session_state[f"rv_dt_{n}"] = bulk_dt
 
     review_db = _load_review_db()
     rv_rows = []
@@ -324,6 +388,13 @@ with tab_review:
     else:
         st.caption("등록된 화학물질이 없습니다." if not q
                    else "검색 결과가 없습니다.")
+    if review_db or rv_rows:
+        st.download_button(
+            "⬇️ 엑셀로 내보내기 (등록 목록 + 업로드 비교표)",
+            _review_xlsx(review_db, rv_rows),
+            file_name="화학물질_도입검토.xlsx",
+            mime="application/vnd.openxmlformats-officedocument."
+                 "spreadsheetml.sheet")
 
 with tab_sign:
     st.markdown("**화학물질관리법 시행규칙 [별표 2] 유해화학물질의 표시방법**(제12조제2항 관련) "

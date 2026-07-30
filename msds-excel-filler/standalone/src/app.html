@@ -201,6 +201,14 @@
       📄 여기를 클릭하거나 MSDS PDF 파일을 끌어다 놓으세요 (여러 개 가능)
       <input type="file" id="rvFileInput" accept="application/pdf" multiple>
     </label>
+    <div id="rvBulk" hidden style="margin-top:14px;">
+      <label class="f" style="margin-top:0;">작성일 일괄등록 — 업로드한 모든 MSDS에
+        같은 작성일을 한 번에 입력합니다</label>
+      <div class="addrow" style="max-width:460px;">
+        <input type="date" id="rvBulkDate">
+        <button id="rvBulkApply" type="button">📅 모든 MSDS에 적용</button>
+      </div>
+    </div>
     <div id="rvCards"></div>
     <div id="rvCompareWrap" hidden>
       <div class="prev-title">📊 비교표 — 업로드한 MSDS</div>
@@ -215,6 +223,8 @@
     </div>
     <div style="overflow-x:auto;margin-top:10px;"><table class="rvt" id="rvDbTable"></table></div>
     <div class="hint" id="rvDbHint"></div>
+    <button id="rvXlsx" class="rvsave" type="button" hidden>⬇️ 엑셀로 내보내기
+      (등록 목록 + 업로드 비교표)</button>
   </div>
   <div id="tabSign" class="tabpanel" hidden>
     <p class="signnote"><b>화학물질관리법 시행규칙 [별표 2] 유해화학물질의 표시방법</b>(제12조제2항 관련)
@@ -549,8 +559,9 @@ function cleanText(text){
 function splitSections(text){
   const hits = [];
   for (const [num, pat] of Object.entries(SECTION_KEYS)){
+    // "01. 화학제품과..."처럼 0을 붙여 쓰는 형식(한국가스공사 등)도 인식
     const rx = new RegExp(
-      "^[^\\S\\n]*(?:제\\s*|항\\s*|SECTION\\s*|섹션\\s*)?" + num +
+      "^[^\\S\\n]*(?:제\\s*|항\\s*|SECTION\\s*|섹션\\s*)?0?" + num +
       "\\s*[.):：항]?\\s*[:：]?\\s*(?:" + pat + ")", "mi");
     const m = rx.exec(text);
     if (m) hits.push([m.index, Number(num)]);
@@ -732,22 +743,65 @@ function cleanComponentName(s){
 }
 
 function extractManufacturer(sec1){
+  // 라벨은 줄 머리(번호·글머리표 뒤 포함)에 있을 때만 인정한다 —
+  // "... 제조사 측과 합의되지 않은 용도" 같은 본문 속 단어에 걸리지 않도록.
+  // 글머리표에는 라틴 O·그리스 ο(한국가스공사 등)도 쓰인다.
+  const pre = "^\\s*(?:[0-9가-힣a-zA-Z]{1,2}\\s*[.)])?[\\s·ㆍ•○◦oOο\\-–—*]*";
   for (const pat of ["회\\s*사\\s*명", "제조\\s*(?:회\\s*)?사", "제조\\s*업체",
                      "공급\\s*(?:자|업체)", "수입\\s*자", "판매\\s*자", "업체\\s*명"]){
-    const rx = new RegExp(pat + "\\s*[:：]?[ \\t]*([^\\n]*)", "g");
+    const rx = new RegExp(pre + "(?:" + pat + ")\\s*[:：]?[ \\t]*([^\\n]*)", "gm");
     let m;
     while ((m = rx.exec(sec1))){
       let val = m[1].replace(/^[:：·ㆍ\-\s]+/, "").trim();
       // "제조자/수입자/유통업자 정보:"처럼 라벨이 이어지는 경우는 건너뛴다
-      if (!val || /^[\/(·]/.test(val) || /정보\s*[:：]?\s*$/.test(val) ||
-          val.length < 2) continue;
+      if (!val || /^[\/·]/.test(val)) continue;
+      // "(주)한솔케미칼"은 회사명이지만 "(수입품의 경우 ...)"는 지침 문구
+      if (val.startsWith("(") && !/^\(\s*(?:주|유|합|사)\s*\)/.test(val)) continue;
       // 회사명 뒤에 다른 항목이 이어지면("OCI㈜ 사업장명 : ...") 잘라낸다
       // (주의: JS의 \b는 한글 경계에서 동작하지 않으므로 lookahead 사용)
-      val = val.split(/\s+(?:사업장명?|주\s*소|담당\s*부서|연락처|전화|TEL|FAX)(?=[\s:：]|$)/)[0];
+      val = val.split(/\s+(?:사업장명?|주\s*소|담당\s*부서|연락처|전화|TEL|FAX)(?=[\s:：]|$)/)[0].trim();
+      // 표 머리글·지침 문구("주소 정보제공 서비스 ...")는 건너뛴다
+      if (val.length < 2 ||
+          /정보\s*[:：]?$|주소|전화|담당|서비스|기재|홈페이지/.test(val)) continue;
       return val.slice(0, 60).trim();
     }
   }
   return "";
+}
+
+// "영업비밀"로 CAS 번호를 밝히지 않는 성분(산업안전보건법 비공개 승인 물질 등)
+const SECRET_RX = /영\s*업\s*비\s*밀|기업\s*비밀|trade\s*secret/i;
+const CONTENT_TOK = "[<>≥≤=]{0,2}\\s*\\d+(?:[.,]\\d+)?" +
+                    "(?:\\s*[–\\-~]\\s*[<>≥≤=]{0,2}\\s*\\d+(?:[.,]\\d+)?)?\\s*%?";
+
+// 행 형식에서 CAS 앞 텍스트로부터 성분명을 뽑는다 — "에틸렌 글리콜"처럼
+// 띄어쓰기가 있는 이름은 같은 문자계열 토큰을 이어 붙이고, "수산화나트륨
+// 수산화 나트륨"처럼 이름의 띄어쓰기 변형(관용명)이 반복되면 앞부분만 남긴다.
+function rowName(before){
+  const toks = before.trim().split(/\s+/).filter(Boolean);
+  if (!toks.length) return "";
+  let name = toks[0];
+  let i = 1;
+  // 여는 괄호가 닫히지 않았으면 닫힐 때까지 잇는다 ("염산 (HYDROCHLORIC ACID)")
+  const opens = s => (s.match(/\(/g) || []).length - (s.match(/\)/g) || []).length;
+  while (opens(name) > 0 && i < toks.length){ name += " " + toks[i]; i++; }
+  if (!name.includes("(")){
+    const firstKor = /[가-힣]/.test(toks[0]);
+    let added = 0;
+    while (i < toks.length && added < 2){
+      const t = toks[i];
+      if (t.includes("(") || t.includes(")") || SECRET_RX.test(t) ||
+          !/[가-힣A-Za-z]/.test(t) || /[가-힣]/.test(t) !== firstKor) break;
+      name += " " + t; i++; added++;
+    }
+  }
+  // 뒤가 이름의 띄어쓰기 변형이면 정리 ("수산화나트륨 수산화 나트륨")
+  const parts = name.split(/\s+/);
+  const nrm = s => s.replace(/\s+/g, "").toLowerCase();
+  for (let k = 1; k < parts.length; k++)
+    if (nrm(parts.slice(0, k).join("")) === nrm(parts.slice(k).join("")))
+      return parts.slice(0, k).join(" ");
+  return name;
 }
 
 function extractComponents(sec3){
@@ -756,8 +810,12 @@ function extractComponents(sec3){
     name = cleanComponentName(name || "");
     content = (content || "").trim().replace(/\.+$/, "");
     if (content && !content.includes("%")) content += "%";
+    const realCas = /^\d{2,7}-\d{2}-\d$/.test(cas || "");
     for (const c of comps){
-      if (c.cas === cas){                     // 같은 CAS는 정보를 보강만 한다
+      // 같은 CAS(실제 번호)는 정보를 보강만 한다 — 영업비밀·빈 값은
+      // 서로 다른 성분일 수 있으므로 이름까지 같을 때만 병합한다
+      if ((realCas && c.cas === cas) ||
+          (!realCas && c.cas === cas && c.name === name)){
         if (name && !c.name) c.name = name;
         if (content && !c.content) c.content = content;
         return;
@@ -766,30 +824,41 @@ function extractComponents(sec3){
     comps.push({ name, cas, content });
   };
 
-  // 전치 형식(속성이 행으로 나열): "물질명 A B" / "CAS번호 x y" / "함유량 …"
-  const nm = /^[·ㆍ\s]*(?:화학)?물질명\s+(.+)$/m.exec(sec3);
-  const cm = /^[·ㆍ\s]*CAS\s*[\-]?\s*(?:번호|No)?\.?\s*[:：]?\s+(.+)$/mi.exec(sec3);
-  const fm = /^[·ㆍ\s]*함\s*유\s*량\s*(?:\(%\))?\s*[:：]?\s+(.+)$/m.exec(sec3);
-  if (nm && cm){
+  // 1) 전치 형식 — "물질명 …" 블록이 하나 이상 반복될 수 있다 (메탄올50% 등)
+  const heads = [...sec3.matchAll(
+    /^[·ㆍ\s]*(?:화학)?물질명[ \t]*[:：]?[ \t]*([^\n]*)$/gm)];
+  heads.forEach((hm, bi) => {
+    const header = hm[1].trim();
+    // "물질명 이명(관용명) CAS 번호 함유량(%)" 같은 표 머리글은 제외
+    if (!header || /CAS|이명|관용명|함유량/i.test(header)) return;
+    const end = bi + 1 < heads.length ? heads[bi + 1].index : sec3.length;
+    const seg = sec3.slice(hm.index + hm[0].length, end);
+    const cm = /^[·ㆍ\s]*CAS\s*[\-]?\s*(?:번호|No)?\.?\s*[:：]?\s+(.+)$/mi.exec(seg);
+    if (!cm) return;
     const cases = (cm[1].match(CAS_NUM_RX) || []).filter(validCas);
-    if (cases.length){
+    const secret = SECRET_RX.test(cm[1]);
+    if (!cases.length && !secret) return;
+    const fm = /^[·ㆍ\s]*함\s*유\s*량\s*(?:\(%\))?\s*[:：]?\s+(.+)$/m.exec(seg);
+    const contents = fm ? (fm[1].match(new RegExp(CONTENT_TOK, "g")) || []) : [];
+    if (cases.length <= 1){
+      // 블록 하나 = 성분 하나: 물질명 줄 전체가 이름 ("메틸 알코올")
+      add(header, cases[0] || "영업비밀", contents[0] || "");
+    } else {
+      // 한 블록에 여러 성분(Biotector 등): 토큰을 이름으로 나눠 짝짓는다
       const names = [];
-      // 연속된 영문 토큰("DI WATER")은 한 이름으로 묶는다
-      for (const tok of nm[1].split(/\s+/)){
+      for (const tok of header.split(/\s+/)){
         const ascii = /^[A-Za-z0-9().\-]+$/;
         if (names.length && ascii.test(tok) &&
             ascii.test(names[names.length - 1].split(/\s+/).pop()))
           names[names.length - 1] += " " + tok;
         else names.push(tok);
       }
-      const contents = fm ? (fm[1].match(
-        /[<>≥≤=]{0,2}\s*\d+(?:[.,]\d+)?(?:\s*[–\-~]\s*\d+(?:[.,]\d+)?)?\s*%?/g)
-        || []) : [];
       cases.forEach((cas, k) => add(names[k] || "", cas, contents[k] || ""));
-      return comps;
     }
-  }
+  });
+  if (comps.length) return comps;
 
+  // 2)+3) 행 형식·CAS 라벨 형식
   const lines = sec3.split("\n");
   lines.forEach((line, i) => {
     for (const cmm of line.matchAll(CAS_NUM_RX)){
@@ -816,13 +885,24 @@ function extractComponents(sec3){
         add(name, cas, content);
       } else {
         // "성분명 (이명) CAS 함유량" — 행 형식
-        const toks = before.trim().split(/\s+/);
-        const name = toks.length ? toks[0] : "";
-        const m = /^\s*([<>≥≤=]{0,2}\s*\d+(?:[.,]\d+)?(?:\s*[–\-~]\s*\d+(?:[.,]\d+)?)?\s*%?)/.exec(after);
-        add(name, cas, m ? m[1] : "");
+        const m = new RegExp("^\\s*(" + CONTENT_TOK + ")").exec(after);
+        add(rowName(before), cas, m ? m[1] : "");
       }
     }
   });
+
+  // 4) 영업비밀 성분 — CAS 자리에 "영업비밀"로 적는 행
+  for (const line of lines){
+    // (CAS_NUM_RX는 g 플래그라 stateful — .test 대신 .match로 검사한다)
+    if (!SECRET_RX.test(line) || line.match(CAS_NUM_RX)) continue;
+    const m = /^\s*(\S.*?)\s+(?:영\s*업\s*비\s*밀|기업\s*비밀|trade\s*secret)\s*(.*)$/i.exec(line);
+    if (!m) continue;
+    const name = rowName(m[1]);
+    // 문장("...은 영업비밀에 해당하므로...")은 성분 행이 아니다
+    if (!name || /법|따라|해당|비공개|승인|정보|자료/.test(name)) continue;
+    const cm2 = new RegExp(CONTENT_TOK).exec(m[2]);
+    add(name, "영업비밀", cm2 ? cm2[0] : "");
+  }
   return comps;
 }
 
@@ -862,13 +942,33 @@ function parseMsds(text, sourceName){
   }
   const whole = text;
 
-  // 1) 제품명 — 라벨이 "물질명"인 형식(OCI 등)은 1항 안에서만 찾는다
-  // (3항 구성성분 표에도 "물질명"이 있으므로 전체 텍스트에서는 찾지 않는다)
-  let m = /제품명\s*[:：]?\s*([^\n]+)/.exec(sections[1] || whole) ||
-          (sections[1] ? /물\s*질\s*명\s*[:：]\s*([^\n]+)/.exec(sections[1]) : null) ||
-          /제품명\s*[:：]?\s*([^\n]+)/.exec(whole);
-  if (m) data.productName = m[1].trim().replace(/^[:：·ㆍ\-\s]+/, "");
-  else data.warnings.push("제품명을 찾지 못했습니다.");
+  // 1) 제품명 — "제품명"/"품명" 라벨, 라벨만 있고 값이 다음 줄인 형식,
+  // "물질명:"(OCI 등 — 1항 안에서만), 지침 문구가 섞인 형식을 지원한다.
+  const sec1 = sections[1] || whole;
+  const pickName = (text, pat, requireColon) => {
+    const tail = requireColon ? "\\s*[:：]\\s*([^\\n]*)" : "\\s*[:：]?[ \\t]*([^\\n]*)";
+    const rx = new RegExp(pat + tail, "g");
+    let pm;
+    while ((pm = rx.exec(text))){
+      let val = pm[1].trim().replace(/^[:：·ㆍ\-\s]+/, "");
+      if (!val){
+        // 라벨만 있는 줄 → 다음 줄이 값 ("가. 품명 ⏎ 초저유황경유 ...")
+        const rest = text.slice(pm.index + pm[0].length).replace(/^\n+/, "").split("\n", 1)[0];
+        val = rest.replace(/^[\s·ㆍ•○\-–—]+/, "").trim();
+      }
+      // 양식 지침 문구는 건너뛴다
+      if (!val || val.startsWith("(") || /기재한다|분류\s*코드/.test(val)) continue;
+      return val;
+    }
+    return "";
+  };
+  data.productName =
+    pickName(sec1, "제\\s*품\\s*명") ||
+    pickName(sec1, "(?<![상제])품\\s*명") ||          // "상품명(동의어)"은 제외
+    (sections[1] ? pickName(sec1, "물\\s*질\\s*명", true) : "") ||
+    pickName(whole, "제\\s*품\\s*명");
+  if (!data.productName) data.warnings.push("제품명을 찾지 못했습니다.");
+  let m;
 
   // 1항 제조사·3항 구성성분 — 화학물질 도입검토 메뉴에서 사용
   data.manufacturer = extractManufacturer(sections[1] || whole);
@@ -1705,6 +1805,8 @@ function renderRvCompare(){
   const sts = [...rvState.values()];
   wrap.hidden = !sts.length;
   $rvHint.hidden = !!sts.length;
+  document.getElementById("rvBulk").hidden = !sts.length;
+  document.getElementById("rvXlsx").hidden = !sts.length && !loadRvDb().length;
   tbl.innerHTML = !sts.length ? "" :
     "<tr><th>파일</th><th>화학물질명</th><th>제조사</th><th>주요성분 및 함량</th>" +
     "<th>작성일</th><th>도입검토</th><th>정보등록</th></tr>" +
@@ -1732,7 +1834,71 @@ function renderRvDb(){
     db.length ? `등록 ${db.length}건${q ? ` — 검색 결과 ${shown.length}건` : ""} · ` +
       "등록 정보는 이 브라우저(localStorage)에 저장됩니다."
       : "등록된 화학물질이 없습니다. MSDS를 업로드하고 「등록」 버튼을 누르면 누적 관리됩니다.";
+  document.getElementById("rvXlsx").hidden = !db.length && !rvState.size;
 }
+
+// 작성일 일괄등록 — 업로드한 모든 MSDS 카드에 같은 작성일을 채운다
+document.getElementById("rvBulkApply").addEventListener("click", () => {
+  const d = document.getElementById("rvBulkDate").value;
+  if (!d) return;
+  for (const [id, st] of rvState){
+    st.date = d;
+    const inp = document.querySelector(`#${id} input[data-rvkey="date"]`);
+    if (inp) inp.value = d;
+    renderRvVerdict(id);
+  }
+  renderRvCompare();
+});
+
+// 엑셀 내보내기 — 등록 목록(누적 관리) + 현재 업로드 비교표
+document.getElementById("rvXlsx").addEventListener("click", async e => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  try {
+    const wb = new ExcelJS.Workbook();
+    const fillSheet = (ws, headers, rows, widths) => {
+      ws.addRow(headers);
+      ws.getRow(1).eachCell(c => {
+        c.font = { bold: true };
+        c.fill = { type: "pattern", pattern: "solid",
+                   fgColor: { argb: "FFDDEBF7" } };
+        c.alignment = { horizontal: "center", vertical: "middle" };
+      });
+      rows.forEach(r => ws.addRow(r));
+      const border = { style: "thin" };
+      ws.eachRow(row => row.eachCell(c => {
+        c.border = { top: border, left: border, bottom: border, right: border };
+        if (row.number > 1) c.alignment = { vertical: "middle", wrapText: true };
+      }));
+      widths.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+    };
+    const db = loadRvDb();
+    fillSheet(wb.addWorksheet("등록 목록"),
+      ["No.", "작성일", "화학물질명", "제조사", "주요성분 및 함량",
+       "도입검토", "정보등록", "MSDS 파일"],
+      db.map(r => [r.id, r.date || "", r.name || "", r.manufacturer || "",
+        rvComponentsText(r.components), r.review || "", r.register || "",
+        r.source || ""]),
+      [6, 12, 30, 22, 50, 16, 16, 30]);
+    const sts = [...rvState.values()];
+    if (sts.length){
+      fillSheet(wb.addWorksheet("업로드 비교표"),
+        ["파일", "화학물질명", "제조사", "주요성분 및 함량", "작성일",
+         "도입검토", "정보등록"],
+        sts.map(st => [st.source, st.name, st.manufacturer,
+          rvComponentsText(rvComps(st)), st.date,
+          st.lastRes ? st.lastRes.reviewLabel : "",
+          st.lastRes ? st.lastRes.registerLabel : ""]),
+        [30, 30, 22, 50, 12, 16, 16]);
+    }
+    const buf = await wb.xlsx.writeBuffer();
+    downloadBlob(new Blob([buf], { type:
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+      "화학물질_도입검토.xlsx");
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 function rvSave(id){
   const st = rvState.get(id);

@@ -245,8 +245,9 @@ def split_sections(text: str) -> dict:
     """
     hits = []
     for num, pat in _SECTION_KEYS.items():
+        # "01. 화학제품과..."처럼 0을 붙여 쓰는 형식(한국가스공사 등)도 인식
         rx = re.compile(
-            r"^[^\S\n]*(?:제\s*|항\s*|SECTION\s*|섹션\s*)?%d\s*[.):：항]?\s*[:：]?\s*(?:%s)"
+            r"^[^\S\n]*(?:제\s*|항\s*|SECTION\s*|섹션\s*)?0?%d\s*[.):：항]?\s*[:：]?\s*(?:%s)"
             % (num, pat), re.M | re.I)
         m = rx.search(text)
         if m:
@@ -484,29 +485,91 @@ def _clean_component_name(s: str) -> str:
 
 
 def extract_manufacturer(sec1: str) -> str:
-    """1항에서 회사명(제조자·공급자)을 찾는다."""
+    """1항에서 회사명(제조자·공급자)을 찾는다.
+
+    라벨은 줄 머리(번호·글머리표 뒤 포함)에 있을 때만 인정한다 —
+    "사용상의 제한 : ... 제조사 측과 합의되지 않은 용도" 같은 본문 속
+    단어에 걸리지 않도록 한다.
+    """
+    # 글머리표에는 라틴 O·그리스 ο(한국가스공사 등)도 쓰인다
+    _pre = r"(?m)^\s*(?:[0-9가-힣a-zA-Z]{1,2}\s*[.)])?[\s·ㆍ•○◦oOο\-–—*]*"
     for pat in (r"회\s*사\s*명", r"제조\s*(?:회\s*)?사", r"제조\s*업체",
                 r"공급\s*(?:자|업체)", r"수입\s*자", r"판매\s*자", r"업체\s*명"):
-        for m in re.finditer(pat + r"\s*[:：]?[ \t]*([^\n]*)", sec1):
+        for m in re.finditer(_pre + r"(?:" + pat + r")\s*[:：]?[ \t]*([^\n]*)",
+                             sec1):
             val = re.sub(r"^[:：·ㆍ\-\s]+", "", m.group(1)).strip()
             # "제조자/수입자/유통업자 정보:"처럼 라벨이 이어지는 경우는 건너뛴다
-            if not val or val.startswith(("/", "(", "·")) or \
-                    re.search(r"정보\s*[:：]?\s*$", val) or len(val) < 2:
+            if not val or val.startswith(("/", "·")):
+                continue
+            # "(주)한솔케미칼"은 회사명이지만 "(수입품의 경우 ...)"는 지침 문구
+            if val.startswith("(") and \
+                    not re.match(r"^\(\s*(?:주|유|합|사)\s*\)", val):
                 continue
             # 회사명 뒤에 다른 항목이 이어지면("OCI㈜ 사업장명 : ...") 잘라낸다
             val = re.split(r"\s+(?:사업장명?|주\s*소|담당\s*부서|연락처|전화|"
-                           r"TEL|FAX)\b", val)[0]
+                           r"TEL|FAX)\b", val)[0].strip()
+            # 표 머리글·지침 문구("주소 정보제공 서비스 ...")는 건너뛴다
+            if len(val) < 2 or re.search(
+                    r"정보\s*[:：]?$|주소|전화|담당|서비스|기재|홈페이지", val):
+                continue
             return val[:60].strip()
     return ""
+
+
+# "영업비밀"로 CAS 번호를 밝히지 않는 성분(산업안전보건법 비공개 승인 물질 등)
+_SECRET_RX = re.compile(r"영\s*업\s*비\s*밀|기업\s*비밀|trade\s*secret", re.I)
+_CONTENT_TOK = (r"[<>≥≤=]{0,2}\s*\d+(?:[.,]\d+)?"
+                r"(?:\s*[–\-~]\s*[<>≥≤=]{0,2}\s*\d+(?:[.,]\d+)?)?\s*%?")
+
+
+def _row_name(before: str) -> str:
+    """행 형식에서 CAS 앞 텍스트로부터 성분명을 뽑는다.
+
+    "에틸렌 글리콜"처럼 띄어쓰기가 있는 이름은 같은 문자계열(한글/영문)
+    토큰을 이어 붙이고, "수산화나트륨 수산화 나트륨"처럼 이름의 띄어쓰기
+    변형(관용명)이 반복되면 앞부분만 남긴다.
+    """
+    toks = before.split()
+    if not toks:
+        return ""
+    name = toks[0]
+    i = 1
+    # 여는 괄호가 닫히지 않았으면 닫힐 때까지 잇는다 ("염산 (HYDROCHLORIC ACID)")
+    while name.count("(") > name.count(")") and i < len(toks):
+        name += " " + toks[i]
+        i += 1
+    if "(" not in name:
+        first_kor = bool(re.search(r"[가-힣]", toks[0]))
+        added = 0
+        while i < len(toks) and added < 2:
+            t = toks[i]
+            if ("(" in t or ")" in t or _SECRET_RX.search(t)
+                    or not re.search(r"[가-힣A-Za-z]", t)
+                    or bool(re.search(r"[가-힣]", t)) != first_kor):
+                break
+            name += " " + t
+            i += 1
+            added += 1
+    # 뒤가 이름의 띄어쓰기 변형이면 정리 ("수산화나트륨 수산화 나트륨")
+    parts = name.split()
+
+    def nrm(s):
+        return re.sub(r"\s+", "", s).lower()
+    for k in range(1, len(parts)):
+        if nrm("".join(parts[:k])) == nrm("".join(parts[k:])):
+            return " ".join(parts[:k])
+    return name
 
 
 def extract_components(sec3: str) -> list:
     """3항에서 성분명·CAS번호·함유량 목록을 뽑는다.
 
     지원 형식:
-      1) 행 형식      "수산화나트륨 (이명) 1310-73-2 2"
-      2) CAS 라벨 형식 "CAS: 7775-27-1 디나트륨 퍼옥소디황산염 85–90%"
-      3) 전치 형식     "물질명 A B / CAS번호 x y / 함유량 3.2% 96.8%"
+      1) 전치 형식(블록 반복) "물질명 메틸 알코올 / 이명 … / CAS 번호 67-56-1
+         / 함유량(%) 48.0 ~ 52.0 / 물질명 물 / …"
+      2) 행 형식              "에틸렌 글리콜 (이명) 107-21-1 30"
+      3) CAS 라벨 형식        "CAS: 7775-27-1 성분명 85–90%"
+      4) 영업비밀 성분        CAS 자리에 "영업비밀"로 적는 형식
     """
     comps = []          # [{"name", "cas", "content"}]
 
@@ -515,8 +578,12 @@ def extract_components(sec3: str) -> list:
         content = (content or "").strip().rstrip(".")
         if content and "%" not in content:
             content += "%"
+        real_cas = bool(re.fullmatch(r"\d{2,7}-\d{2}-\d", cas or ""))
         for c in comps:
-            if c["cas"] == cas:                 # 같은 CAS는 정보를 보강만 한다
+            # 같은 CAS(실제 번호)는 정보를 보강만 한다 — 영업비밀·빈 값은
+            # 서로 다른 성분일 수 있으므로 이름까지 같을 때만 병합한다
+            if (real_cas and c["cas"] == cas) or \
+                    (not real_cas and c["cas"] == cas and c["name"] == name):
                 if name and not c["name"]:
                     c["name"] = name
                 if content and not c["content"]:
@@ -524,33 +591,48 @@ def extract_components(sec3: str) -> list:
                 return
         comps.append({"name": name, "cas": cas, "content": content})
 
-    # 전치 형식(속성이 행으로 나열): "물질명 A B" / "CAS번호 x y" / "함유량 …"
-    nm = re.search(r"^[·ㆍ\s]*(?:화학)?물질명\s+(.+)$", sec3, re.M)
-    cm = re.search(r"^[·ㆍ\s]*CAS\s*[\-]?\s*(?:번호|No)?\.?\s*[:：]?\s+(.+)$",
-                   sec3, re.M | re.I)
-    fm = re.search(r"^[·ㆍ\s]*함\s*유\s*량\s*(?:\(%\))?\s*[:：]?\s+(.+)$",
-                   sec3, re.M)
-    if nm and cm:
+    # 1) 전치 형식 — "물질명 …" 블록이 하나 이상 반복될 수 있다 (메탄올50% 등)
+    heads = list(re.finditer(
+        r"(?m)^[·ㆍ\s]*(?:화학)?물질명[ \t]*[:：]?[ \t]*([^\n]*)$", sec3))
+    for bi, hm in enumerate(heads):
+        header = hm.group(1).strip()
+        # "물질명 이명(관용명) CAS 번호 함유량(%)" 같은 표 머리글은 제외
+        if not header or re.search(r"CAS|이명|관용명|함유량", header, re.I):
+            continue
+        end = heads[bi + 1].start() if bi + 1 < len(heads) else len(sec3)
+        seg = sec3[hm.end():end]
+        cm = re.search(r"^[·ㆍ\s]*CAS\s*[\-]?\s*(?:번호|No)?\.?\s*[:：]?\s+(.+)$",
+                       seg, re.M | re.I)
+        if not cm:
+            continue
         cases = [c for c in _CAS_RX.findall(cm.group(1)) if _valid_cas(c)]
-        if cases:
-            names, contents = [], []
-            # 연속된 영문 토큰("DI WATER")은 한 이름으로 묶는다
-            for tok in nm.group(1).split():
+        secret = bool(_SECRET_RX.search(cm.group(1)))
+        if not cases and not secret:
+            continue
+        fm = re.search(r"^[·ㆍ\s]*함\s*유\s*량\s*(?:\(%\))?\s*[:：]?\s+(.+)$",
+                       seg, re.M)
+        contents = re.findall(_CONTENT_TOK, fm.group(1)) if fm else []
+        if len(cases) <= 1:
+            # 블록 하나 = 성분 하나: 물질명 줄 전체가 이름 ("메틸 알코올")
+            add(header, cases[0] if cases else "영업비밀",
+                contents[0] if contents else "")
+        else:
+            # 한 블록에 여러 성분(Biotector 등): 토큰을 이름으로 나눠 짝짓는다
+            names = []
+            for tok in header.split():
                 if (names and re.fullmatch(r"[A-Za-z0-9().\-]+", tok)
                         and re.fullmatch(r"[A-Za-z0-9().\-]+",
                                          names[-1].split()[-1])):
                     names[-1] += " " + tok
                 else:
                     names.append(tok)
-            if fm:
-                contents = re.findall(r"[<>≥≤=]{0,2}\s*\d+(?:[.,]\d+)?"
-                                      r"(?:\s*[–\-~]\s*\d+(?:[.,]\d+)?)?\s*%?",
-                                      fm.group(1))
             for k, cas in enumerate(cases):
                 add(names[k] if k < len(names) else "", cas,
                     contents[k] if k < len(contents) else "")
-            return comps
+    if comps:
+        return comps
 
+    # 2)+3) 행 형식·CAS 라벨 형식
     lines = sec3.splitlines()
     for i, line in enumerate(lines):
         for cmm in _CAS_RX.finditer(line):
@@ -579,10 +661,23 @@ def extract_components(sec3: str) -> list:
                 add(name, cas, content)
             else:
                 # "성분명 (이명) CAS 함유량" — 행 형식
-                name = before.split()[0] if before.split() else ""
-                m = re.match(r"\s*([<>≥≤=]{0,2}\s*\d+(?:[.,]\d+)?"
-                             r"(?:\s*[–\-~]\s*\d+(?:[.,]\d+)?)?\s*%?)", after)
-                add(name, cas, m.group(1) if m else "")
+                m = re.match(r"\s*(" + _CONTENT_TOK + r")", after)
+                add(_row_name(before), cas, m.group(1) if m else "")
+
+    # 4) 영업비밀 성분 — CAS 자리에 "영업비밀"로 적는 행
+    for line in lines:
+        if not _SECRET_RX.search(line) or _CAS_RX.search(line):
+            continue                      # CAS가 있는 행은 위에서 처리됨
+        m = re.match(r"^\s*(\S.*?)\s+(?:영\s*업\s*비\s*밀|기업\s*비밀|"
+                     r"trade\s*secret)\s*(.*)$", line, re.I)
+        if not m:
+            continue
+        name = _row_name(m.group(1))
+        # 문장("...은 영업비밀에 해당하므로...")은 성분 행이 아니다
+        if not name or re.search(r"법|따라|해당|비공개|승인|정보|자료", name):
+            continue
+        cm2 = re.search(_CONTENT_TOK, m.group(2))
+        add(name, "영업비밀", cm2.group(0) if cm2 else "")
     return comps
 
 
@@ -615,16 +710,34 @@ def parse_msds(pdf_source, source_name: str = "") -> MsdsData:
     whole = text
 
     # 1) 제품명 ──────────────────────────────────────────────
-    # 제품명 라벨이 없고 "물질명"으로 적는 형식(OCI 등)은 1항 안에서만 찾는다
-    # (3항 구성성분 표에도 "물질명"이 있으므로 전체 텍스트에서는 찾지 않는다)
+    # "제품명"/"품명" 라벨, 라벨만 있고 값이 다음 줄인 형식("가. 품명" 줄바꿈),
+    # "물질명:"으로 적는 형식(OCI 등 — 1항 안에서만), 지침 문구가 섞인 형식
+    # ("제품명 (경고표지 상에 사용되는 것과 동일한 명칭...을 기재한다)")을 지원한다.
     sec1 = sections.get(1, whole)
-    m = re.search(r"제품명\s*[:：]?\s*([^\n]+)", sec1) or \
-        (re.search(r"물\s*질\s*명\s*[:：]\s*([^\n]+)", sec1)
-         if 1 in sections else None) or \
-        re.search(r"제품명\s*[:：]?\s*([^\n]+)", whole)
-    if m:
-        data.product_name = re.sub(r"^[:：·ㆍ\-\s]+", "", m.group(1).strip())
-    else:
+
+    def _pick_name(text, pat, require_colon=False):
+        tail = r"\s*[:：]\s*([^\n]*)" if require_colon else \
+               r"\s*[:：]?[ \t]*([^\n]*)"
+        for pm in re.finditer(pat + tail, text):
+            val = re.sub(r"^[:：·ㆍ\-\s]+", "", pm.group(1).strip())
+            if not val:
+                # 라벨만 있는 줄 → 다음 줄이 값 ("가. 품명 ⏎ 초저유황경유 ...")
+                rest = text[pm.end():].lstrip("\n").split("\n", 1)[0]
+                val = re.sub(r"^[\s·ㆍ•○\-–—]+", "", rest).strip()
+            # 양식 지침 문구는 건너뛴다
+            if not val or val.startswith("(") or \
+                    re.search(r"기재한다|분류\s*코드", val):
+                continue
+            return val
+        return ""
+
+    data.product_name = (
+        _pick_name(sec1, r"제\s*품\s*명")
+        or _pick_name(sec1, r"(?<![상제])품\s*명")   # "상품명(동의어)"은 제외
+        or (_pick_name(sec1, r"물\s*질\s*명", require_colon=True)
+            if 1 in sections else "")
+        or _pick_name(whole, r"제\s*품\s*명"))
+    if not data.product_name:
         data.warnings.append("제품명을 찾지 못했습니다.")
 
     # 1항 제조사·3항 구성성분 — 화학물질 도입검토 메뉴에서 사용
