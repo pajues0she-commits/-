@@ -491,8 +491,8 @@ def extract_manufacturer(sec1: str) -> str:
     "사용상의 제한 : ... 제조사 측과 합의되지 않은 용도" 같은 본문 속
     단어에 걸리지 않도록 한다.
     """
-    # 글머리표에는 라틴 O·그리스 ο(한국가스공사 등)도 쓰인다
-    _pre = r"(?m)^\s*(?:[0-9가-힣a-zA-Z]{1,2}\s*[.)])?[\s·ㆍ•○◦oOο\-–—*]*"
+    # 글머리표에는 라틴 O·그리스 ο(한국가스공사)·전각 별표 ＊(동양하이테크)도 쓰인다
+    _pre = r"(?m)^\s*(?:[0-9가-힣a-zA-Z]{1,2}\s*[.)])?[\s·ㆍ•○◦oOο\-–—*＊]*"
     for pat in (r"회\s*사\s*명", r"제조\s*(?:회\s*)?사", r"제조\s*업체",
                 r"공급\s*(?:자|업체)", r"수입\s*자", r"판매\s*자", r"업체\s*명"):
         for m in re.finditer(_pre + r"(?:" + pat + r")\s*[:：]?[ \t]*([^\n]*)",
@@ -513,6 +513,18 @@ def extract_manufacturer(sec1: str) -> str:
                     r"정보\s*[:：]?$|주소|전화|담당|서비스|기재|홈페이지", val):
                 continue
             return val[:60].strip()
+    # 표 형식: "제조자 | 주소 | ..." 머리글 다음 줄에 회사명이 오는 경우
+    # ("㈜유니드 울산공장 울산광역시 남구 ..." — 주소가 시작되기 전까지)
+    m = re.search(r"(?m)^\s*제조자\s+주소\b[^\n]*\n\s*(\S[^\n]*)", sec1)
+    if m:
+        out = []
+        for t in m.group(1).split()[:4]:
+            if re.search(r"광역시|특별시|특별자치|^[가-힣]{2,8}(?:시|도|군|구|"
+                         r"읍|면)$|^\(?전화|^\d|TEL|FAX", t):
+                break
+            out.append(t)
+        if out:
+            return " ".join(out)[:60]
     return ""
 
 

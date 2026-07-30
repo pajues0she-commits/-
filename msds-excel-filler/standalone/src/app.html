@@ -756,8 +756,8 @@ function cleanComponentName(s){
 function extractManufacturer(sec1){
   // 라벨은 줄 머리(번호·글머리표 뒤 포함)에 있을 때만 인정한다 —
   // "... 제조사 측과 합의되지 않은 용도" 같은 본문 속 단어에 걸리지 않도록.
-  // 글머리표에는 라틴 O·그리스 ο(한국가스공사 등)도 쓰인다.
-  const pre = "^\\s*(?:[0-9가-힣a-zA-Z]{1,2}\\s*[.)])?[\\s·ㆍ•○◦oOο\\-–—*]*";
+  // 글머리표에는 라틴 O·그리스 ο(한국가스공사)·전각 별표 ＊(동양하이테크)도 쓰인다.
+  const pre = "^\\s*(?:[0-9가-힣a-zA-Z]{1,2}\\s*[.)])?[\\s·ㆍ•○◦oOο\\-–—*＊]*";
   for (const pat of ["회\\s*사\\s*명", "제조\\s*(?:회\\s*)?사", "제조\\s*업체",
                      "공급\\s*(?:자|업체)", "수입\\s*자", "판매\\s*자", "업체\\s*명"]){
     const rx = new RegExp(pre + "(?:" + pat + ")\\s*[:：]?[ \\t]*([^\\n]*)", "gm");
@@ -776,6 +776,18 @@ function extractManufacturer(sec1){
           /정보\s*[:：]?$|주소|전화|담당|서비스|기재|홈페이지/.test(val)) continue;
       return val.slice(0, 60).trim();
     }
+  }
+  // 표 형식: "제조자 | 주소 | ..." 머리글 다음 줄에 회사명이 오는 경우
+  // ("㈜유니드 울산공장 울산광역시 남구 ..." — 주소가 시작되기 전까지)
+  const tm = /^\s*제조자\s+주소[^\n]*\n\s*(\S[^\n]*)/m.exec(sec1);
+  if (tm){
+    const out = [];
+    for (const t of tm[1].split(/\s+/).slice(0, 4)){
+      if (/광역시|특별시|특별자치|^[가-힣]{2,8}(?:시|도|군|구|읍|면)$|^\(?전화|^\d|TEL|FAX/.test(t))
+        break;
+      out.push(t);
+    }
+    if (out.length) return out.join(" ").slice(0, 60);
   }
   return "";
 }
