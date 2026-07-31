@@ -188,6 +188,10 @@
     color: #567; white-space: nowrap; }
   .loginwho button { font-size: 11px; margin-left: 6px; padding: 2px 8px;
     cursor: pointer; }
+  .ctopts { margin: 4px 0 6px; }
+  .ctopts label { display: inline-block; margin: 2px 14px 2px 0;
+                  font-weight: 400; white-space: nowrap; }
+  .ctopts input { vertical-align: -2px; }
   .rkempty { background: #fff1f1 !important;
     border-color: #e05555 !important; }
   .dashci { height: 36px; margin-top: 14px; display: block; }
@@ -404,11 +408,20 @@
         <select id="ctType">
           <option>1회성계약</option><option>연간계약</option><option>기타</option>
         </select></div>
-      <div><label class="f">취급시설</label>
-        <input type="text" id="ctFacility" placeholder="예: 폐수처리장, 보일러동"></div>
-      <div><label class="f">취급물질</label>
-        <input type="text" id="ctSubstance" placeholder="예: 차아염소산나트륨, 염산"></div>
     </div>
+    <label class="f">취급시설 (여러 개 선택 가능)</label>
+    <div class="ctopts" id="ctFacBox"></div>
+    <div class="addrow" style="max-width:520px;">
+      <input type="text" id="ctNewFac" placeholder="목록에 없는 시설 직접 추가 (예: 폐수처리장)">
+      <button id="ctAddFac" type="button">➕ 시설 추가</button>
+    </div>
+    <label class="f">취급물질 (여러 개 선택 가능)</label>
+    <div class="ctopts" id="ctSubBox"></div>
+    <div class="addrow" style="max-width:520px;">
+      <input type="text" id="ctNewSub" placeholder="목록에 없는 물질 직접 추가 (예: 차아염소산나트륨)">
+      <button id="ctAddSub" type="button">➕ 물질 추가</button>
+    </div>
+    <div class="hint" id="ctOptMsg"></div>
     <div class="rkgrid4">
       <div><label class="f">계약기간 시작</label>
         <input type="date" id="ctCStart"></div>
@@ -438,6 +451,7 @@
     </div>
     <div style="overflow-x:auto;margin-top:10px;"><table class="rvt" id="ctTable"></table></div>
     <div class="hint" id="ctHint"></div>
+    <input type="file" id="ctLateDoc" hidden>
     <button id="ctXlsx" class="rvsave" type="button" hidden>⬇️ 엑셀로 내려받기
       (도급신고 업체 내역)</button>
   </div>
@@ -2095,6 +2109,54 @@ $sgManual.addEventListener("click", e => {
    같은 아이디로 로그인하면 이 브라우저(localStorage)에서 여러 사람이 작성한
    등록·이력을 함께 본다. 서버가 없는 단일 HTML이므로 컴퓨터(브라우저) 간
    공유는 되지 않는다 — 여러 PC 공유는 Streamlit 웹 앱을 서버에서 구동. */
+/* ── 💾 로컬 서버 저장 (exe 런처) — localStorage를 서버 파일로 영구 동기화.
+   exe 런처는 이 페이지를 http://127.0.0.1 로 서비스하며 저장 데이터를
+   %LOCALAPPDATA%\ChemSafe\storage.json 파일로 보관한다. 브라우저가 종료 시
+   사이트 데이터를 지우도록 설정돼 있어도(사내 보안 정책 등) 다음 실행 때
+   서버 파일에서 그대로 복원되므로 로그인·등록·이력이 사라지지 않는다. ── */
+const CS_SRV = location.protocol === "http:" &&
+               (location.hostname === "127.0.0.1" ||
+                location.hostname === "localhost");
+if (CS_SRV){
+  try {                                    // 시작 시 서버 파일 → localStorage 복원
+    const xhr = new XMLHttpRequest();
+    xhr.open("GET", "/chemsafe/store", false);
+    xhr.send();
+    if (xhr.status === 200){
+      const data = JSON.parse(xhr.responseText);
+      for (const k of Object.keys(data)) localStorage.setItem(k, data[k]);
+    }
+  } catch (e){}
+}
+let csSyncTimer = null;
+function csSyncSnapshot(){
+  const data = {};
+  for (let i = 0; i < localStorage.length; i++){
+    const k = localStorage.key(i);
+    data[k] = localStorage.getItem(k);
+  }
+  return JSON.stringify(data);
+}
+function csSyncStore(){
+  clearTimeout(csSyncTimer);
+  csSyncTimer = setTimeout(() => {
+    fetch("/chemsafe/store", { method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: csSyncSnapshot() }).catch(() => {});
+  }, 300);
+}
+if (CS_SRV){
+  const _lsSet = localStorage.setItem.bind(localStorage);
+  const _lsRm = localStorage.removeItem.bind(localStorage);
+  localStorage.setItem = (k, v) => { _lsSet(k, v); csSyncStore(); };
+  localStorage.removeItem = k => { _lsRm(k); csSyncStore(); };
+  window.addEventListener("beforeunload", () => {
+    clearTimeout(csSyncTimer);           // 종료 직전 미전송분 즉시 반영
+    navigator.sendBeacon("/chemsafe/store",
+      new Blob([csSyncSnapshot()], { type: "application/json" }));
+  });
+}
+
 const RV_DB_LEGACY = "msdsReviewDb";       // 로그인 도입 전 공용 키
 let csUser = localStorage.getItem("csLogin") || "";
 const rvKey = () => "msdsReviewDb::" + csUser;
@@ -2128,6 +2190,7 @@ function csApplyLogin(){
     csUser ? `👤 ${csUser} 로그인 중 — 같은 아이디는 등록·이력 공유` : "";
   document.getElementById("logoutBtn").hidden = !csUser;
 }
+let csNewIdPending = "";                   // 미등록 아이디 — 한 번 더 눌러 확인
 document.getElementById("loginBtn").addEventListener("click", () => {
   const id = document.getElementById("loginId").value.trim();
   const pw = document.getElementById("loginPw").value;
@@ -2140,12 +2203,24 @@ document.getElementById("loginBtn").addEventListener("click", () => {
   const users = csUsers();
   const h = csHash(id + "\u0000" + pw);
   if (!(id in users)){
+    // 오타로 새 아이디가 조용히 만들어져 "자료가 사라진 것처럼" 보이는
+    // 일을 막는다 — 등록된 아이디를 보여주고 한 번 더 눌러 확인.
+    if (csNewIdPending !== id){
+      csNewIdPending = id;
+      const known = Object.keys(users);
+      err.textContent = `「${id}」는 등록되지 않은 아이디입니다.` +
+        (known.length ? ` (등록된 아이디: ${known.join(", ")})` : "") +
+        " 기존 자료를 보려면 쓰던 아이디로 로그인하세요. 이 아이디로 새로 " +
+        "등록하려면 「로그인」을 한 번 더 누르세요.";
+      return;
+    }
     users[id] = h;
     localStorage.setItem("csUsers", JSON.stringify(users));
   } else if (users[id] !== h){
     err.textContent = "비밀번호가 일치하지 않습니다.";
     return;
   }
+  csNewIdPending = "";
   err.textContent = "";
   csUser = id;
   localStorage.setItem("csLogin", id);
@@ -2154,6 +2229,7 @@ document.getElementById("loginBtn").addEventListener("click", () => {
   renderRvDb();
   renderDash();
   rkHistRender();
+  renderCtOpts(false);
   renderCt();
 });
 document.getElementById("loginPw").addEventListener("keydown", e => {
@@ -3593,6 +3669,71 @@ function renderDash(){
 
 /* ══════════════ 📑 도급신고 ══════════════ */
 const ctKey = () => "csContractDb::" + csUser;
+const ctOptsKey = () => "csCtOpts::" + csUser;
+const CT_FACILITIES = ["1CC 암모니아수", "2CC 암모니아수", "1CC 황산",
+  "2CC 황산", "염산", "수산화나트륨", "메탄올", "실험실",
+  "1CC SWAS", "2CC SWAS"];
+const CT_SUBSTANCES = ["암모니아수", "황산", "염산", "수산화나트륨", "메탄올",
+  "디이소프로필아민", "질산은"];
+
+function ctCustomOpts(){                   // 직접 추가한 시설·물질 (아이디별)
+  try {
+    const o = JSON.parse(localStorage.getItem(ctOptsKey()) || "{}");
+    return { facilities: Array.isArray(o.facilities) ? o.facilities : [],
+             substances: Array.isArray(o.substances) ? o.substances : [] };
+  } catch (e){ return { facilities: [], substances: [] }; }
+}
+function ctFacList(){ return [...CT_FACILITIES, ...ctCustomOpts().facilities]; }
+function ctSubList(){ return [...CT_SUBSTANCES, ...ctCustomOpts().substances]; }
+
+function renderCtOpts(keepChecked){
+  const prevFac = keepChecked ? ctSelected("ctfac") : [];
+  const prevSub = keepChecked ? ctSelected("ctsub") : [];
+  const mk = (list, name, prev) => list.map((o, i) =>
+    `<label><input type="checkbox" data-${name}="${i}"` +
+    `${prev.includes(o) ? " checked" : ""}> ${esc(o)}</label>`).join("");
+  document.getElementById("ctFacBox").innerHTML =
+    mk(ctFacList(), "ctfac", prevFac);
+  document.getElementById("ctSubBox").innerHTML =
+    mk(ctSubList(), "ctsub", prevSub);
+}
+function ctSelected(name){                 // 체크된 옵션의 실제 이름 목록
+  const list = name === "ctfac" ? ctFacList() : ctSubList();
+  return [...document.querySelectorAll(`input[data-${name}]:checked`)]
+    .map(el => list[Number(el.dataset[name])]).filter(Boolean);
+}
+function ctAddOpt(kind){                   // 목록에 없는 시설·물질 직접 추가
+  const inputId = kind === "facilities" ? "ctNewFac" : "ctNewSub";
+  const $in = document.getElementById(inputId);
+  const $msg = document.getElementById("ctOptMsg");
+  const v = $in.value.trim();
+  const label = kind === "facilities" ? "취급시설" : "취급물질";
+  if (!v){ $msg.textContent = `추가할 ${label}명을 입력해 주세요.`; return; }
+  const list = kind === "facilities" ? ctFacList() : ctSubList();
+  const prevFac = ctSelected("ctfac"), prevSub = ctSelected("ctsub");
+  if (!list.includes(v)){
+    const cus = ctCustomOpts();
+    cus[kind].push(v);
+    localStorage.setItem(ctOptsKey(), JSON.stringify(cus));
+  }
+  if (kind === "facilities") prevFac.push(v); else prevSub.push(v);
+  renderCtOpts(false);
+  // 다시 그린 뒤 기존 선택 + 새 항목 체크 유지
+  const reapply = (name, sel) => {
+    const all = name === "ctfac" ? ctFacList() : ctSubList();
+    document.querySelectorAll(`input[data-${name}]`).forEach(el => {
+      el.checked = sel.includes(all[Number(el.dataset[name])]);
+    });
+  };
+  reapply("ctfac", prevFac);
+  reapply("ctsub", prevSub);
+  $in.value = "";
+  $msg.textContent = `${label} 목록에 「${v}」을(를) 추가하고 선택했습니다.`;
+}
+document.getElementById("ctAddFac")
+  .addEventListener("click", () => ctAddOpt("facilities"));
+document.getElementById("ctAddSub")
+  .addEventListener("click", () => ctAddOpt("substances"));
 function loadCtDb(){
   try {
     const db = JSON.parse(localStorage.getItem(ctKey()) || "[]");
@@ -3686,7 +3827,8 @@ function renderCt(){
           `<td>${esc(r.substance || "")}</td>` +
           `<td>${r.doc_data
             ? `<button type="button" data-ctdoc="${r.id}">📎 ${esc(r.doc_name || "공문")}</button>`
-            : "(없음)"}</td>` +
+            : `<button type="button" data-ctattach="${r.id}"
+                 title="환경청 수리공문을 추가로 첨부합니다 (최대 2MB)">📤 공문 첨부</button>`}</td>` +
           `<td>${esc(r.saved_at || "")}</td>` +
           `<td><button type="button" data-ctdel="${r.id}">🗑 삭제</button></td></tr>`;
       }).join("");
@@ -3726,8 +3868,8 @@ document.getElementById("ctSaveBtn").addEventListener("click", async () => {
   db.push({
     id: Math.max(0, ...db.map(r => r.id || 0)) + 1,
     company, ctype: document.getElementById("ctType").value,
-    facility: document.getElementById("ctFacility").value.trim(),
-    substance: document.getElementById("ctSubstance").value.trim(),
+    facility: ctSelected("ctfac").join(", "),
+    substance: ctSelected("ctsub").join(", "),
     cont_start: document.getElementById("ctCStart").value,
     cont_end: document.getElementById("ctCEnd").value,
     dogub_start: document.getElementById("ctDStart").value,
@@ -3741,10 +3883,12 @@ document.getElementById("ctSaveBtn").addEventListener("click", async () => {
     return err("저장 공간이 부족합니다 — 첨부 파일 크기를 줄이거나 오래된 " +
                "등록을 삭제해 주세요.");
   }
-  ["ctCompany", "ctFacility", "ctSubstance", "ctCStart", "ctCEnd",
+  ["ctCompany", "ctCStart", "ctCEnd",
    "ctDStart", "ctDEnd", "ctDoc"].forEach(id => {
     document.getElementById(id).value = "";
   });
+  document.querySelectorAll("input[data-ctfac], input[data-ctsub]")
+    .forEach(el => { el.checked = false; });
   $msg.textContent = `「${company}」 도급신고를 등록했습니다. ` +
     `(누적 ${db.length}건)`;
   renderCt();
@@ -3752,6 +3896,7 @@ document.getElementById("ctSaveBtn").addEventListener("click", async () => {
 });
 document.getElementById("ctQ").addEventListener("input", renderCt);
 document.getElementById("ctImmOnly").addEventListener("change", renderCt);
+let ctLateId = null;                       // 공문 추가 첨부 대상 등록 No.
 document.getElementById("ctTable").addEventListener("click", e => {
   const t = e.target.closest("button");
   if (!t) return;
@@ -3760,11 +3905,51 @@ document.getElementById("ctTable").addEventListener("click", e => {
     const r = db.find(x => String(x.id) === t.dataset.ctdoc);
     const blob = r && ctDocBlob(r);
     if (blob) downloadBlob(blob, r.doc_name || "수리공문");
+  } else if (t.dataset.ctattach){
+    // 등록 후 수리공문 추가 첨부 — 파일 선택 창을 연다
+    ctLateId = t.dataset.ctattach;
+    document.getElementById("ctLateDoc").click();
   } else if (t.dataset.ctdel){
     saveCtDb(db.filter(x => String(x.id) !== t.dataset.ctdel));
     renderCt();
     renderDash();
   }
+});
+document.getElementById("ctLateDoc").addEventListener("change", async e => {
+  const f = e.target.files[0];
+  e.target.value = "";
+  const $msg = document.getElementById("ctMsg");
+  if (!f || ctLateId === null) return;
+  if (f.size > 2 * 1024 * 1024){
+    $msg.style.color = "#c0392b";
+    $msg.textContent = "수리공문 파일이 2MB를 넘습니다 — 단일 HTML은 " +
+      "브라우저 저장공간에 보관하므로 더 작은 파일로 첨부해 주세요.";
+    return;
+  }
+  const docData = await new Promise((res, rej) => {
+    const rd = new FileReader();
+    rd.onload = () => res(rd.result);
+    rd.onerror = rej;
+    rd.readAsDataURL(f);
+  });
+  const db = loadCtDb();
+  const r = db.find(x => String(x.id) === String(ctLateId));
+  ctLateId = null;
+  if (!r) return;
+  r.doc_name = f.name;
+  r.doc_data = docData;
+  try {
+    saveCtDb(db);
+  } catch (err){
+    $msg.style.color = "#c0392b";
+    $msg.textContent = "저장 공간이 부족합니다 — 첨부 파일 크기를 줄이거나 " +
+      "오래된 등록을 삭제해 주세요.";
+    return;
+  }
+  $msg.style.color = "";
+  $msg.textContent = `「${r.company || ""}」에 수리공문 「${f.name}」을(를) ` +
+    "첨부했습니다.";
+  renderCt();
 });
 document.getElementById("ctXlsx").addEventListener("click", async e => {
   const btn = e.currentTarget;
@@ -3848,6 +4033,7 @@ csApplyLogin();
 renderSign();
 renderDash();
 rkHistRender();
+renderCtOpts(false);
 renderCt();
 document.body.classList.add("signview");   // 시작 화면은 대시보드
 

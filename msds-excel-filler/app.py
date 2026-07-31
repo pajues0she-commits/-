@@ -83,12 +83,26 @@ if not st.session_state.login_id:
             users = _load_users()
             pw_hash = hashlib.sha256(l_pw.encode("utf-8")).hexdigest()
             if uid not in users:
-                users[uid] = pw_hash
-                with open(_USERS_PATH, "w", encoding="utf-8") as f:
-                    json.dump(users, f, ensure_ascii=False, indent=1)
-                st.session_state.login_id = uid
-                st.rerun()
+                # 오타로 새 아이디가 조용히 만들어져 "자료가 사라진 것처럼"
+                # 보이는 일을 막는다 — 한 번 더 눌러 신규 등록을 확인.
+                if st.session_state.get("login_new_pending") != uid:
+                    st.session_state.login_new_pending = uid
+                    known = ", ".join(users) if users else ""
+                    st.warning(f"「{uid}」는 등록되지 않은 아이디입니다."
+                               + (f" (등록된 아이디: {known})" if known
+                                  else "")
+                               + " 기존 자료를 보려면 쓰던 아이디로 로그인"
+                               "하세요. 이 아이디로 새로 등록하려면 "
+                               "「로그인」을 한 번 더 누르세요.")
+                else:
+                    users[uid] = pw_hash
+                    with open(_USERS_PATH, "w", encoding="utf-8") as f:
+                        json.dump(users, f, ensure_ascii=False, indent=1)
+                    st.session_state.login_new_pending = None
+                    st.session_state.login_id = uid
+                    st.rerun()
             elif users[uid] == pw_hash:
+                st.session_state.login_new_pending = None
                 st.session_state.login_id = uid
                 st.rerun()
             else:
@@ -161,7 +175,29 @@ def _save_risk_db(db):
 
 # ── 📑 도급신고 DB (아이디별 공유) ──
 _CONTRACT_DB_PATH = os.path.join(_APP_DIR, f"contract_db_{_uid}.json")
+_CT_OPTS_PATH = os.path.join(_APP_DIR, f"ct_options_{_uid}.json")
 CT_TYPES = ["1회성계약", "연간계약", "기타"]
+CT_FACILITIES = ["1CC 암모니아수", "2CC 암모니아수", "1CC 황산", "2CC 황산",
+                 "염산", "수산화나트륨", "메탄올", "실험실",
+                 "1CC SWAS", "2CC SWAS"]
+CT_SUBSTANCES = ["암모니아수", "황산", "염산", "수산화나트륨", "메탄올",
+                 "디이소프로필아민", "질산은"]
+
+
+def _load_ct_opts():
+    """직접 추가한 취급시설·취급물질 (아이디별 저장)."""
+    try:
+        with open(_CT_OPTS_PATH, encoding="utf-8") as f:
+            o = json.load(f)
+            return {"facilities": list(o.get("facilities") or []),
+                    "substances": list(o.get("substances") or [])}
+    except Exception:
+        return {"facilities": [], "substances": []}
+
+
+def _save_ct_opts(opts):
+    with open(_CT_OPTS_PATH, "w", encoding="utf-8") as f:
+        json.dump(opts, f, ensure_ascii=False, indent=1)
 
 
 def _load_contract_db():
@@ -1446,13 +1482,48 @@ if menu == M_CONTRACT:
     def _ck(name):
         return f"ct{ctn}_{name}"
 
-    c1, c2, c3, c4 = st.columns([1.4, 1, 1.3, 1.3])
+    c1, c2 = st.columns([1.4, 1])
     ct_company = c1.text_input("업체명", key=_ck("company"))
     ct_type = c2.selectbox("계약종류", CT_TYPES, key=_ck("type"))
-    ct_fac = c3.text_input("취급시설", key=_ck("fac"),
-                           placeholder="예: 폐수처리장, 보일러동")
-    ct_sub = c4.text_input("취급물질", key=_ck("sub"),
-                           placeholder="예: 차아염소산나트륨, 염산")
+    _ct_opts = _load_ct_opts()
+    f1, f2 = st.columns(2)
+    ct_fac_sel = f1.multiselect(
+        "취급시설 (여러 개 선택 가능)",
+        CT_FACILITIES + _ct_opts["facilities"], key=_ck("fac"))
+    ct_sub_sel = f2.multiselect(
+        "취급물질 (여러 개 선택 가능)",
+        CT_SUBSTANCES + _ct_opts["substances"], key=_ck("sub"))
+    a1, a2, a3, a4 = st.columns([1.4, 0.6, 1.4, 0.6])
+    _new_fac = a1.text_input("목록에 없는 시설 직접 추가", key="ct_new_fac",
+                             placeholder="예: 폐수처리장")
+    a2.markdown("<div style='height:1.75em'></div>", unsafe_allow_html=True)
+    if a2.button("➕ 시설 추가", key="ct_add_fac"):
+        v = _new_fac.strip()
+        if not v:
+            st.warning("추가할 시설명을 입력해 주세요.")
+        elif v in CT_FACILITIES + _ct_opts["facilities"]:
+            st.info(f"「{v}」은(는) 이미 목록에 있습니다.")
+        else:
+            _ct_opts["facilities"].append(v)
+            _save_ct_opts(_ct_opts)
+            st.success(f"취급시설 목록에 「{v}」을(를) 추가했습니다 — 위에서 "
+                       "선택하세요.")
+            st.rerun()
+    _new_sub = a3.text_input("목록에 없는 물질 직접 추가", key="ct_new_sub",
+                             placeholder="예: 차아염소산나트륨")
+    a4.markdown("<div style='height:1.75em'></div>", unsafe_allow_html=True)
+    if a4.button("➕ 물질 추가", key="ct_add_sub"):
+        v = _new_sub.strip()
+        if not v:
+            st.warning("추가할 물질명을 입력해 주세요.")
+        elif v in CT_SUBSTANCES + _ct_opts["substances"]:
+            st.info(f"「{v}」은(는) 이미 목록에 있습니다.")
+        else:
+            _ct_opts["substances"].append(v)
+            _save_ct_opts(_ct_opts)
+            st.success(f"취급물질 목록에 「{v}」을(를) 추가했습니다 — 위에서 "
+                       "선택하세요.")
+            st.rerun()
     p1, p2, p3, p4 = st.columns(4)
     ct_cs = p1.date_input("계약기간 시작", value=None, key=_ck("cs"),
                           format="YYYY-MM-DD")
@@ -1481,7 +1552,8 @@ if menu == M_CONTRACT:
             ct_db.append({
                 "id": max([r.get("id", 0) for r in ct_db] or [0]) + 1,
                 "company": ct_company.strip(), "ctype": ct_type,
-                "facility": ct_fac.strip(), "substance": ct_sub.strip(),
+                "facility": ", ".join(ct_fac_sel),
+                "substance": ", ".join(ct_sub_sel),
                 "cont_start": str(ct_cs) if ct_cs else "",
                 "cont_end": str(ct_ce) if ct_ce else "",
                 "dogub_start": str(ct_ds) if ct_ds else "",
@@ -1552,10 +1624,34 @@ if menu == M_CONTRACT:
                 file_name=_crec.get("doc_name") or "수리공문",
                 key="ct_doc_dl")
         else:
-            s2.caption("선택한 업체에 첨부된 수리공문이 없습니다.")
+            s2.caption("선택한 업체에 첨부된 수리공문이 없습니다 — 아래에서 "
+                       "추가로 첨부할 수 있습니다.")
         if s3.button("🗑 선택한 등록 삭제", key="ct_del"):
             _save_contract_db([r for r in ct_db if r.get("id") != ct_sel])
             st.rerun()
+        # 등록 후 수리공문 추가 첨부 — 공문이 없는 업체에 나중에 붙인다
+        if _crec is not None and not _crec.get("doc_b64"):
+            late = st.file_uploader(
+                f"수리공문 추가 첨부 — {_crec.get('company', '')} "
+                "(환경청 공문, 최대 10MB)", key=f"ct_late_{ct_sel}")
+            if late is not None and st.button(
+                    "📎 선택한 업체에 수리공문 첨부 저장",
+                    key=f"ct_late_btn_{ct_sel}", type="primary"):
+                if late.size > 10 * 1024 * 1024:
+                    st.error("수리공문 파일이 10MB를 넘습니다 — 더 작은 "
+                             "파일로 첨부해 주세요.")
+                else:
+                    import base64 as _b64
+                    for r in ct_db:
+                        if r.get("id") == ct_sel:
+                            r["doc_name"] = late.name
+                            r["doc_b64"] = _b64.b64encode(
+                                late.getvalue()).decode()
+                    _save_contract_db(ct_db)
+                    st.session_state.ct_msg = (
+                        f"「{_crec.get('company', '')}」에 수리공문 "
+                        f"「{late.name}」을(를) 첨부했습니다.")
+                    st.rerun()
     else:
         st.caption("등록된 도급신고 업체가 없습니다."
                    if not (_q or ct_imm_only) else "검색 결과가 없습니다.")

@@ -2,23 +2,21 @@
 
 // 켐세이프 (ChemSafe) Windows 실행 파일 런처.
 //
-// 오프라인 단일 HTML(켐세이프_화학물질통합안전관리.html)을 exe 안에 내장하고,
-// 실행하면 %LOCALAPPDATA%\ChemSafe 에 풀어 기본 브라우저로 연다.
-// 항상 같은 경로에 저장하므로 브라우저 localStorage(등록 이력)가 유지된다.
+// 오프라인 단일 HTML을 exe 안에 내장하고, 실행하면 127.0.0.1 로컬 서버로
+// 서비스해 기본 브라우저로 연다. 저장 데이터(등록·이력)는
+// %LOCALAPPDATA%\ChemSafe\storage.json 파일로 보관·복원되므로 브라우저
+// 설정(종료 시 데이터 삭제 등)과 무관하게 유지된다. exe는 브라우저 사용
+// 중 백그라운드에 상주하며, 이미 실행 중이면 창만 다시 연다.
 //
 // 빌드:  python3 build_exe.py   (standalone/build_html.py 실행 후 크로스 컴파일)
 package main
 
 import (
-	_ "embed"
 	"os"
 	"path/filepath"
 	"syscall"
 	"unsafe"
 )
-
-//go:embed app.html
-var appHTML []byte
 
 const htmlName = "켐세이프_화학물질통합안전관리.html"
 
@@ -35,12 +33,12 @@ func msgBox(text, title string) {
 		uintptr(unsafe.Pointer(utf16Ptr(title))), 0x10)
 }
 
-func openInBrowser(path string) bool {
+func openInBrowser(target string) bool {
 	shell32 := syscall.NewLazyDLL("shell32.dll")
 	proc := shell32.NewProc("ShellExecuteW")
 	// SW_SHOWNORMAL = 1, 반환값 32 이하 = 실패
 	r, _, _ := proc.Call(0, uintptr(unsafe.Pointer(utf16Ptr("open"))),
-		uintptr(unsafe.Pointer(utf16Ptr(path))), 0, 0, 1)
+		uintptr(unsafe.Pointer(utf16Ptr(target))), 0, 0, 1)
 	return r > 32
 }
 
@@ -51,17 +49,31 @@ func main() {
 	}
 	dir := filepath.Join(base, "ChemSafe")
 	_ = os.MkdirAll(dir, 0o755)
-	path := filepath.Join(dir, htmlName)
-	if err := os.WriteFile(path, appHTML, 0o644); err != nil {
-		// 쓰기 실패 — 이전 실행이 남긴 파일이라도 있으면 그대로 연다
-		if _, statErr := os.Stat(path); statErr != nil {
-			msgBox("프로그램 파일을 저장하지 못했습니다.\n"+err.Error(),
-				"켐세이프 (ChemSafe)")
-			return
+	storePath = filepath.Join(dir, storeName)
+
+	url, serving := launchServer()
+	if url == "" {
+		// 포트를 하나도 못 잡음 — 예전 방식(파일로 풀어 열기)으로 동작.
+		// 이 경우 저장은 브라우저 localStorage에만 남는다.
+		path := filepath.Join(dir, htmlName)
+		if err := os.WriteFile(path, appHTML, 0o644); err != nil {
+			if _, statErr := os.Stat(path); statErr != nil {
+				msgBox("프로그램 파일을 저장하지 못했습니다.\n"+err.Error(),
+					"켐세이프 (ChemSafe)")
+				return
+			}
 		}
+		if !openInBrowser(path) {
+			msgBox("기본 브라우저로 열지 못했습니다.\n"+
+				"직접 열어 주세요: "+path, "켐세이프 (ChemSafe)")
+		}
+		return
 	}
-	if !openInBrowser(path) {
+	if !openInBrowser(url) {
 		msgBox("기본 브라우저로 열지 못했습니다.\n"+
-			"직접 열어 주세요: "+path, "켐세이프 (ChemSafe)")
+			"직접 열어 주세요: "+url, "켐세이프 (ChemSafe)")
+	}
+	if serving {
+		select {} // 서버 상주 — 브라우저에서 계속 사용
 	}
 }
