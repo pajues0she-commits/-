@@ -174,6 +174,20 @@
   .rkres b { font-size: 17px; }
   .rkres .m { min-width: 110px; }
   .rkres .m .t { font-size: 12px; color: #667; }
+  .loginov { position: fixed; inset: 0; z-index: 1000;
+    background: #f2f5f9; display: flex; align-items: center;
+    justify-content: center; }
+  .loginov[hidden] { display: none; }
+  .loginbox { background: #fff; border: 1px solid #d5dde6;
+    border-radius: 12px; padding: 28px 32px; width: min(420px, 92vw);
+    box-shadow: 0 8px 30px rgba(0,0,0,.08); }
+  .loginbox h2 { margin: 10px 0 6px; font-size: 20px; }
+  .loginbox input { width: 100%; margin-top: 10px; }
+  .loginbox button { width: 100%; margin-top: 14px; }
+  .loginwho { margin-left: auto; align-self: center; font-size: 12px;
+    color: #567; white-space: nowrap; }
+  .loginwho button { font-size: 11px; margin-left: 6px; padding: 2px 8px;
+    cursor: pointer; }
   .rkempty { background: #fff1f1 !important;
     border-color: #e05555 !important; }
   .dashci { height: 36px; margin-top: 14px; display: block; }
@@ -214,6 +228,23 @@
      별표 2)을 만듭니다.
      모든 처리는 이 브라우저 안에서만 이루어지며 파일이 외부로 전송되지 않습니다.</p>
 </div>
+<div id="loginOverlay" class="loginov" hidden>
+  <div class="loginbox">
+    <img src="data:image/png;base64,__CI_B64__" alt="파주에너지서비스"
+         style="height:30px;">
+    <h2>🧪 켐세이프 로그인</h2>
+    <p class="hint" style="margin:4px 0 0;">아이디별로 데이터가 저장됩니다 —
+      <b>같은 아이디로 로그인하면 이 컴퓨터에서 여러 사람이 작성한 도입검토
+      등록·위험성평가 이력을 함께 조회</b>할 수 있습니다(팀 공용 아이디 권장).
+      처음 쓰는 아이디는 입력한 비밀번호로 자동 등록됩니다.</p>
+    <input type="text" id="loginId" placeholder="아이디 (예: 환경안전팀)"
+           autocomplete="username">
+    <input type="password" id="loginPw" placeholder="비밀번호"
+           autocomplete="current-password">
+    <div class="hint" id="loginErr" style="color:#c0392b;margin:6px 0 0;"></div>
+    <button class="rvsave" id="loginBtn" type="button">로그인</button>
+  </div>
+</div>
 <div class="wrap">
   <div class="tabs">
     <button id="tabBtnDash" class="on">🏠 대시보드</button>
@@ -221,6 +252,8 @@
     <button id="tabBtnReview">🔍 화학물질 도입검토</button>
     <button id="tabBtnRisk">🧪 화학물질 위험성평가</button>
     <button id="tabBtnSign">🚧 유해화학물질 규격표지</button>
+    <span class="loginwho"><span id="loginWho"></span><button id="logoutBtn"
+      type="button" hidden>로그아웃</button></span>
   </div>
   <div id="tabDash" class="tabpanel">
     <img class="dashci" src="data:image/png;base64,__CI_B64__"
@@ -309,6 +342,11 @@
       「화학물질 도입검토」 메뉴에서 도입검토 대상으로 판정된 카드의
       「🧪 화학물질 위험성평가 작성」 버튼으로 시작하세요.</p>
     <div id="rkBody" hidden></div>
+    <div class="prev-title" style="margin-top:20px;">🗂 위험성평가 이력 조회
+      (완료·작성중 — 아이디별 공유)</div>
+    <div style="overflow-x:auto;margin-top:8px;"><table class="rvt"
+      id="rkHistTable"></table></div>
+    <div class="hint" id="rkHistHint"></div>
   </div>
   <div id="tabSign" class="tabpanel" hidden>
     <p class="signnote"><b>화학물질관리법 시행규칙 [별표 2] 유해화학물질의 표시방법</b>(제12조제2항 관련)
@@ -932,17 +970,22 @@ const NO_DATA_RX =
 const RNUM_RX = /-?\d+(?:[.,]\d+)?/;
 
 // 2항 H-code 목록 — H314/H340/H350/H360은 구분(Cat)까지 붙인다.
-// 구분 1만 있고 A/B가 없으면 보수적으로 1A로 본다(수정 가능).
+// H314는 구분 1만 있으면(1A/1B 명기 없음) 원문대로 "H314"만 표기
+// (등급 산정은 구분1로 처리). H340/H350/H360은 보수적으로 1A로 본다.
 function extractHcodes(sec2){
   const codes = [...new Set((sec2 || "").match(/H\d{3}/g) || [])].sort();
   const out = [];
   for (const c of codes){
     const cls = HCAT_CLASSES.find(x => x[0] === c);
     if (cls){
-      const m = new RegExp(cls[1] + "[^\\n]{0,60}?구분\\s*[:：]?\\s*1\\s*([AB])?")
+      const m = new RegExp(cls[1] + "[^\\n]{0,60}?구분\\s*[:：]?\\s*1\\s*([ABC])?")
         .exec(sec2);
       if (m){
-        out.push(`${c} Cat1${m[1] || (c === "H314" ? "" : "A")}`);
+        const sub = m[1];
+        if (c === "H314")
+          out.push(sub === "A" || sub === "B" ? `${c} Cat1${sub}` : c);
+        else
+          out.push(`${c} Cat1${sub === "A" || sub === "B" ? sub : "A"}`);
         continue;
       }
     }
@@ -952,7 +995,8 @@ function extractHcodes(sec2){
 }
 
 function riskNum(tail){
-  if (NO_DATA_RX.test(tail)) return "";
+  // '자료없음·해당없음' 등으로 명기된 항목은 "없음" 처리
+  if (NO_DATA_RX.test(tail)) return "없음";
   const m = RNUM_RX.exec(tail);
   return m ? m[0].replace(/,/g, "") : "";
 }
@@ -965,7 +1009,7 @@ function lineField(sec, labelRx){
     const line = sec.slice(m.index + m[0].length).split("\n", 1)[0];
     const v = riskNum(line);
     if (v) return v;
-    if (NO_DATA_RX.test(line)) return "";
+    if (NO_DATA_RX.test(line)) return "없음";
   }
   return "";
 }
@@ -984,7 +1028,10 @@ function vaporMmhg(sec9){
   while ((m = rx.exec(sec9 || ""))){
     const line = sec9.slice(m.index + m[0].length).split("\n", 1)[0];
     const nm = RNUM_RX.exec(line);
-    if (!nm) continue;
+    if (!nm){
+      if (NO_DATA_RX.test(line)) return "없음";
+      continue;
+    }
     let v = parseFloat(nm[0].replace(/,/g, ""));
     const unitPart = line.slice(nm.index + nm[0].length,
                                nm.index + nm[0].length + 12);
@@ -997,14 +1044,53 @@ function vaporMmhg(sec9){
   return "";
 }
 
-// 11·12항 — 주제어와 LD50/LC50 등이 같은 줄에 있는 값을 찾는다
+// 11·12항 — 주제어와 LD50/LC50 등이 같은 줄에 있는 값을 찾는다.
+// 범위("10 ~ 20 ㎎/ℓ")는 가장 낮은 값, '자료없음' 명기는 "없음" 처리
 function toxLine(sec, subjectRx, markerRx, unitRx, excludeRx){
+  let noData = false;
   for (const line of (sec || "").split("\n")){
     if (!new RegExp(subjectRx).test(line)) continue;
     if (excludeRx && new RegExp(excludeRx).test(line)) continue;
-    const m = new RegExp(markerRx + "\\D{0,25}?(-?\\d[\\d,]*(?:\\.\\d+)?)\\s*" +
+    const m = new RegExp(markerRx + "\\D{0,25}?(-?\\d[\\d,]*(?:\\.\\d+)?)" +
+                         "(?:\\s*[~∼–—-]\\s*(\\d[\\d,]*(?:\\.\\d+)?))?\\s*" +
                          unitRx).exec(line);
-    if (m) return m[1].replace(/,/g, "");
+    if (m){
+      let lo = parseFloat(m[1].replace(/,/g, ""));
+      if (m[2]) lo = Math.min(lo, parseFloat(m[2].replace(/,/g, "")));
+      return String(lo);
+    }
+    if (NO_DATA_RX.test(line)) noData = true;
+  }
+  return noData ? "없음" : "";
+}
+
+// 10항 "피해야 할 물질"의 항목 개수 → 금기물질 유형 수(종)
+function tabooCount(sec){
+  const lines = (sec || "").split("\n");
+  for (let i = 0; i < lines.length; i++){
+    const m = /피해야\s*할?\s*물\s*질(?!과)/.exec(lines[i]);
+    if (!m) continue;
+    let content = lines[i].slice(m.index + m[0].length)
+      .replace(/^[\s:：)(]+/, "").trim();
+    // "피해야 할 물질 및 조건에 유의하시오" 같은 지침 문장은 제외
+    if (/^(및|과의|등에)/.test(content) || /유의|주의|하시오/.test(content))
+      continue;
+    let items = content ? [content] : [];
+    if (!items.length){
+      for (let j = i + 1; j < lines.length; j++){
+        const t = lines[j].trim();
+        if (!t){ if (items.length) break; continue; }
+        if (/^(?:[가-하]\.|\d+\.|[①-⑳○◦])/.test(t) ||
+            /분해\s*시|유해\s*반응|피해야\s*할\s*조건/.test(t)) break;
+        items.push(t.replace(/^[-·•.\s]+/, ""));
+      }
+    }
+    if (!items.length) return "";
+    const blob = items.join(", ");
+    if (NO_DATA_RX.test(blob)) return "없음";
+    const toks = blob.split(/[,·、;/]|\s및\s/)
+      .map(t => t.trim().replace(/[\s.]+$/, "")).filter(t => t && t !== "등");
+    return toks.length ? String(toks.length) : "";
   }
   return "";
 }
@@ -1013,6 +1099,7 @@ function toxLine(sec, subjectRx, markerRx, unitRx, excludeRx){
 function extractRiskData(sections){
   const out = {};
   const sec8 = sections[8] || "", sec9 = sections[9] || "";
+  const sec10 = sections[10] || "";
   const sec11 = sections[11] || "", sec12 = sections[12] || "";
 
   // 8항 — 노출기준 TWA (STEL 앞부분만, 첫 TWA 줄)
@@ -1024,6 +1111,10 @@ function extractRiskData(sections){
     if (ppm || mg){
       out.twa_ppm = ppm ? ppm[1].replace(/,/g, "") : "";
       out.twa_mg = mg ? mg[1].replace(/,/g, "") : "";
+      break;
+    }
+    if (NO_DATA_RX.test(part)){
+      out.twa_ppm = out.twa_mg = "없음";
       break;
     }
   }
@@ -1060,11 +1151,16 @@ function extractRiskData(sections){
   if (/생분해[^\n]*\d[\d,.]*\s*%/.test(sec12)){
     m = /생분해[^\n]*?(\d[\d,]*(?:\.\d+)?)\s*%/.exec(sec12);
     out.biodeg = m ? m[1].replace(/,/g, "") : "";
+  } else if (sec12.split("\n").some(
+      ln => /생분해/.test(ln) && NO_DATA_RX.test(ln))){
+    out.biodeg = "없음";
   }
   out.koc = toxLine(sec12, "Koc", "Koc", "") ||
             lineField(sec12, "토양\\s*이동성");
   out.dt50 = toxLine(sec12, "DT\\s*50|반감기", "(?:DT\\s*50|반감기)", "");
   out.pbt = /vPvB[^\n]{0,20}(해당(?!\s*없)|물질임)/.test(sec12) ? "vPvB 해당" : "";
+  // 10항 헤더 미인식 문서는 내용이 9항 블록에 붙으므로 9·11항도 함께 살핀다
+  out.taboo = tabooCount([sec10, sec9, sec11].filter(Boolean).join("\n"));
   return out;
 }
 
@@ -1930,8 +2026,79 @@ $sgManual.addEventListener("click", e => {
   if (id){ manual.delete(id); rebuildManualList(); renderSign(); }
 });
 
+/* ══════════════ 🔐 로그인 — 아이디별 데이터 네임스페이스 ══════════════
+   같은 아이디로 로그인하면 이 브라우저(localStorage)에서 여러 사람이 작성한
+   등록·이력을 함께 본다. 서버가 없는 단일 HTML이므로 컴퓨터(브라우저) 간
+   공유는 되지 않는다 — 여러 PC 공유는 Streamlit 웹 앱을 서버에서 구동. */
+const RV_DB_LEGACY = "msdsReviewDb";       // 로그인 도입 전 공용 키
+let csUser = localStorage.getItem("csLogin") || "";
+const rvKey = () => "msdsReviewDb::" + csUser;
+const rkDbKey = () => "csRiskDb::" + csUser;
+
+function csHash(str){                      // 오프라인용 간이 해시(비암호학적)
+  let h1 = 0x811c9dc5, h2 = 0x9e3779b9;
+  for (let i = 0; i < str.length; i++){
+    h1 = Math.imul(h1 ^ str.charCodeAt(i), 0x01000193) >>> 0;
+    h2 = Math.imul(h2 ^ ((str.charCodeAt(i) << 7) | (i & 0x7f)),
+                   0x85ebca6b) >>> 0;
+  }
+  return h1.toString(16) + "-" + h2.toString(16);
+}
+function csUsers(){
+  try {
+    const u = JSON.parse(localStorage.getItem("csUsers") || "{}");
+    return u && typeof u === "object" ? u : {};
+  } catch (e){ return {}; }
+}
+function csMigrateLegacy(){                // 로그인 도입 전 데이터 1회 이관
+  if (csUser && localStorage.getItem(RV_DB_LEGACY) &&
+      !localStorage.getItem(rvKey())){
+    localStorage.setItem(rvKey(), localStorage.getItem(RV_DB_LEGACY));
+    localStorage.removeItem(RV_DB_LEGACY);
+  }
+}
+function csApplyLogin(){
+  document.getElementById("loginOverlay").hidden = !!csUser;
+  document.getElementById("loginWho").textContent =
+    csUser ? `👤 ${csUser} 로그인 중 — 같은 아이디는 등록·이력 공유` : "";
+  document.getElementById("logoutBtn").hidden = !csUser;
+}
+document.getElementById("loginBtn").addEventListener("click", () => {
+  const id = document.getElementById("loginId").value.trim();
+  const pw = document.getElementById("loginPw").value;
+  const err = document.getElementById("loginErr");
+  if (!/^[A-Za-z0-9_\-가-힣]{2,20}$/.test(id)){
+    err.textContent = "아이디는 2~20자의 한글·영문·숫자·하이픈(-)·밑줄(_)만 쓸 수 있습니다.";
+    return;
+  }
+  if (!pw){ err.textContent = "비밀번호를 입력하세요."; return; }
+  const users = csUsers();
+  const h = csHash(id + "\u0000" + pw);
+  if (!(id in users)){
+    users[id] = h;
+    localStorage.setItem("csUsers", JSON.stringify(users));
+  } else if (users[id] !== h){
+    err.textContent = "비밀번호가 일치하지 않습니다.";
+    return;
+  }
+  err.textContent = "";
+  csUser = id;
+  localStorage.setItem("csLogin", id);
+  csMigrateLegacy();
+  csApplyLogin();
+  renderRvDb();
+  renderDash();
+  rkHistRender();
+});
+document.getElementById("loginPw").addEventListener("keydown", e => {
+  if (e.key === "Enter") document.getElementById("loginBtn").click();
+});
+document.getElementById("logoutBtn").addEventListener("click", () => {
+  localStorage.removeItem("csLogin");
+  location.reload();                       // 화면 상태 전체 초기화
+});
+
 /* ══════════════ 화학물질 도입검토 ══════════════ */
-const RV_DB_KEY = "msdsReviewDb";          // 등록 정보는 브라우저 localStorage에 누적
 const $rvCards = document.getElementById("rvCards");
 const $rvHint = document.getElementById("rvHint");
 const $rvQ = document.getElementById("rvQ");
@@ -1940,11 +2107,11 @@ let rvSeq = 0;
 
 function loadRvDb(){
   try {
-    const db = JSON.parse(localStorage.getItem(RV_DB_KEY) || "[]");
+    const db = JSON.parse(localStorage.getItem(rvKey()) || "[]");
     return Array.isArray(db) ? db : [];
   } catch (e){ return []; }
 }
-function saveRvDb(db){ localStorage.setItem(RV_DB_KEY, JSON.stringify(db)); }
+function saveRvDb(db){ localStorage.setItem(rvKey(), JSON.stringify(db)); }
 
 const rvNorm = s => String(s || "").replace(/\s+/g, "").toLowerCase();
 // 구성성분을 비교 가능한 키로 만든다 — CAS(없으면 성분명)+함유량 (review_logic.py)
@@ -2542,7 +2709,7 @@ function rkRefScores(v){
         rkLe(v.ld50_dermal, 1500) ? 3 : rkLe(v.ld50_dermal, 2000) ? 2 : 1),
     Math.max(
       d.d31 === "H314 Cat1A" ? 5 :
-      ["H314 Cat1B","H314 Cat1"].includes(d.d31) ? 4 :
+      ["H314 Cat1B","H314 Cat1","H314"].includes(d.d31) ? 4 :
       ["H315","H317"].includes(d.d31) ? 3 : d.d31 === "H316" ? 2 : 1,
       { H318: 4, H319: 3, H320: 2 }[d.d32] || 1),
     Math.max({ "H350 Cat1A": 5, "H350 Cat1B": 4, H351: 3 }[d.d33] || 1,
@@ -2662,13 +2829,14 @@ function rkLoad(src){
     components: (src.components || []).map(c => ({ ...c })),
     dept: "", store: "", purpose: "", hcodes: src.hcodes || "", vals,
     dbId: src.dbId != null ? src.dbId : null,  // 등록된 화학물질 연계(완료 표시)
+    histId: null,                           // 이력 연계(같은 이력 갱신용)
     possCommon: [null, null],               // 취급 횟수·1회 취급량 (②③④ 공통)
     autoKeys: new Set(Object.keys(src.vals || {}).filter(
       k => String(src.vals[k] || "").trim())),
     evType: "", evDate: "", evDept: "", evBy: "", opinion: "", sheets: {} };
   const refs = rkRefScores({ hcodes: rk.hcodes, ...rk.vals });
-  for (const sk of ["2", "3", "4"])                 // 점수는 작성자가 직접 선택
-    rk.sheets[sk] = { scores: refs[sk].map(() => null),
+  for (const sk of ["2", "3", "4"])           // 점수 기본 = 참고값(수정 가능)
+    rk.sheets[sk] = { scores: refs[sk].map(r => r || 1),
       notes: ["", "", "", "", "", "", "", ""],
       poss: [null, null, null], mit: { eng: [], op: [], adm: [], ppe: [] } };
   renderRkForm();
@@ -2682,15 +2850,16 @@ function rkResetScores(){
 }
 
 // 취급 횟수·1회 취급량(공통)을 각 시트 가능성에 반영한 평가용 시트 상태
-function rkMergedSheets(){
+function rkMergedSheetsOf(S){
   const out = {};
   for (const sk of ["2", "3", "4"]){
-    const sh = rk.sheets[sk];
+    const sh = S.sheets[sk];
     out[sk] = { ...sh,
-      poss: [rk.possCommon[0], rk.possCommon[1], sh.poss[2]] };
+      poss: [S.possCommon[0], S.possCommon[1], sh.poss[2]] };
   }
   return out;
 }
+function rkMergedSheets(){ return rkMergedSheetsOf(rk); }
 
 function renderRkForm(){
   document.getElementById("rkEmpty").hidden = !!rk;
@@ -2755,7 +2924,7 @@ function renderRkForm(){
     <div style="margin-top:12px;">
       <button class="rvsave" id="rkScoreReset" type="button"
         title="H-Code·MSDS 데이터를 수정한 뒤 참고값을 다시 반영하려면 누르세요.">
-        🔄 유해성 점수를 현재 [참고값]으로 일괄 채우기</button></div>
+        🔄 유해성 점수를 현재 [참고값]으로 재설정</button></div>
     <div class="rkfs"><h3>가능성 공통 입력 — 취급 횟수·1회 취급량은 한 번만
       입력하면 ②③④ 세 분야에 모두 반영됩니다</h3>
       <div class="rkgrid3">` +
@@ -2770,14 +2939,15 @@ function renderRkForm(){
     const meta = RISK.sheets[sk], sh = rk.sheets[sk];
     h += `<div class="rkfs"><h3>${esc(meta.title)}</h3>
       <label class="f">Ⅰ. 유해성 산정 — [참고값]은 자동 계산되며 점수는
-        기본 (선택)입니다. 참고값을 확인하고 작성자가 항목별 위험성을 직접
-        선택해 주세요 (참고값과 다르게 평가하면 비고에 사유 기재)</label>`;
+        참고값과 동일하게 미리 채워집니다 (다르게 평가하면 비고에 사유
+        기재)</label>`;
     meta.items.forEach((it, i) => {
+      const storeNote = sk === "2" && i === 5 ?
+        `<div class="hint" style="margin:2px 0 0;">ℹ️ ${esc(RISK.storeNote)}<br>${esc(RISK.storeCriteria)}</div>` : "";
       h += `<div class="rkrow">
-        <div><b>${i + 1}. [${esc(it[0])}]</b> ${esc(it[1])}</div>
+        <div><b>${i + 1}. [${esc(it[0])}]</b> ${esc(it[1])}${storeNote}</div>
         <div class="rkref">참고값(자동) <b data-rkref="${sk}_${i}">—</b></div>
-        <div><select data-rks="${sk}" data-rki="${i}">
-          <option value="">(선택)</option>${[1, 2, 3, 4, 5].map(
+        <div><select data-rks="${sk}" data-rki="${i}">${[1, 2, 3, 4, 5].map(
           x => `<option value="${x}"${x === sh.scores[i] ? " selected" : ""}>${x}</option>`).join("")}</select></div>
         <div><input type="text" data-rkn="${sk}" data-rki="${i}"
           placeholder="비고 — 참고값과 다르게 평가한 사유"
@@ -2839,6 +3009,16 @@ function renderRkForm(){
       <div style="margin-top:12px;">
         <button class="rvsave" id="rkXlsx" type="button" style="background:#1a5f9e;">
           ⬇️ 위험성평가 엑셀 다운로드 (양식 자동 작성)</button>
+        <button class="rvsave" id="rkDone" type="button" style="background:#1d7a35;"
+          title="이력에 '완료'로 저장 — 등록된 화학물질에서 시작한 평가는 조회 목록에 '위험성평가 완료'로 표시됩니다.">
+          ✅ 위험성평가 작성 완료</button>
+        <button class="rvsave" id="rkSave" type="button"
+          title="작성 중인 내용을 이력에 '작성중'으로 보관 — 이력 조회에서 불러와 이어서 작성합니다.">
+          💾 저장 (작성중으로 보관)</button>
+        <button class="rvsave" id="rkClear" type="button" style="background:#8a94a0;"
+          title="저장하지 않은 내용은 사라집니다.">
+          🧹 현재 페이지 내용 초기화</button>
+        <div class="hint" id="rkHistMsg"></div>
       </div>
     </div>`;
   $rkBody.innerHTML = h;
@@ -2978,6 +3158,20 @@ $rkBody.addEventListener("click", e => {
     rkResetScores();
   } else if (t.id === "rkXlsx"){
     rkExport(t);
+  } else if (t.id === "rkDone"){
+    const hid = rkHistSave("완료");
+    rkMarkRegistryDone();
+    document.getElementById("rkHistMsg").textContent =
+      `✅ 작성 완료 — 이력 No.${hid}에 저장했습니다. 아래 「위험성평가 이력 ` +
+      `조회」에서 다시 열거나 엑셀로 내려받을 수 있습니다.`;
+  } else if (t.id === "rkSave"){
+    const hid = rkHistSave("작성중");
+    document.getElementById("rkHistMsg").textContent =
+      `💾 저장했습니다 (이력 No.${hid}, 작성중). 이력 조회에서 불러와 ` +
+      `이어서 작성하세요.`;
+  } else if (t.id === "rkClear"){
+    rk = null;
+    renderRkForm();
   }
 });
 
@@ -3022,21 +3216,20 @@ const RK_D16_FORMULA =
   `IF(${RK_D16_MAX}>=10,"${RK_VERDICTS.high}",` +
   `IF(${RK_D16_MAX}>=5,"${RK_VERDICTS.mid}","${RK_VERDICTS.low}")))`;
 
-async function rkExport(btn){
-  btn.disabled = true;
-  try {
+// 위험성평가 상태(S: 현재 rk 또는 이력 state)로 양식 xlsx Blob 생성
+async function rkBuildXlsx(S){
     const bytes = Uint8Array.from(atob(RISK_TPL_B64), c => c.charCodeAt(0));
     const zip = await JSZip.loadAsync(bytes);
     const get = p => zip.file(p).async("string");
     let x = await get("xl/worksheets/sheet1.xml");
-    x = rkSetCell(x, "C5", rk.name, false);
-    x = rkSetCell(x, "C6", rk.manufacturer, false);
-    x = rkSetCell(x, "C7", rk.revision, false);
-    let comps = rk.components.filter(
+    x = rkSetCell(x, "C5", S.name, false);
+    x = rkSetCell(x, "C6", S.manufacturer, false);
+    x = rkSetCell(x, "C7", S.revision, false);
+    let comps = S.components.filter(
       c => (c.name || c.cas || c.content || "").trim());
     if (comps.length > 5){                    // 양식 성분 행은 5개
       comps = comps.slice(0, 5);
-      comps[4] = { name: rk.components.slice(4).map(c => c.name).join(", "),
+      comps[4] = { name: S.components.slice(4).map(c => c.name).join(", "),
                    cas: "", content: "" };
     }
     comps.forEach((c, i) => {
@@ -3044,12 +3237,12 @@ async function rkExport(btn){
       x = rkSetCell(x, "D" + (9 + i), c.cas, false);
       x = rkSetCell(x, "E" + (9 + i), c.content, false);
     });
-    x = rkSetCell(x, "C14", rk.dept, false);
-    x = rkSetCell(x, "C15", rk.store, false);
-    x = rkSetCell(x, "C16", rk.purpose, false);
-    x = rkSetCell(x, "C17", rk.hcodes, false);
+    x = rkSetCell(x, "C14", S.dept, false);
+    x = rkSetCell(x, "C15", S.store, false);
+    x = rkSetCell(x, "C16", S.purpose, false);
+    x = rkSetCell(x, "C17", S.hcodes, false);
     for (const [k, cell, , kind] of RISK.fields){
-      const v = String(rk.vals[k] || "").trim();
+      const v = String(S.vals[k] || "").trim();
       if (k === "taboo"){                     // 빈칸이면 0 (수식 오류 방지)
         const n = rkNum(v);
         x = rkSetCell(x, cell, n !== null ? Math.trunc(n) : 0);
@@ -3059,9 +3252,14 @@ async function rkExport(btn){
         x = rkSetCell(x, cell, v || null, false);
       }
     }
+    // D23~D40 자동 판정을 값으로 기입 — 구분 미표기 H314 등 양식 수식이
+    // 인식하지 못하는 표기도 화면 계산과 동일하게 반영되도록 한다
+    const dAuto = rkAutoCodes(S.hcodes);
+    for (const dk of Object.keys(dAuto))
+      x = rkSetCell(x, "D" + dk.slice(1), dAuto[dk], false);
     zip.file("xl/worksheets/sheet1.xml", x);
     const fnames = { 2: "sheet2.xml", 3: "sheet3.xml", 4: "sheet4.xml" };
-    const merged = rkMergedSheets();
+    const merged = rkMergedSheetsOf(S);
     for (const sk of ["2", "3", "4"]){
       const sh = merged[sk], meta = RISK.sheets[sk];
       let sx = await get("xl/worksheets/" + fnames[sk]);
@@ -3088,35 +3286,148 @@ async function rkExport(btn){
     let x5 = await get("xl/worksheets/sheet5.xml");
     x5 = rkSetFormula(x5, "D16", RK_D16_FORMULA);
     x5 = rkSetCell(x5, "B17", "  ▶ " + RISK.criteria, false);
-    x5 = rkSetCell(x5, "D3", rk.evType, false);
-    x5 = rkSetCell(x5, "H3", rk.evDate, false);
-    x5 = rkSetCell(x5, "D4", rk.evDept, false);
-    x5 = rkSetCell(x5, "H4", rk.evBy, false);
-    x5 = rkSetCell(x5, "B57", rk.opinion, false);
+    x5 = rkSetCell(x5, "D3", S.evType, false);
+    x5 = rkSetCell(x5, "H3", S.evDate, false);
+    x5 = rkSetCell(x5, "D4", S.evDept, false);
+    x5 = rkSetCell(x5, "H4", S.evBy, false);
+    x5 = rkSetCell(x5, "B57", S.opinion, false);
     zip.file("xl/worksheets/sheet5.xml", x5);
     let wbx = await get("xl/workbook.xml");
     if (!wbx.includes("fullCalcOnLoad"))      // 열 때 전체 재계산
       wbx = wbx.replace("<calcPr ", '<calcPr fullCalcOnLoad="1" ');
     zip.file("xl/workbook.xml", wbx);
-    const blob = await zip.generateAsync({ type: "blob",
+    return zip.generateAsync({ type: "blob",
       compression: "DEFLATE", mimeType:
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+}
+
+async function rkExport(btn){
+  btn.disabled = true;
+  try {
+    const blob = await rkBuildXlsx(rk);
     downloadBlob(blob,
       `화학물질_위험성평가_${(rk.name || "미입력").trim()}.xlsx`);
-    // 등록된 화학물질에서 시작한 평가 → 조회 목록에 '위험성평가 완료' 표시
-    if (rk.dbId != null){
-      const db = loadRvDb();
-      const rec = db.find(r => r.id === rk.dbId);
-      if (rec){
-        rec.risk_done = new Date().toISOString().slice(0, 10);
-        saveRvDb(db);
-        renderRvDb();
-      }
-    }
+    rkMarkRegistryDone();
   } finally {
     btn.disabled = false;
   }
 }
+
+// 등록된 화학물질에서 시작한 평가 → 조회 목록에 '위험성평가 완료' 표시
+function rkMarkRegistryDone(){
+  if (!rk || rk.dbId == null) return;
+  const db = loadRvDb();
+  const rec = db.find(r => r.id === rk.dbId);
+  if (rec){
+    rec.risk_done = new Date().toISOString().slice(0, 10);
+    saveRvDb(db);
+    renderRvDb();
+  }
+}
+
+/* ── 🗂 위험성평가 이력 (완료·작성중) — 아이디별 localStorage 공유 ── */
+function loadRkDb(){
+  try {
+    const db = JSON.parse(localStorage.getItem(rkDbKey()) || "[]");
+    return Array.isArray(db) ? db : [];
+  } catch (e){ return []; }
+}
+function saveRkDb(db){ localStorage.setItem(rkDbKey(), JSON.stringify(db)); }
+
+function rkSnapshot(){                     // 직렬화 가능한 rk 상태
+  return { source: rk.source, name: rk.name, manufacturer: rk.manufacturer,
+    revision: rk.revision, components: rk.components.map(c => ({ ...c })),
+    dept: rk.dept, store: rk.store, purpose: rk.purpose, hcodes: rk.hcodes,
+    vals: { ...rk.vals }, possCommon: [...rk.possCommon], dbId: rk.dbId,
+    evType: rk.evType, evDate: rk.evDate, evDept: rk.evDept, evBy: rk.evBy,
+    opinion: rk.opinion,
+    sheets: JSON.parse(JSON.stringify(rk.sheets)) };
+}
+
+function rkHistSave(status){
+  const db = loadRkDb();
+  const res = rkEvaluate({ hcodes: rk.hcodes, ...rk.vals }, rkMergedSheets());
+  const finals = ["2", "3", "4"].map(k => res.sheets[k].finalRisk);
+  const now = new Date();
+  const pad = x => String(x).padStart(2, "0");
+  const entry = { status,
+    savedAt: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-` +
+             `${pad(now.getDate())} ${pad(now.getHours())}:` +
+             `${pad(now.getMinutes())}`,
+    name: rk.name, source: rk.source, dbId: rk.dbId,
+    verdict: res.verdict.split("\n")[0], maxRisk: Math.max(...finals),
+    state: rkSnapshot() };
+  const rec = rk.histId != null ? db.find(r => r.id === rk.histId) : null;
+  if (rec){
+    entry.id = rec.id;
+    db[db.indexOf(rec)] = entry;
+  } else {
+    entry.id = db.reduce((a, r) => Math.max(a, r.id || 0), 0) + 1;
+    db.push(entry);
+    rk.histId = entry.id;
+  }
+  saveRkDb(db);
+  rkHistRender();
+  return entry.id;
+}
+
+function rkHistRender(){
+  const db = loadRkDb();
+  document.getElementById("rkHistHint").textContent = db.length ? "" :
+    "저장된 위험성평가가 없습니다 — 작성 후 「작성 완료」 또는 「저장」을 " +
+    "누르면 이력에 보관되고, 여기서 다시 열거나 엑셀로 내려받을 수 있습니다.";
+  document.getElementById("rkHistTable").innerHTML = !db.length ? "" :
+    "<tr><th>No.</th><th>상태</th><th>물질명</th><th>최종 위험도(최대)</th>" +
+    "<th>종합 판정</th><th>저장일시</th><th>MSDS 파일</th><th>관리</th></tr>" +
+    db.map(r => `<tr><td>${r.id}</td><td>${esc(r.status || "")}</td>` +
+      `<td>${esc(r.name || "")}</td><td>${r.maxRisk != null ? r.maxRisk : ""}</td>` +
+      `<td>${esc(r.verdict || "")}</td><td>${esc(r.savedAt || "")}</td>` +
+      `<td>${esc(r.source || "")}</td>` +
+      `<td style="white-space:nowrap;">` +
+      `<button data-rkhl="${r.id}" type="button" title="불러와서 이어서 작성·수정">📂 불러오기</button> ` +
+      `<button data-rkhx="${r.id}" type="button" title="이 이력을 엑셀 양식으로 다운로드">⬇️ 엑셀</button> ` +
+      `<button class="rvdel2" data-rkhd="${r.id}" type="button">삭제</button></td></tr>`)
+      .join("");
+}
+
+document.getElementById("rkHistTable").addEventListener("click", async e => {
+  const t = e.target, d = t.dataset || {};
+  if (d.rkhl !== undefined){               // 불러오기 (이어서 작성)
+    const rec = loadRkDb().find(r => String(r.id) === String(d.rkhl));
+    if (!rec) return;
+    const st2 = rec.state || {};
+    rk = { source: st2.source || "", name: st2.name || "",
+      manufacturer: st2.manufacturer || "", revision: st2.revision || "",
+      components: (st2.components || []).map(c => ({ ...c })),
+      dept: st2.dept || "", store: st2.store || "",
+      purpose: st2.purpose || "", hcodes: st2.hcodes || "",
+      vals: { ...(st2.vals || {}) },
+      possCommon: [...(st2.possCommon || [null, null])],
+      dbId: st2.dbId != null ? st2.dbId : null, histId: rec.id,
+      autoKeys: new Set(Object.keys(st2.vals || {}).filter(
+        k => String(st2.vals[k] || "").trim())),
+      evType: st2.evType || "", evDate: st2.evDate || "",
+      evDept: st2.evDept || "", evBy: st2.evBy || "",
+      opinion: st2.opinion || "",
+      sheets: JSON.parse(JSON.stringify(st2.sheets || {})) };
+    renderRkForm();
+    document.getElementById("rkBody").scrollIntoView({ behavior: "smooth" });
+  } else if (d.rkhx !== undefined){        // 이력 엑셀 다운로드
+    const rec = loadRkDb().find(r => String(r.id) === String(d.rkhx));
+    if (!rec || !rec.state) return;
+    t.disabled = true;
+    try {
+      const blob = await rkBuildXlsx(rec.state);
+      downloadBlob(blob,
+        `화학물질_위험성평가_${(rec.name || "미입력").trim()}.xlsx`);
+    } finally {
+      t.disabled = false;
+    }
+  } else if (d.rkhd !== undefined){        // 이력 삭제
+    saveRkDb(loadRkDb().filter(r => String(r.id) !== String(d.rkhd)));
+    rkHistRender();
+  }
+});
 
 // 위험성평가 탭에서 직접 MSDS 업로드
 const rkDz = document.getElementById("rkDz");
@@ -3211,8 +3522,11 @@ $btnManage.addEventListener("click", () => showTab("manage"));
 $btnReview.addEventListener("click", () => showTab("review"));
 $btnRisk.addEventListener("click", () => showTab("risk"));
 $btnSign.addEventListener("click", () => showTab("sign"));
+csMigrateLegacy();
+csApplyLogin();
 renderSign();
 renderDash();
+rkHistRender();
 document.body.classList.add("signview");   // 시작 화면은 대시보드
 
 /* ── 표지판 다운로드 (SVG 실측 / PNG 150DPI) ── */

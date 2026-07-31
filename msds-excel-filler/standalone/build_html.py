@@ -109,6 +109,8 @@ def main():
         "sheets": risk_logic.SHEETS,
         "tiers": risk_logic.TIERS,
         "criteria": risk_logic.OVERALL_CRITERIA,
+        "storeNote": risk_logic.STORE_NOTE,
+        "storeCriteria": risk_logic.STORE_CRITERIA,
     }, ensure_ascii=False))
     with open(os.path.join(ROOT, "assets", "risk_template.xlsx"), "rb") as f:
         html = html.replace("__RISK_TPL_B64__",

@@ -4,3 +4,6 @@ __pycache__/
 review_db.json
 dist/
 launcher/app.html
+review_db_*.json
+risk_db_*.json
+users.json

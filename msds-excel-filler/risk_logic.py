@@ -174,7 +174,9 @@ AUTO_CODES = [
     ("d28", ["H250", "H251", "H252"]),
     ("d29", ["H330", "H331", "H332"]),
     ("d30", ["H300", "H310", "H301", "H304", "H311", "H305", "H302", "H312"]),
-    ("d31", ["H314 Cat1A", "H314 Cat1B", "H314 Cat1", "H315", "H317", "H316"]),
+    # H314는 구분(1A/1B) 미표기 시 원문대로 "H314"만 오며 구분1로 취급한다
+    ("d31", ["H314 Cat1A", "H314 Cat1B", "H314 Cat1", "H314", "H315",
+             "H317", "H316"]),
     ("d32", ["H318", "H319", "H320"]),
     ("d33", ["H350 Cat1A", "H350 Cat1B", "H351"]),
     ("d34", ["H360 Cat1A", "H360 Cat1B", "H361", "H362"]),
@@ -430,7 +432,7 @@ def ref_scores(vals: dict) -> dict:
             else 3 if _le(v.get("ld50_dermal"), 1500)
             else 2 if _le(v.get("ld50_dermal"), 2000) else 1),
         max(5 if d["d31"] == "H314 Cat1A"
-            else 4 if d["d31"] in ("H314 Cat1B", "H314 Cat1")
+            else 4 if d["d31"] in ("H314 Cat1B", "H314 Cat1", "H314")
             else 3 if d["d31"] in ("H315", "H317")
             else 2 if d["d31"] == "H316" else 1,
             {"H318": 4, "H319": 3, "H320": 2}.get(d["d32"], 1)),
@@ -503,6 +505,16 @@ def mitigation_effect(mit: dict, pscore: float, has_ppe: bool) -> dict:
     return {"reduction": t, "new_score": new_score,
             "new_grade": poss_grade(new_score)}
 
+
+# ②-6 저장 불안정성 — 참고값 미제공(직접 입력) 항목의 참고 안내
+# (양식 ②시트 G13 확인 항목·H13~L13 점수 기준)
+STORE_NOTE = ("MSDS 7항(취급 및 저장방법)·10항(안정성 및 반응성)을 참고해 "
+              "직접 평가하세요.")
+STORE_CRITERIA = ("점수 기준 — 1점: 저장 안정(특별조건 불필요) | "
+                  "2점: 경미한 주의(차광·서늘한 곳) | "
+                  "3점: 특별 저장(냉장 또는 불활성기체 봉입 권장) | "
+                  "4점: 엄격 저장(냉장+불활성기체 봉입+억제제) | "
+                  "5점: 초엄격 저장(극저온·특수용기, 실온 자발반응)")
 
 # ⑤ 종합결과 판정 문구 — 고위험일 경우에만 부서장 검토·안전보건관리책임자
 # 승인 하에 도입 가능. 치명항목에 대한 SHE부서 검토는 불요.
@@ -662,6 +674,11 @@ def fill_template(template_bytes: bytes, payload: dict) -> bytes:
             x = _set_cell(x, cell, v if _f(v) is not None else "없음")
         else:
             x = _set_cell(x, cell, v or None, numeric=False)
+    # D23~D40 자동 판정을 값으로 기입 — 구분 미표기 H314 등 양식 수식이
+    # 인식하지 못하는 표기도 화면 계산과 동일하게 반영되도록 한다
+    d_auto = auto_codes(str(basic.get("hcodes") or vals.get("hcodes") or ""))
+    for key, val in d_auto.items():
+        x = _set_cell(x, "D" + key[1:], val, numeric=False)
     edits["xl/worksheets/sheet1.xml"] = x
 
     for key, fname in (("2", "sheet2.xml"), ("3", "sheet3.xml"),

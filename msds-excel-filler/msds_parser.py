@@ -616,27 +616,35 @@ def extract_hcodes(sec2: str) -> str:
     """2항의 H-code 목록 — H314/H340/H350/H360은 구분(Cat)까지 붙인다.
 
     위험성평가 양식(①기초Data C17)에 그대로 넣을 수 있는 형식.
-    구분 표기("발암성 : 구분1A" 등)를 찾으면 "H350 Cat1A"처럼 보강하고,
-    구분 1만 있고 A/B가 없으면 보수적으로 1A로 본다(수정 가능)."""
+    구분 표기("발암성 : 구분1A" 등)를 찾으면 "H350 Cat1A"처럼 보강한다.
+    H314는 MSDS에 구분 1만 있으면(1A/1B 명기 없음) 원문대로 "H314"만
+    표기한다(등급 산정은 구분1로 처리). H340/H350/H360은 구분 1만 있으면
+    보수적으로 1A로 본다(수정 가능)."""
     codes = sorted(set(re.findall(r"H\d{3}", sec2 or "")))
     out = []
     for c in codes:
         cls = next((rx for code, rx in _HCAT_CLASSES if code == c), None)
         if cls:
-            m = re.search(cls + r"[^\n]{0,60}?구분\s*[:：]?\s*1\s*([AB])?",
+            m = re.search(cls + r"[^\n]{0,60}?구분\s*[:：]?\s*1\s*([ABC])?",
                           sec2)
             if m:
-                out.append(f"{c} Cat1{m.group(1) or ('' if c == 'H314' else 'A')}")
+                sub = m.group(1)
+                if c == "H314":
+                    out.append(f"{c} Cat1{sub}" if sub in ("A", "B") else c)
+                else:
+                    out.append(f"{c} Cat1{sub if sub in ('A', 'B') else 'A'}")
                 continue
         out.append(c)
     return ", ".join(out)
 
 
 def _risk_num(line: str, after: int = 0) -> str:
-    """라벨 뒤 텍스트에서 첫 숫자(부호 포함)를 찾는다. 없거나 '자료없음'류면 ''."""
+    """라벨 뒤 텍스트에서 첫 숫자(부호 포함)를 찾는다.
+
+    '자료없음·해당없음' 등으로 명기된 항목은 "없음"으로 처리한다."""
     tail = line[after:]
     if _NO_DATA_RX.search(tail):
-        return ""
+        return "없음"
     m = _NUM_RX.search(tail)
     return m.group(0).replace(",", "") if m else ""
 
@@ -649,7 +657,7 @@ def _line_field(sec: str, label_rx: str) -> str:
         if v:
             return v
         if _NO_DATA_RX.search(line):
-            return ""
+            return "없음"
     return ""
 
 
@@ -668,6 +676,8 @@ def _vapor_mmhg(sec9: str) -> str:
         line = sec9[m.end():].split("\n", 1)[0]
         nm = _NUM_RX.search(line)
         if not nm:
+            if _NO_DATA_RX.search(line):
+                return "없음"
             continue
         v = float(nm.group(0).replace(",", ""))
         unit_part = line[nm.end():nm.end() + 12]
@@ -683,26 +693,78 @@ def _vapor_mmhg(sec9: str) -> str:
 
 def _tox_line(sec: str, subject_rx: str, marker_rx: str, unit_rx: str,
               exclude_rx: str = "") -> str:
-    """11·12항 — 주제어와 LD50/LC50 등이 같은 줄에 있는 값을 찾는다."""
+    """11·12항 — 주제어와 LD50/LC50 등이 같은 줄에 있는 값을 찾는다.
+
+    "10 ~ 20 ㎎/ℓ"처럼 범위로 표기된 값은 가장 낮은 값을 취하고,
+    '자료없음' 등으로 명기된 항목은 "없음"으로 처리한다."""
+    no_data = False
     for line in (sec or "").split("\n"):
         if not re.search(subject_rx, line):
             continue
         if exclude_rx and re.search(exclude_rx, line):
             continue
-        m = re.search(marker_rx + r"\D{0,25}?(-?\d[\d,]*(?:\.\d+)?)\s*" +
+        m = re.search(marker_rx + r"\D{0,25}?(-?\d[\d,]*(?:\.\d+)?)"
+                      r"(?:\s*[~∼–—-]\s*(\d[\d,]*(?:\.\d+)?))?\s*" +
                       unit_rx, line)
         if m:
-            return m.group(1).replace(",", "")
+            lo = float(m.group(1).replace(",", ""))
+            if m.group(2):
+                lo = min(lo, float(m.group(2).replace(",", "")))
+            return f"{lo:g}"
+        if _NO_DATA_RX.search(line):
+            no_data = True
+    return "없음" if no_data else ""
+
+
+def _taboo_count(sec10: str) -> str:
+    """10항 '피해야 할 물질'의 항목 개수 → 금기물질 유형 수(종).
+
+    예) "산, 금속, 아민, 가연성물질, 환원제" → "5". 같은 줄 값이 없으면
+    다음 줄부터 다음 라벨 전까지의 목록을 센다. '자료없음'이면 "없음"."""
+    lines = (sec10 or "").split("\n")
+    for i, ln in enumerate(lines):
+        m = re.search(r"피해야\s*할?\s*물\s*질(?!과)", ln)
+        if not m:
+            continue
+        content = re.sub(r"^[\s:：)(]+", "", ln[m.end():]).strip()
+        # "피해야 할 물질 및 조건에 유의하시오" 같은 지침 문장은 제외
+        if re.match(r"^(및|과의|등에)", content) or \
+                re.search(r"유의|주의|하시오", content):
+            continue
+        items = [content] if content else []
+        if not items:
+            for nxt in lines[i + 1:]:
+                t = nxt.strip()
+                if not t:
+                    if items:
+                        break
+                    continue
+                if re.match(r"^(?:[가-하]\.|\d+\.|[①-⑳○◦])", t) or \
+                        re.search(r"분해\s*시|유해\s*반응|피해야\s*할\s*조건",
+                                  t):
+                    break
+                items.append(re.sub(r"^[-·•.\s]+", "", t))
+        if not items:
+            return ""
+        blob = ", ".join(items)
+        if _NO_DATA_RX.search(blob):
+            return "없음"
+        toks = [t.strip(" .") for t in
+                re.split(r"[,·、;/]|\s및\s", blob)]
+        toks = [t for t in toks if t and t != "등"]
+        return str(len(toks)) if toks else ""
     return ""
 
 
 def extract_risk_data(sections: dict) -> dict:
-    """위험성평가(①기초Data)용 수치 데이터를 MSDS 8·9·11·12항에서 추출한다.
+    """위험성평가(①기초Data)용 수치 데이터를 MSDS 8~12항에서 추출한다.
 
-    찾지 못한 항목은 빈 문자열 — 작성자가 직접 입력한다."""
+    찾지 못한 항목은 빈 문자열 — 작성자가 직접 입력한다.
+    '자료없음·해당없음' 등으로 명기된 항목은 "없음"으로 채운다."""
     out = {}
     sec8 = sections.get(8, "")
     sec9 = sections.get(9, "")
+    sec10 = sections.get(10, "")
     sec11 = sections.get(11, "")
     sec12 = sections.get(12, "")
 
@@ -717,6 +779,9 @@ def extract_risk_data(sections: dict) -> dict:
         if ppm or mg:
             out["twa_ppm"] = ppm.group(1).replace(",", "") if ppm else ""
             out["twa_mg"] = mg.group(1).replace(",", "") if mg else ""
+            break
+        if _NO_DATA_RX.search(part):
+            out["twa_ppm"] = out["twa_mg"] = "없음"
             break
 
     # 9항 — 물리화학적 특성 (라벨 : 값)
@@ -749,11 +814,13 @@ def extract_risk_data(sections: dict) -> dict:
                                     r"(?:㎎|mg)")
     out["bcf"] = _tox_line(sec12, r"BCF|생물\s*농축\s*계수", r"(?:BCF|계수)",
                            r"") or _line_field(sec12, r"농축성\s*[:：]")
-    out["biodeg"] = _tox_line(sec12, r"생분해", r"생분해\S*", r"") \
-        if re.search(r"생분해[^\n]*\d[\d,.]*\s*%", sec12) else ""
-    if out["biodeg"]:
+    if re.search(r"생분해[^\n]*\d[\d,.]*\s*%", sec12):
         m = re.search(r"생분해[^\n]*?(\d[\d,]*(?:\.\d+)?)\s*%", sec12)
         out["biodeg"] = m.group(1).replace(",", "") if m else ""
+    else:
+        out["biodeg"] = "없음" if any(
+            re.search(r"생분해", ln) and _NO_DATA_RX.search(ln)
+            for ln in sec12.split("\n")) else ""
     out["koc"] = _tox_line(sec12, r"Koc", r"Koc", r"") or \
         _line_field(sec12, r"토양\s*이동성")
     out["dt50"] = _tox_line(sec12, r"DT\s*50|반감기", r"(?:DT\s*50|반감기)",
@@ -761,6 +828,12 @@ def extract_risk_data(sections: dict) -> dict:
     out["pbt"] = ""
     if re.search(r"vPvB[^\n]{0,20}(해당(?!\s*없)|물질임)", sec12):
         out["pbt"] = "vPvB 해당"
+
+    # 10항 — 피해야 할 물질 개수 → 금기물질 유형 수(종).
+    # 10항 헤더가 인식되지 않는 문서는 내용이 9항 블록에 붙으므로 9·11항도
+    # 함께 살핀다(지침 문장은 _taboo_count 안에서 걸러짐).
+    out["taboo"] = _taboo_count(
+        "\n".join(s for s in (sec10, sec9, sec11) if s))
     return {k: v for k, v in out.items()}
 
 

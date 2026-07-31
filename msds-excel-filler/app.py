@@ -4,10 +4,12 @@
 실행:  streamlit run app.py
 """
 import datetime
+import hashlib
 import io
 import json
 import os
 import re
+import shutil
 
 import streamlit as st
 
@@ -41,6 +43,65 @@ def _pic_label(code: str) -> str:
     return f"{code} {PICTOGRAM_NAMES.get(code, '')}"
 
 
+# ── 🔐 로그인 — 아이디별 데이터 저장, 같은 아이디는 등록·이력을 공유 ──
+_APP_DIR = os.path.dirname(os.path.abspath(__file__))
+_USERS_PATH = os.path.join(_APP_DIR, "users.json")
+
+
+def _load_users():
+    try:
+        with open(_USERS_PATH, encoding="utf-8") as f:
+            u = json.load(f)
+            return u if isinstance(u, dict) else {}
+    except Exception:
+        return {}
+
+
+if "login_id" not in st.session_state:
+    st.session_state.login_id = None
+if not st.session_state.login_id:
+    st.markdown("#### 🔐 로그인")
+    st.caption("아이디별로 데이터가 저장됩니다 — **같은 아이디로 로그인하면 "
+               "여러 사람이 작성한 도입검토 등록·위험성평가 이력을 함께 "
+               "조회**할 수 있습니다(팀 공용 아이디 권장). 처음 쓰는 아이디는 "
+               "입력한 비밀번호로 자동 등록됩니다.")
+    lc1, lc2, lc3 = st.columns([1.3, 1.3, 0.8])
+    l_id = lc1.text_input("아이디", key="login_uid",
+                          placeholder="예: 환경안전팀")
+    l_pw = lc2.text_input("비밀번호", type="password", key="login_pw")
+    lc3.markdown("<div style='height:1.75em'></div>", unsafe_allow_html=True)
+    if lc3.button("로그인", key="login_btn", type="primary"):
+        uid = (l_id or "").strip()
+        if not re.fullmatch(r"[A-Za-z0-9_\-가-힣]{2,20}", uid):
+            st.error("아이디는 2~20자의 한글·영문·숫자·하이픈(-)·밑줄(_)만 "
+                     "쓸 수 있습니다.")
+        elif not l_pw:
+            st.error("비밀번호를 입력하세요.")
+        else:
+            users = _load_users()
+            pw_hash = hashlib.sha256(l_pw.encode("utf-8")).hexdigest()
+            if uid not in users:
+                users[uid] = pw_hash
+                with open(_USERS_PATH, "w", encoding="utf-8") as f:
+                    json.dump(users, f, ensure_ascii=False, indent=1)
+                st.session_state.login_id = uid
+                st.rerun()
+            elif users[uid] == pw_hash:
+                st.session_state.login_id = uid
+                st.rerun()
+            else:
+                st.error("비밀번호가 일치하지 않습니다.")
+    st.stop()
+
+_uid = st.session_state.login_id
+_lc1, _lc2 = st.columns([6, 1])
+_lc1.caption(f"👤 **{_uid}** 로그인 중 — 같은 아이디로 로그인한 모든 "
+             "사용자가 등록·이력을 함께 봅니다.")
+if _lc2.button("로그아웃", key="logout_btn"):
+    st.session_state.login_id = None
+    st.rerun()
+
+
 # 메뉴 — 라디오 내비게이션 (도입검토 → 위험성평가 버튼으로 이동할 수 있도록
 # st.tabs 대신 사용: 프로그램에서 st.session_state.menu 변경으로 전환 가능)
 M_DASH = "🏠 대시보드"
@@ -57,9 +118,13 @@ menu = st.radio("메뉴", _MENUS, horizontal=True, key="menu",
                 label_visibility="collapsed")
 st.markdown("<hr style='margin:0.2rem 0 1rem 0;'>", unsafe_allow_html=True)
 
-# 도입검토 등록 DB (누적 관리) — 대시보드·도입검토·위험성평가 메뉴 공용
-_REVIEW_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                               "review_db.json")
+# 도입검토 등록 DB (누적 관리) — 대시보드·도입검토·위험성평가 메뉴 공용.
+# 아이디별 파일로 저장해 같은 아이디로 로그인하면 함께 조회된다.
+_REVIEW_DB_PATH = os.path.join(_APP_DIR, f"review_db_{_uid}.json")
+_RISK_DB_PATH = os.path.join(_APP_DIR, f"risk_db_{_uid}.json")
+_LEGACY_REVIEW = os.path.join(_APP_DIR, "review_db.json")
+if not os.path.exists(_REVIEW_DB_PATH) and os.path.exists(_LEGACY_REVIEW):
+    shutil.copyfile(_LEGACY_REVIEW, _REVIEW_DB_PATH)   # 로그인 도입 전 데이터
 
 
 def _load_review_db():
@@ -73,6 +138,21 @@ def _load_review_db():
 
 def _save_review_db(db):
     with open(_REVIEW_DB_PATH, "w", encoding="utf-8") as f:
+        json.dump(db, f, ensure_ascii=False, indent=1)
+
+
+def _load_risk_db():
+    """완료·작성중 위험성평가 이력 (아이디별 공유)."""
+    try:
+        with open(_RISK_DB_PATH, encoding="utf-8") as f:
+            db = json.load(f)
+            return db if isinstance(db, list) else []
+    except Exception:
+        return []
+
+
+def _save_risk_db(db):
+    with open(_RISK_DB_PATH, "w", encoding="utf-8") as f:
         json.dump(db, f, ensure_ascii=False, indent=1)
 
 
@@ -560,6 +640,7 @@ if menu == M_REVIEW:
                 st.session_state.risk_nonce = \
                     st.session_state.get("risk_nonce", 0) + 1
                 st.session_state.risk_score_reset = 0
+                st.session_state.risk_hist_id = None
                 st.session_state.risk_src = {
                     "name": rec.get("name", ""),
                     "manufacturer": rec.get("manufacturer", ""),
@@ -604,6 +685,62 @@ if menu == M_RISK:
                 "**위험성평가 엑셀 양식**으로 내려받을 수 있습니다(양식 수식·서식 "
                 "그대로 유지).")
 
+    # ── 🗂 위험성평가 이력 조회 (완료·작성중 — 아이디별 공유) ──
+    _rk_db = _load_risk_db()
+    with st.expander(f"🗂 위험성평가 이력 조회 ({len(_rk_db)}건 — 완료·작성중)",
+                     expanded=bool(_rk_db) and
+                     not st.session_state.get("risk_src")):
+        if not _rk_db:
+            st.caption("저장된 위험성평가가 없습니다 — 아래에서 작성 후 "
+                       "「작성 완료」 또는 「저장」을 누르면 이력에 보관됩니다.")
+        else:
+            st.dataframe(
+                [{"No.": r.get("id"), "상태": r.get("status", ""),
+                  "물질명": r.get("name", ""),
+                  "최종 위험도(최대)": r.get("max_risk", ""),
+                  "종합 판정": r.get("verdict", ""),
+                  "저장일시": r.get("saved_at", ""),
+                  "MSDS 파일": r.get("source", "")} for r in _rk_db],
+                hide_index=True, use_container_width=True)
+            _hsel = st.selectbox(
+                "이력 선택 (No.)", [r.get("id") for r in _rk_db],
+                format_func=lambda i: next(
+                    (f"{i} — {r.get('name', '')} [{r.get('status', '')}] "
+                     f"{r.get('saved_at', '')}"
+                     for r in _rk_db if r.get("id") == i), str(i)),
+                key="rk_hist_sel")
+            _hrec = next((r for r in _rk_db if r.get("id") == _hsel), None)
+            hb1, hb2, hb3 = st.columns([1.2, 1.4, 0.9])
+            if hb1.button("📂 불러오기 (이어서 작성·수정)", key="rk_hist_load"):
+                _pb = _hrec.get("payload", {}).get("basic", {})
+                st.session_state.risk_nonce = \
+                    st.session_state.get("risk_nonce", 0) + 1
+                st.session_state.risk_score_reset = 0
+                st.session_state.risk_src = {
+                    "name": _pb.get("name", ""),
+                    "manufacturer": _pb.get("manufacturer", ""),
+                    "revision": _pb.get("revision", ""),
+                    "components": _pb.get("components", []),
+                    "hcodes": _pb.get("hcodes", ""),
+                    "vals": dict(_hrec.get("payload", {}).get("vals") or {}),
+                    "source": _hrec.get("source", ""),
+                    "db_id": _hrec.get("db_id"),
+                    "restore": _hrec.get("restore") or {}}
+                st.session_state.risk_hist_id = _hrec.get("id")
+                st.rerun()
+            with open(_RISK_TPL_PATH, "rb") as _tf0:
+                hb2.download_button(
+                    "⬇️ 엑셀 다운로드 (선택한 이력)",
+                    RL.fill_template(_tf0.read(), _hrec.get("payload", {})),
+                    file_name=f"화학물질_위험성평가_"
+                              f"{_hrec.get('name') or '미입력'}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument."
+                         "spreadsheetml.sheet", key="rk_hist_xlsx")
+            if hb3.button("🗑 이력 삭제", key="rk_hist_del"):
+                _save_risk_db([r for r in _rk_db
+                               if r.get("id") != _hsel])
+                st.rerun()
+
     rk_up = st.file_uploader("MSDS PDF 업로드 (위험성평가 대상 물질)",
                              type=["pdf"], accept_multiple_files=False,
                              key="risk_upload",
@@ -619,6 +756,7 @@ if menu == M_RISK:
                 st.session_state.risk_nonce = \
                     st.session_state.get("risk_nonce", 0) + 1
                 st.session_state.risk_score_reset = 0
+                st.session_state.risk_hist_id = None
                 st.session_state.risk_src = {
                     "name": d.product_name, "manufacturer": d.manufacturer,
                     "revision": d.revision_date, "components": d.components,
@@ -635,6 +773,7 @@ if menu == M_RISK:
                 "시작하세요.")
     else:
         n = st.session_state.get("risk_nonce", 0)
+        rst = src.get("restore") or {}          # 이력 불러오기 시 위젯 기본값
 
         def _k(name):
             return f"rk{n}_{name}"
@@ -680,15 +819,18 @@ if menu == M_RISK:
                     if (r.get("성분명") or r.get("CAS 번호") or
                         r.get("함유량") or "").strip()]
         c1, c2, c3 = st.columns(3)
-        rk_dept = _rtext(c1, "취급부서 / 공정", key=_k("dept"))
-        rk_store = _rtext(c2, "저장·보관(예정) 장소", key=_k("store"))
-        rk_purpose = _rtext(c3, "도입 배경 or 목적", key=_k("purpose"))
+        rk_dept = _rtext(c1, "취급부서 / 공정", rst.get("dept", ""),
+                         key=_k("dept"))
+        rk_store = _rtext(c2, "저장·보관(예정) 장소", rst.get("store", ""),
+                          key=_k("store"))
+        rk_purpose = _rtext(c3, "도입 배경 or 목적", rst.get("purpose", ""),
+                            key=_k("purpose"))
         rk_hcodes = _rtext(
             st, "★ H-Code (유해위험문구) 〔MSDS 2항 — 자동 인식, 수정 가능〕",
             src.get("hcodes", ""), key=_k("hcodes"),
-            help="쉼표/공백으로 구분. H314·H340·H350·H360은 구분까지 표기 "
-                 "(예: H350 Cat1A). 자동 인식 시 구분 1만 있으면 보수적으로 "
-                 "1A로 채웁니다.")
+            help="쉼표/공백으로 구분. H340·H350·H360은 구분까지 표기 "
+                 "(예: H350 Cat1A). H314는 MSDS에 1A/1B 명기가 없으면 "
+                 "원문대로 H314만 표기하며 구분1로 산정합니다.")
 
         # ── 2. MSDS 세션별 데이터 ──
         st.markdown("###### 2. MSDS 세션별 데이터 〔8·9·11·12항 자동 인식, "
@@ -724,9 +866,9 @@ if menu == M_RISK:
 
         # ── 3. 분야별 평가 (②③④) ──
         st.markdown("###### 3. 분야별 위험성평가 — **[참고값]은 자동 계산**되며 "
-                    "유해성 점수는 기본 **(선택)** 입니다. 참고값을 확인한 뒤 "
-                    "작성자가 항목별 위험성을 직접 선택해 주세요")
-        if st.button("🔄 유해성 점수를 현재 [참고값]으로 일괄 채우기",
+                    "유해성 점수는 참고값과 동일하게 미리 채워집니다 "
+                    "(다르게 평가하면 비고에 사유 기재)")
+        if st.button("🔄 유해성 점수를 현재 [참고값]으로 재설정",
                      key=_k("score_reset_btn")):
             st.session_state.risk_score_reset = \
                 st.session_state.get("risk_score_reset", 0) + 1
@@ -743,7 +885,10 @@ if menu == M_RISK:
                  ("② 1회 취급량 (공통)", RL.POSS_AMOUNT)]):
             disp = ["(선택)"] + [f"{j + 1}점 — {o}".replace("\n", " ")
                                 for j, o in enumerate(popt)]
+            _pc_rst = (rst.get("poss_common") or [None, None])[i]
             sel = cc[i].selectbox(plabel, range(len(disp)),
+                                  index=(_pc_rst + 1) if _pc_rst is not None
+                                  else 0,
                                   format_func=lambda x, d=disp: d[x],
                                   key=_k(f"pc_{i}"))
             _rmark(_k(f"pc_{i}"), None if sel == 0 else sel)
@@ -754,22 +899,27 @@ if menu == M_RISK:
         for skey, meta in RL.SHEETS.items():
             with st.expander(f"{meta['title']}", expanded=False):
                 scores, notes = [], []
+                rst_sc = (rst.get("scores") or {}).get(skey) or []
+                rst_nt = (rst.get("notes") or {}).get(skey) or []
                 for i, (grp, item) in enumerate(meta["items"]):
                     r = refs[skey][i]
                     a, b, c, dcol = st.columns([2.4, 0.7, 0.8, 1.6])
                     a.markdown(f"**{i + 1}. [{grp}]** {item}")
+                    if skey == "2" and i == 5:    # 저장 불안정성 — 직접 평가
+                        a.caption(f"ℹ️ {RL.STORE_NOTE}  \n{RL.STORE_CRITERIA}")
                     b.markdown(f"참고값(자동): **{r if r else '—'}**")
-                    # 기본 (선택) — 참고값을 확인하고 작성자가 직접 선택
-                    sc = c.selectbox("유해성 점수", ["(선택)", 1, 2, 3, 4, 5],
-                                     index=(r or 1) if rn else 0,
+                    default_sc = (rst_sc[i] if i < len(rst_sc) and rst_sc[i]
+                                  else r or 1)
+                    sc = c.selectbox("유해성 점수", [1, 2, 3, 4, 5],
+                                     index=default_sc - 1,
                                      key=_k(f"{skey}s{rn}_{i}"),
                                      label_visibility="collapsed")
-                    _rmark(_k(f"{skey}s{rn}_{i}"), sc)
                     note = dcol.text_input(
-                        "비고", key=_k(f"{skey}note_{i}"),
+                        "비고", rst_nt[i] if i < len(rst_nt) else "",
+                        key=_k(f"{skey}note_{i}"),
                         placeholder="참고값과 다르게 평가한 사유",
                         label_visibility="collapsed")
-                    scores.append(None if sc == "(선택)" else sc)
+                    scores.append(sc)
                     notes.append(note.strip())
                 st.markdown("**가능성 산정** — ① 취급 횟수·② 1회 취급량은 "
                             "위의 공통 입력이 자동 반영됩니다")
@@ -777,8 +927,11 @@ if menu == M_RISK:
                 disp = ["(선택)"] + [
                     f"{j + 1}점 — {o}".replace("\n", " ")
                     for j, o in enumerate(popts[2])]
+                _pe_rst = (rst.get("poss_env") or {}).get(skey)
                 sel = st.selectbox(meta["poss_labels"][2],
                                    range(len(disp)),
+                                   index=(_pe_rst + 1)
+                                   if _pe_rst is not None else 0,
                                    format_func=lambda x, d=disp: d[x],
                                    key=_k(f"{skey}p_2"))
                 _rmark(_k(f"{skey}p_2"), None if sel == 0 else sel)
@@ -797,8 +950,12 @@ if menu == M_RISK:
                     opts = [d["no"] for d in RL.RISK_DB
                             if d["field"] == meta["field"] and
                             d["tier"] == tkor]
+                    _mit_rst = [no for no in ((rst.get("mit") or {})
+                                              .get(skey, {}).get(tier) or [])
+                                if no in opts]
                     mit[tier] = mcols[ti].multiselect(
-                        tlabel, opts, key=_k(f"{skey}m_{tier}"),
+                        tlabel, opts, default=_mit_rst,
+                        key=_k(f"{skey}m_{tier}"),
                         max_selections=3,
                         format_func=lambda no: (
                             f"{no} ({RL.RISK_DB_BY_NO[no]['reduce']}) "
@@ -881,16 +1038,25 @@ if menu == M_RISK:
          else st.warning if "고위험" in verdict or "중위험" in verdict
          else st.success)(verdict)
         st.caption(RL.OVERALL_CRITERIA)
+        _meta_rst = rst.get("meta") or {}
+        try:
+            _dt_rst = datetime.date.fromisoformat(
+                _meta_rst.get("ev_date") or "")
+        except ValueError:
+            _dt_rst = None
         c1, c2, c3, c4 = st.columns(4)
-        ev_type = _rtext(c1, "평가유형", key=_k("evtype"),
-                         placeholder="예: 신규 도입")
-        ev_date = c2.date_input("평가일자", value=None, key=_k("evdate"),
+        ev_type = _rtext(c1, "평가유형", _meta_rst.get("ev_type", ""),
+                         key=_k("evtype"), placeholder="예: 신규 도입")
+        ev_date = c2.date_input("평가일자", value=_dt_rst, key=_k("evdate"),
                                 format="YYYY-MM-DD")
         _rmark(_k("evdate"), ev_date)
-        ev_dept = _rtext(c3, "평가부서", key=_k("evdept"))
-        ev_by = _rtext(c4, "평가자", key=_k("evby"))
-        opinion = st.text_area("[기안] 평가자 의견", key=_k("opinion"),
-                               height=80)
+        ev_dept = _rtext(c3, "평가부서", _meta_rst.get("ev_dept", ""),
+                         key=_k("evdept"))
+        ev_by = _rtext(c4, "평가자", _meta_rst.get("ev_by", ""),
+                       key=_k("evby"))
+        opinion = st.text_area("[기안] 평가자 의견",
+                               _meta_rst.get("opinion", ""),
+                               key=_k("opinion"), height=80)
         _rmark(_k("opinion"), opinion.strip())
 
         # 빈 항목 빨간 칸 표시 — 위젯 key의 st-key-* 클래스로 지목
@@ -946,6 +1112,72 @@ if menu == M_RISK:
                  "결과가 표시됩니다."
                  + (" 다운로드하면 등록된 화학물질 조회 목록에 '위험성평가 "
                     "완료'로 표시됩니다." if src.get("db_id") else ""))
+
+        # ── 작성 완료 · 저장 · 초기화 ──
+        def _hist_save(status):
+            """현재 작성 내용을 위험성평가 이력에 저장(같은 이력이면 갱신)."""
+            db = _load_risk_db()
+            finals = [result["sheets"][k]["final_risk"] for k in RL.SHEETS]
+            entry = {
+                "status": status,
+                "saved_at": datetime.datetime.now().strftime(
+                    "%Y-%m-%d %H:%M"),
+                "name": rk_name.strip(), "source": src.get("source", ""),
+                "db_id": src.get("db_id"),
+                "verdict": result["verdict"].split("\n")[0],
+                "max_risk": max(finals),
+                "payload": payload,
+                "restore": {
+                    "dept": rk_dept.strip(), "store": rk_store.strip(),
+                    "purpose": rk_purpose.strip(),
+                    "scores": {k: sheets_payload[k]["scores"]
+                               for k in sheets_payload},
+                    "notes": {k: sheets_payload[k]["notes"]
+                              for k in sheets_payload},
+                    "poss_common": common_poss,
+                    "poss_env": {k: sheets_payload[k]["poss"][2]
+                                 for k in sheets_payload},
+                    "mit": {k: sheets_payload[k]["mit"]
+                            for k in sheets_payload},
+                    "meta": dict(payload["meta"])}}
+            hid = st.session_state.get("risk_hist_id")
+            rec = next((r for r in db if r.get("id") == hid), None)
+            if rec is not None:
+                entry["id"] = hid
+                db[db.index(rec)] = entry
+            else:
+                entry["id"] = max([r.get("id", 0) for r in db] or [0]) + 1
+                db.append(entry)
+                st.session_state.risk_hist_id = entry["id"]
+            _save_risk_db(db)
+            return entry["id"]
+
+        st.divider()
+        fb1, fb2, fb3 = st.columns([1.3, 1.3, 1.1])
+        if fb1.button("✅ 위험성평가 작성 완료", key=_k("done_btn"),
+                      type="primary",
+                      help="이력에 '완료'로 저장되고, 등록된 화학물질에서 "
+                           "시작한 평가는 조회 목록에 '위험성평가 완료'로 "
+                           "표시됩니다."):
+            _hid = _hist_save("완료")
+            _mark_risk_done()
+            st.success(f"작성 완료 — 이력 No.{_hid}에 저장했습니다. "
+                       "위 「위험성평가 이력 조회」에서 다시 열거나 엑셀로 "
+                       "내려받을 수 있습니다.")
+        if fb2.button("💾 저장 (작성중으로 보관)", key=_k("save_btn"),
+                      help="작성 중인 내용을 이력에 '작성중'으로 보관합니다. "
+                           "「이력 조회 → 불러오기」로 이어서 작성할 수 "
+                           "있습니다."):
+            _hid = _hist_save("작성중")
+            st.info(f"저장했습니다 (이력 No.{_hid}, 작성중). 이력 조회에서 "
+                    "불러와 이어서 작성하세요.")
+        if fb3.button("🧹 현재 페이지 내용 초기화", key=_k("reset_btn"),
+                      help="저장하지 않은 내용은 사라집니다."):
+            for _sk in ("risk_src", "risk_up_done", "risk_hist_id"):
+                st.session_state.pop(_sk, None)
+            st.session_state.risk_nonce = \
+                st.session_state.get("risk_nonce", 0) + 1
+            st.rerun()
 
 if menu == M_SIGN:
     st.markdown("**화학물질관리법 시행규칙 [별표 2] 유해화학물질의 표시방법**(제12조제2항 관련) "
