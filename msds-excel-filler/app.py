@@ -1475,24 +1475,57 @@ if menu == M_CONTRACT:
                              f"(만료 {r.get('dogub_end', '')})"
                              for r, d in _exp))
 
-    # ── 등록 ──
-    st.markdown("###### 📝 도급신고 등록")
+    # ── 등록 / 수정 ──
+    _edit = st.session_state.get("ct_edit") or {}     # 수정 중인 등록
+    _eid = _edit.get("id")
+    if _eid:
+        st.markdown(f"###### ✏️ 도급신고 수정 — No.{_eid} "
+                    f"{_edit.get('company', '')}")
+        e1, e2 = st.columns([3, 1])
+        e1.info("아래 내용을 고친 뒤 「수정 저장」을 누르세요. 수리공문은 "
+                "새 파일을 올린 경우에만 교체됩니다.")
+        if e2.button("↩️ 수정 취소", key="ct_edit_cancel"):
+            st.session_state.pop("ct_edit", None)
+            st.session_state.ct_nonce = \
+                st.session_state.get("ct_nonce", 0) + 1
+            st.rerun()
+    else:
+        st.markdown("###### 📝 도급신고 등록")
     ctn = st.session_state.get("ct_nonce", 0)
 
     def _ck(name):
         return f"ct{ctn}_{name}"
 
+    def _ct_date(s):
+        try:
+            return datetime.date.fromisoformat(s or "")
+        except ValueError:
+            return None
+
     c1, c2 = st.columns([1.4, 1])
-    ct_company = c1.text_input("업체명", key=_ck("company"))
-    ct_type = c2.selectbox("계약종류", CT_TYPES, key=_ck("type"))
+    ct_company = c1.text_input("업체명", _edit.get("company", ""),
+                               key=_ck("company"))
+    ct_type = c2.selectbox("계약종류", CT_TYPES,
+                           index=(CT_TYPES.index(_edit["ctype"])
+                                  if _edit.get("ctype") in CT_TYPES else 0),
+                           key=_ck("type"))
     _ct_opts = _load_ct_opts()
+    _fac_opts = CT_FACILITIES + _ct_opts["facilities"]
+    _sub_opts = CT_SUBSTANCES + _ct_opts["substances"]
+    # 수정 시 — 목록에 없는 기존 값(옛 자유입력 등)도 선택지에 보여준다
+    _fac_cur = [v.strip() for v in (_edit.get("facility") or "").split(",")
+                if v.strip()]
+    _sub_cur = [v.strip() for v in (_edit.get("substance") or "").split(",")
+                if v.strip()]
+    _fac_opts += [v for v in _fac_cur if v not in _fac_opts]
+    _sub_opts += [v for v in _sub_cur if v not in _sub_opts]
     f1, f2 = st.columns(2)
     ct_fac_sel = f1.multiselect(
-        "취급시설 (여러 개 선택 가능)",
-        CT_FACILITIES + _ct_opts["facilities"], key=_ck("fac"))
+        "취급시설 (여러 개 선택 가능)", _fac_opts, default=_fac_cur,
+        key=_ck("fac"))
     ct_sub_sel = f2.multiselect(
-        "취급물질 (여러 개 선택 가능)",
-        CT_SUBSTANCES + _ct_opts["substances"], key=_ck("sub"))
+        "취급물질 (여러 개 선택 가능)", _sub_opts, default=_sub_cur,
+        key=_ck("sub"))
     a1, a2, a3, a4 = st.columns([1.4, 0.6, 1.4, 0.6])
     _new_fac = a1.text_input("목록에 없는 시설 직접 추가", key="ct_new_fac",
                              placeholder="예: 폐수처리장")
@@ -1525,20 +1558,28 @@ if menu == M_CONTRACT:
                        "선택하세요.")
             st.rerun()
     p1, p2, p3, p4 = st.columns(4)
-    ct_cs = p1.date_input("계약기간 시작", value=None, key=_ck("cs"),
-                          format="YYYY-MM-DD")
-    ct_ce = p2.date_input("계약기간 종료", value=None, key=_ck("ce"),
-                          format="YYYY-MM-DD")
-    ct_ds = p3.date_input("도급기간 시작", value=None, key=_ck("ds"),
-                          format="YYYY-MM-DD")
-    ct_de = p4.date_input("도급기간 종료 (만료일 — 알람 기준)", value=None,
+    ct_cs = p1.date_input("계약기간 시작",
+                          value=_ct_date(_edit.get("cont_start")),
+                          key=_ck("cs"), format="YYYY-MM-DD")
+    ct_ce = p2.date_input("계약기간 종료",
+                          value=_ct_date(_edit.get("cont_end")),
+                          key=_ck("ce"), format="YYYY-MM-DD")
+    ct_ds = p3.date_input("도급기간 시작",
+                          value=_ct_date(_edit.get("dogub_start")),
+                          key=_ck("ds"), format="YYYY-MM-DD")
+    ct_de = p4.date_input("도급기간 종료 (만료일 — 알람 기준)",
+                          value=_ct_date(_edit.get("dogub_end")),
                           key=_ck("de"), format="YYYY-MM-DD",
                           help="만료일이 1개월 이내로 남으면 이 메뉴와 "
                                "대시보드에 알람이 표시됩니다.")
     ct_doc = st.file_uploader("수리공문 첨부 — 환경청으로부터 받은 공문 파일 "
                               "(PDF·한글·이미지 등, 최대 10MB)",
                               key=_ck("doc"))
-    if st.button("💾 도급신고 등록", type="primary", key=_ck("save")):
+    if _eid and _edit.get("doc_name"):
+        st.caption(f"현재 첨부된 수리공문: {_edit['doc_name']} — 새 파일을 "
+                   "올리면 교체되고, 올리지 않으면 그대로 유지됩니다.")
+    if st.button("💾 수정 저장" if _eid else "💾 도급신고 등록",
+                 type="primary", key=_ck("save")):
         if not ct_company.strip():
             st.error("업체명을 입력해 주세요.")
         elif ct_de is None:
@@ -1549,23 +1590,38 @@ if menu == M_CONTRACT:
                      "첨부해 주세요.")
         else:
             import base64 as _b64
-            ct_db.append({
-                "id": max([r.get("id", 0) for r in ct_db] or [0]) + 1,
+            fields = {
                 "company": ct_company.strip(), "ctype": ct_type,
                 "facility": ", ".join(ct_fac_sel),
                 "substance": ", ".join(ct_sub_sel),
                 "cont_start": str(ct_cs) if ct_cs else "",
                 "cont_end": str(ct_ce) if ct_ce else "",
                 "dogub_start": str(ct_ds) if ct_ds else "",
-                "dogub_end": str(ct_de),
-                "doc_name": ct_doc.name if ct_doc else "",
-                "doc_b64": (_b64.b64encode(ct_doc.getvalue()).decode()
-                            if ct_doc else ""),
-                "saved_at": str(datetime.date.today())})
+                "dogub_end": str(ct_de)}
+            if ct_doc is not None:           # 새 파일이 있을 때만 첨부 교체
+                fields["doc_name"] = ct_doc.name
+                fields["doc_b64"] = _b64.b64encode(
+                    ct_doc.getvalue()).decode()
+            rec = next((r for r in ct_db if r.get("id") == _eid), None) \
+                if _eid else None
+            if rec is not None:              # 수정 저장 — 기존 등록 갱신
+                rec.update(fields)
+                st.session_state.ct_msg = (
+                    f"No.{_eid} 「{ct_company.strip()}」 등록 내용을 "
+                    "수정했습니다.")
+                st.session_state.pop("ct_edit", None)
+            else:
+                fields.setdefault("doc_name", "")
+                fields.setdefault("doc_b64", "")
+                fields["id"] = max([r.get("id", 0) for r in ct_db]
+                                   or [0]) + 1
+                fields["saved_at"] = str(datetime.date.today())
+                ct_db.append(fields)
+                st.session_state.ct_msg = (
+                    f"「{ct_company.strip()}」 도급신고를 등록했습니다. "
+                    f"(누적 {len(ct_db)}건)")
             _save_contract_db(ct_db)
             st.session_state.ct_nonce = ctn + 1
-            st.session_state.ct_msg = (f"「{ct_company.strip()}」 도급신고를 "
-                                       f"등록했습니다. (누적 {len(ct_db)}건)")
             st.rerun()
     if st.session_state.get("ct_msg"):
         st.success(st.session_state.pop("ct_msg"))
@@ -1609,7 +1665,7 @@ if menu == M_CONTRACT:
             hide_index=True, use_container_width=True)
         st.caption("상태: 정상 = 만료까지 1개월 초과 · **만료임박** = "
                    "1개월(30일) 이내 · 만료 = 도급기간 경과")
-        s1, s2, s3 = st.columns([1.2, 1.6, 1.2])
+        s1, s2, s3, s4 = st.columns([1.2, 1.5, 1.0, 1.0])
         ct_sel = s1.selectbox(
             "업체 선택 (No.)", [r.get("id") for r in ct_shown],
             format_func=lambda i: next(
@@ -1626,7 +1682,14 @@ if menu == M_CONTRACT:
         else:
             s2.caption("선택한 업체에 첨부된 수리공문이 없습니다 — 아래에서 "
                        "추가로 첨부할 수 있습니다.")
-        if s3.button("🗑 선택한 등록 삭제", key="ct_del"):
+        if s3.button("✏️ 선택한 등록 수정", key="ct_edit_btn",
+                     help="위 등록 폼에 내용을 불러와 고친 뒤 「수정 저장」을 "
+                          "누르면 반영됩니다."):
+            st.session_state.ct_edit = dict(_crec) if _crec else {}
+            st.session_state.ct_nonce = \
+                st.session_state.get("ct_nonce", 0) + 1
+            st.rerun()
+        if s4.button("🗑 선택한 등록 삭제", key="ct_del"):
             _save_contract_db([r for r in ct_db if r.get("id") != ct_sel])
             st.rerun()
         # 등록 후 수리공문 추가 첨부 — 공문이 없는 업체에 나중에 붙인다

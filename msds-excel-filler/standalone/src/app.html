@@ -400,7 +400,15 @@
       이내로 남으면</b> 이 메뉴와 대시보드에 알람이 표시됩니다. 수리공문은
       환경청으로부터 받은 공문 파일을 첨부해 보관합니다.</p>
     <div id="ctAlarm"></div>
-    <div class="prev-title">📝 도급신고 등록</div>
+    <div class="prev-title" id="ctFormTitle">📝 도급신고 등록</div>
+    <div id="ctEditInfo" hidden
+         style="background:#eef5fc;border:1px solid #9cc3e5;color:#1a5f9e;
+                padding:8px 12px;border-radius:8px;margin:8px 0;">
+      <span id="ctEditWho"></span> 수정 중 — 내용을 고친 뒤
+      「💾 수정 저장」을 누르세요. 수리공문은 새 파일을 올린 경우에만
+      교체됩니다. <button type="button" id="ctEditCancel"
+        style="margin-left:8px;">↩️ 수정 취소</button>
+    </div>
     <div class="rkgrid4" style="margin-top:8px;">
       <div><label class="f">업체명</label>
         <input type="text" id="ctCompany"></div>
@@ -3830,7 +3838,9 @@ function renderCt(){
             : `<button type="button" data-ctattach="${r.id}"
                  title="환경청 수리공문을 추가로 첨부합니다 (최대 2MB)">📤 공문 첨부</button>`}</td>` +
           `<td>${esc(r.saved_at || "")}</td>` +
-          `<td><button type="button" data-ctdel="${r.id}">🗑 삭제</button></td></tr>`;
+          `<td><button type="button" data-ctedit="${r.id}"
+             title="위 등록 폼에 내용을 불러와 고친 뒤 수정 저장합니다.">✏️ 수정</button> ` +
+          `<button type="button" data-ctdel="${r.id}">🗑 삭제</button></td></tr>`;
       }).join("");
     document.getElementById("ctHint").textContent =
       "상태: 정상 = 만료까지 1개월 초과 · 만료임박 = 1개월(30일) 이내 · " +
@@ -3839,6 +3849,63 @@ function renderCt(){
   document.getElementById("ctXlsx").hidden = !db.length;
 }
 
+let ctEditId = null;                       // 수정 중인 등록 No.
+function ctClearForm(){
+  ["ctCompany", "ctCStart", "ctCEnd",
+   "ctDStart", "ctDEnd", "ctDoc"].forEach(id => {
+    document.getElementById(id).value = "";
+  });
+  document.querySelectorAll("input[data-ctfac], input[data-ctsub]")
+    .forEach(el => { el.checked = false; });
+}
+function ctExitEdit(){
+  ctEditId = null;
+  document.getElementById("ctEditInfo").hidden = true;
+  document.getElementById("ctFormTitle").textContent = "📝 도급신고 등록";
+  document.getElementById("ctSaveBtn").textContent = "💾 도급신고 등록";
+  ctClearForm();
+}
+function ctLoadEdit(r){                    // 등록 내용을 폼에 불러온다
+  document.getElementById("ctCompany").value = r.company || "";
+  document.getElementById("ctType").value =
+    ["1회성계약", "연간계약", "기타"].includes(r.ctype) ? r.ctype : "기타";
+  document.getElementById("ctCStart").value = r.cont_start || "";
+  document.getElementById("ctCEnd").value = r.cont_end || "";
+  document.getElementById("ctDStart").value = r.dogub_start || "";
+  document.getElementById("ctDEnd").value = r.dogub_end || "";
+  document.getElementById("ctDoc").value = "";
+  // 목록에 없는 기존 값(옛 자유입력 등)은 직접 추가 목록에 넣어 보여준다
+  const facs = (r.facility || "").split(",").map(s => s.trim())
+    .filter(Boolean);
+  const subs = (r.substance || "").split(",").map(s => s.trim())
+    .filter(Boolean);
+  const cus = ctCustomOpts();
+  let cusDirty = false;
+  facs.forEach(v => { if (!ctFacList().includes(v)){
+    cus.facilities.push(v); cusDirty = true; } });
+  subs.forEach(v => { if (!ctSubList().includes(v)){
+    cus.substances.push(v); cusDirty = true; } });
+  if (cusDirty) localStorage.setItem(ctOptsKey(), JSON.stringify(cus));
+  renderCtOpts(false);
+  const check = (name, sel) => {
+    const all = name === "ctfac" ? ctFacList() : ctSubList();
+    document.querySelectorAll(`input[data-${name}]`).forEach(el => {
+      el.checked = sel.includes(all[Number(el.dataset[name])]);
+    });
+  };
+  check("ctfac", facs);
+  check("ctsub", subs);
+  ctEditId = r.id;
+  document.getElementById("ctEditWho").textContent =
+    `No.${r.id} 「${r.company || ""}」`;
+  document.getElementById("ctEditInfo").hidden = false;
+  document.getElementById("ctFormTitle").textContent = "✏️ 도급신고 수정";
+  document.getElementById("ctSaveBtn").textContent = "💾 수정 저장";
+  document.getElementById("ctMsg").textContent = "";
+  document.getElementById("ctFormTitle")
+    .scrollIntoView({ behavior: "smooth", block: "start" });
+}
+document.getElementById("ctEditCancel").addEventListener("click", ctExitEdit);
 document.getElementById("ctSaveBtn").addEventListener("click", async () => {
   const $msg = document.getElementById("ctMsg");
   $msg.style.color = "";
@@ -3863,10 +3930,7 @@ document.getElementById("ctSaveBtn").addEventListener("click", async () => {
     });
   }
   const db = loadCtDb();
-  const now = new Date();
-  const pad = x => String(x).padStart(2, "0");
-  db.push({
-    id: Math.max(0, ...db.map(r => r.id || 0)) + 1,
+  const fields = {
     company, ctype: document.getElementById("ctType").value,
     facility: ctSelected("ctfac").join(", "),
     substance: ctSelected("ctsub").join(", "),
@@ -3874,23 +3938,34 @@ document.getElementById("ctSaveBtn").addEventListener("click", async () => {
     cont_end: document.getElementById("ctCEnd").value,
     dogub_start: document.getElementById("ctDStart").value,
     dogub_end: dogubEnd,
-    doc_name: docName, doc_data: docData,
-    saved_at: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
-  });
+  };
+  const editing = db.find(r => String(r.id) === String(ctEditId));
+  let msgText;
+  if (editing){                            // 수정 저장 — 기존 등록 갱신
+    Object.assign(editing, fields);
+    if (f){                                // 새 파일이 있을 때만 첨부 교체
+      editing.doc_name = docName;
+      editing.doc_data = docData;
+    }
+    msgText = `No.${editing.id} 「${company}」 등록 내용을 수정했습니다.`;
+  } else {
+    const now = new Date();
+    const pad = x => String(x).padStart(2, "0");
+    db.push({
+      id: Math.max(0, ...db.map(r => r.id || 0)) + 1, ...fields,
+      doc_name: docName, doc_data: docData,
+      saved_at: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
+    });
+    msgText = `「${company}」 도급신고를 등록했습니다. (누적 ${db.length}건)`;
+  }
   try {
     saveCtDb(db);
   } catch (e){
     return err("저장 공간이 부족합니다 — 첨부 파일 크기를 줄이거나 오래된 " +
                "등록을 삭제해 주세요.");
   }
-  ["ctCompany", "ctCStart", "ctCEnd",
-   "ctDStart", "ctDEnd", "ctDoc"].forEach(id => {
-    document.getElementById(id).value = "";
-  });
-  document.querySelectorAll("input[data-ctfac], input[data-ctsub]")
-    .forEach(el => { el.checked = false; });
-  $msg.textContent = `「${company}」 도급신고를 등록했습니다. ` +
-    `(누적 ${db.length}건)`;
+  ctExitEdit();
+  $msg.textContent = msgText;
   renderCt();
   renderDash();
 });
@@ -3909,7 +3984,11 @@ document.getElementById("ctTable").addEventListener("click", e => {
     // 등록 후 수리공문 추가 첨부 — 파일 선택 창을 연다
     ctLateId = t.dataset.ctattach;
     document.getElementById("ctLateDoc").click();
+  } else if (t.dataset.ctedit){
+    const r = db.find(x => String(x.id) === t.dataset.ctedit);
+    if (r) ctLoadEdit(r);
   } else if (t.dataset.ctdel){
+    if (String(ctEditId) === t.dataset.ctdel) ctExitEdit();
     saveCtDb(db.filter(x => String(x.id) !== t.dataset.ctdel));
     renderCt();
     renderDash();
