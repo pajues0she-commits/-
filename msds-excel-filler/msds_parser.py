@@ -692,11 +692,13 @@ def _vapor_mmhg(sec9: str) -> str:
 
 
 def _tox_line(sec: str, subject_rx: str, marker_rx: str, unit_rx: str,
-              exclude_rx: str = "") -> str:
+              exclude_rx: str = "", multi_min: bool = True) -> str:
     """11·12항 — 주제어와 LD50/LC50 등이 같은 줄에 있는 값을 찾는다.
 
     "10 ~ 20 ㎎/ℓ"처럼 범위로 표기된 값은 가장 낮은 값을 취하고,
-    '자료없음' 등으로 명기된 항목은 "없음"으로 처리한다."""
+    혼합물 MSDS처럼 성분(물질)별로 값이 여러 줄이면 그중 가장 작은 값을
+    채택한다(multi_min). '자료없음' 등으로 명기된 항목은 "없음" 처리."""
+    vals = []
     no_data = False
     for line in (sec or "").split("\n"):
         if not re.search(subject_rx, line):
@@ -710,9 +712,13 @@ def _tox_line(sec: str, subject_rx: str, marker_rx: str, unit_rx: str,
             lo = float(m.group(1).replace(",", ""))
             if m.group(2):
                 lo = min(lo, float(m.group(2).replace(",", "")))
-            return f"{lo:g}"
-        if _NO_DATA_RX.search(line):
+            if not multi_min:
+                return f"{lo:g}"
+            vals.append(lo)
+        elif _NO_DATA_RX.search(line):
             no_data = True
+    if vals:
+        return f"{min(vals):g}"
     return "없음" if no_data else ""
 
 
@@ -813,7 +819,8 @@ def extract_risk_data(sections: dict) -> dict:
     out["daphnia_ec50"] = _tox_line(sec12, r"물벼룩|갑각류", r"[LE]C\s*50",
                                     r"(?:㎎|mg)")
     out["bcf"] = _tox_line(sec12, r"BCF|생물\s*농축\s*계수", r"(?:BCF|계수)",
-                           r"") or _line_field(sec12, r"농축성\s*[:：]")
+                           r"", multi_min=False) or \
+        _line_field(sec12, r"농축성\s*[:：]")
     if re.search(r"생분해[^\n]*\d[\d,.]*\s*%", sec12):
         m = re.search(r"생분해[^\n]*?(\d[\d,]*(?:\.\d+)?)\s*%", sec12)
         out["biodeg"] = m.group(1).replace(",", "") if m else ""
@@ -821,10 +828,10 @@ def extract_risk_data(sections: dict) -> dict:
         out["biodeg"] = "없음" if any(
             re.search(r"생분해", ln) and _NO_DATA_RX.search(ln)
             for ln in sec12.split("\n")) else ""
-    out["koc"] = _tox_line(sec12, r"Koc", r"Koc", r"") or \
+    out["koc"] = _tox_line(sec12, r"Koc", r"Koc", r"", multi_min=False) or \
         _line_field(sec12, r"토양\s*이동성")
     out["dt50"] = _tox_line(sec12, r"DT\s*50|반감기", r"(?:DT\s*50|반감기)",
-                            r"")
+                            r"", multi_min=False)
     out["pbt"] = ""
     if re.search(r"vPvB[^\n]{0,20}(해당(?!\s*없)|물질임)", sec12):
         out["pbt"] = "vPvB 해당"

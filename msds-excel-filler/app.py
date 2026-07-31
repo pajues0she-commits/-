@@ -34,7 +34,9 @@ st.caption("「대시보드」에서 연간 도입검토·정보등록·위험�
            "관리하며, 「화학물질 위험성평가」 메뉴에서는 도입검토 대상 물질의 위험성평가를 "
            "작성해 평가 양식 엑셀로 내려받고, 「유해화학물질 규격표지」 메뉴에서는 "
            "화학물질명만 입력하면 CAS 번호·국제연합번호·그림문자가 자동 입력된 표지판 "
-           "시안(화학물질관리법 시행규칙 별표 2)을 만듭니다.")
+           "시안(화학물질관리법 시행규칙 별표 2)을 만들며, 「도급신고」 메뉴에서는 "
+           "도급 업체의 계약·도급기간과 수리공문을 등록해 만료 1개월 전 알람과 함께 "
+           "누적 관리합니다.")
 
 _PIC_OPTIONS = [f"{code} {name}" for code, name in PICTOGRAM_NAMES.items()]
 
@@ -109,7 +111,8 @@ M_MANAGE = "📋 화학물질 작업공정별 관리요령"
 M_REVIEW = "🔍 화학물질 도입검토"
 M_RISK = "🧪 화학물질 위험성평가"
 M_SIGN = "🚧 유해화학물질 규격표지"
-_MENUS = [M_DASH, M_MANAGE, M_REVIEW, M_RISK, M_SIGN]
+M_CONTRACT = "📑 도급신고"
+_MENUS = [M_DASH, M_MANAGE, M_REVIEW, M_RISK, M_SIGN, M_CONTRACT]
 if "menu" not in st.session_state:
     st.session_state.menu = M_DASH
 if st.session_state.get("menu_jump"):     # 버튼으로 메뉴 이동 (다음 실행에 반영)
@@ -154,6 +157,46 @@ def _load_risk_db():
 def _save_risk_db(db):
     with open(_RISK_DB_PATH, "w", encoding="utf-8") as f:
         json.dump(db, f, ensure_ascii=False, indent=1)
+
+
+# ── 📑 도급신고 DB (아이디별 공유) ──
+_CONTRACT_DB_PATH = os.path.join(_APP_DIR, f"contract_db_{_uid}.json")
+CT_TYPES = ["1회성계약", "연간계약", "기타"]
+
+
+def _load_contract_db():
+    try:
+        with open(_CONTRACT_DB_PATH, encoding="utf-8") as f:
+            db = json.load(f)
+            return db if isinstance(db, list) else []
+    except Exception:
+        return []
+
+
+def _save_contract_db(db):
+    with open(_CONTRACT_DB_PATH, "w", encoding="utf-8") as f:
+        json.dump(db, f, ensure_ascii=False, indent=1)
+
+
+def _ct_days_left(r):
+    """도급기간 만료일까지 남은 일수 (만료일 미입력이면 None)."""
+    try:
+        d = datetime.date.fromisoformat(r.get("dogub_end") or "")
+    except ValueError:
+        return None
+    return (d - datetime.date.today()).days
+
+
+def _ct_status(days):
+    if days is None:
+        return ""
+    if days < 0:
+        return "만료"
+    return "만료임박" if days <= 30 else "정상"
+
+
+def _ct_period(a, b):
+    return f"{a or ''} ~ {b or ''}".strip(" ~") if (a or b) else ""
 
 
 # ── 🏠 대시보드 ─────────────────────────────────────────────────────────
@@ -212,6 +255,41 @@ if menu == M_DASH:
     else:
         st.info("아직 등록된 화학물질이 없습니다 — 「화학물질 도입검토」 "
                 "메뉴에서 MSDS를 등록하면 여기에 집계됩니다.")
+
+    # ── 📑 도급신고 현황판 ──
+    st.markdown("##### 📑 도급신고 현황판")
+    _ct_db = _load_contract_db()
+    _ct_rows = [(r, _ct_days_left(r)) for r in _ct_db]
+    _ct_imm = [(r, d) for r, d in _ct_rows if _ct_status(d) == "만료임박"]
+    _ct_exp = [(r, d) for r, d in _ct_rows if _ct_status(d) == "만료"]
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("등록 업체", len(_ct_db))
+    k2.metric("도급기간 정상", sum(1 for _, d in _ct_rows
+                                   if _ct_status(d) == "정상"))
+    k3.metric("만료 1개월 이내", len(_ct_imm))
+    k4.metric("만료", len(_ct_exp))
+    if _ct_imm:
+        st.error("🔔 **도급기간 만료 1개월 이내 업체 "
+                 f"{len(_ct_imm)}곳** — 재계약 또는 도급신고 갱신이 "
+                 "필요합니다: " +
+                 ", ".join(f"{r.get('company', '')}"
+                           f"(만료 {r.get('dogub_end', '')}, D-{d})"
+                           for r, d in _ct_imm))
+        st.dataframe(
+            [{"업체명": r.get("company", ""),
+              "계약종류": r.get("ctype", ""),
+              "도급기간": _ct_period(r.get("dogub_start"),
+                                     r.get("dogub_end")),
+              "남은 일수": f"D-{d}",
+              "취급시설": r.get("facility", ""),
+              "취급물질": r.get("substance", "")} for r, d in _ct_imm],
+            hide_index=True, use_container_width=True)
+    elif _ct_db:
+        st.success("도급기간 만료 1개월 이내 업체가 없습니다.")
+    else:
+        st.caption("등록된 도급신고 업체가 없습니다 — 「도급신고」 메뉴에서 "
+                   "등록하면 여기에 집계되고, 도급기간 만료 1개월 이내 업체가 "
+                   "알람으로 표시됩니다.")
 
 uploaded = None
 if menu == M_MANAGE:
@@ -795,7 +873,9 @@ if menu == M_RISK:
                     f"〔{src.get('source', '')}〕")
         st.caption("🔴 **빨간 칸** = 직접 입력이 필요한 항목 — MSDS에서 자동 "
                    "인식되지 않았거나(판독 실패 포함) 아직 입력·선택하지 않은 "
-                   "항목입니다. 값을 채우면 빨간 표시가 사라집니다.")
+                   "항목입니다. 값을 채우면 빨간 표시가 사라집니다. "
+                   "(②-6 저장 불안정성은 반드시 직접 평가하는 항목이라 항상 "
+                   "빨간색으로 표시됩니다.)")
 
         # ── 1. 기본정보 ──
         st.markdown("###### 1. 평가 대상 화학물질 기본정보")
@@ -914,6 +994,8 @@ if menu == M_RISK:
                                      index=default_sc - 1,
                                      key=_k(f"{skey}s{rn}_{i}"),
                                      label_visibility="collapsed")
+                    if skey == "2" and i == 5:   # 저장 불안정성 — 상시 빨간 칸
+                        _red_empty.append(_k(f"{skey}s{rn}_{i}"))
                     note = dcol.text_input(
                         "비고", rst_nt[i] if i < len(rst_nt) else "",
                         key=_k(f"{skey}note_{i}"),
@@ -1285,3 +1367,202 @@ if menu == M_SIGN:
     st.markdown(
         f'<div style="border:1px solid #ccc;background:#fff;padding:10px;">'
         f'{preview_svg}</div>', unsafe_allow_html=True)
+
+# ── 📑 도급신고 ─────────────────────────────────────────────────────────
+def _contract_xlsx(db) -> bytes:
+    """도급신고 업체 내역을 엑셀로 만든다 (만료임박·만료 컬러마킹)."""
+    import openpyxl
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.utils import get_column_letter
+
+    thin = Border(*[Side(style="thin")] * 4)
+    mark = {"만료임박": PatternFill("solid", fgColor="FFC7CE"),
+            "만료": PatternFill("solid", fgColor="D9D9D9")}
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "도급신고 업체 내역"
+    headers = ["No.", "업체명", "계약종류", "계약기간", "도급기간",
+               "도급 만료까지", "상태", "취급시설", "취급물질",
+               "수리공문(환경청)", "등록일"]
+    ws.append(headers)
+    for c in ws[1]:
+        c.fill = PatternFill("solid", fgColor="DDEBF7")
+        c.font = Font(bold=True)
+        c.border = thin
+        c.alignment = Alignment(horizontal="center", vertical="center")
+    for r in db:
+        d = _ct_days_left(r)
+        ws.append([r.get("id"), r.get("company", ""), r.get("ctype", ""),
+                   _ct_period(r.get("cont_start"), r.get("cont_end")),
+                   _ct_period(r.get("dogub_start"), r.get("dogub_end")),
+                   ("" if d is None else
+                    (f"D-{d}" if d >= 0 else f"{-d}일 경과")),
+                   _ct_status(d), r.get("facility", ""),
+                   r.get("substance", ""), r.get("doc_name", ""),
+                   r.get("saved_at", "")])
+    for row in ws.iter_rows(min_row=2):
+        for c in row:
+            c.border = thin
+            c.alignment = Alignment(vertical="center", wrap_text=True)
+            if c.value in mark:
+                c.fill = mark[c.value]
+                c.font = Font(bold=True)
+    for i, w in enumerate([6, 22, 12, 24, 24, 12, 10, 24, 24, 26, 12], 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+if menu == M_CONTRACT:
+    st.markdown("도급(하도급) 업체의 **업체명·계약기간·도급기간·취급시설·"
+                "취급물질·계약종류·수리공문**을 등록해 도급신고 내역을 누적 "
+                "관리합니다. **도급기간 만료일이 1개월 이내로 남으면** 이 "
+                "메뉴와 대시보드에 알람이 표시됩니다. 수리공문은 환경청으로부터 "
+                "받은 공문 파일을 첨부해 보관합니다.")
+
+    ct_db = _load_contract_db()
+    _imm = [(r, d) for r in ct_db
+            if _ct_status(d := _ct_days_left(r)) == "만료임박"]
+    _exp = [(r, d) for r in ct_db
+            if _ct_status(d := _ct_days_left(r)) == "만료"]
+    if _imm:
+        st.error("🔔 **도급기간 만료 1개월 이내 업체 "
+                 f"{len(_imm)}곳** — " +
+                 ", ".join(f"{r.get('company', '')}"
+                           f"(만료 {r.get('dogub_end', '')}, D-{d})"
+                           for r, d in _imm) +
+                 " · 재계약 또는 도급신고 갱신이 필요합니다.")
+    if _exp:
+        st.warning("⏰ 도급기간이 만료된 업체 — " +
+                   ", ".join(f"{r.get('company', '')}"
+                             f"(만료 {r.get('dogub_end', '')})"
+                             for r, d in _exp))
+
+    # ── 등록 ──
+    st.markdown("###### 📝 도급신고 등록")
+    ctn = st.session_state.get("ct_nonce", 0)
+
+    def _ck(name):
+        return f"ct{ctn}_{name}"
+
+    c1, c2, c3, c4 = st.columns([1.4, 1, 1.3, 1.3])
+    ct_company = c1.text_input("업체명", key=_ck("company"))
+    ct_type = c2.selectbox("계약종류", CT_TYPES, key=_ck("type"))
+    ct_fac = c3.text_input("취급시설", key=_ck("fac"),
+                           placeholder="예: 폐수처리장, 보일러동")
+    ct_sub = c4.text_input("취급물질", key=_ck("sub"),
+                           placeholder="예: 차아염소산나트륨, 염산")
+    p1, p2, p3, p4 = st.columns(4)
+    ct_cs = p1.date_input("계약기간 시작", value=None, key=_ck("cs"),
+                          format="YYYY-MM-DD")
+    ct_ce = p2.date_input("계약기간 종료", value=None, key=_ck("ce"),
+                          format="YYYY-MM-DD")
+    ct_ds = p3.date_input("도급기간 시작", value=None, key=_ck("ds"),
+                          format="YYYY-MM-DD")
+    ct_de = p4.date_input("도급기간 종료 (만료일 — 알람 기준)", value=None,
+                          key=_ck("de"), format="YYYY-MM-DD",
+                          help="만료일이 1개월 이내로 남으면 이 메뉴와 "
+                               "대시보드에 알람이 표시됩니다.")
+    ct_doc = st.file_uploader("수리공문 첨부 — 환경청으로부터 받은 공문 파일 "
+                              "(PDF·한글·이미지 등, 최대 10MB)",
+                              key=_ck("doc"))
+    if st.button("💾 도급신고 등록", type="primary", key=_ck("save")):
+        if not ct_company.strip():
+            st.error("업체명을 입력해 주세요.")
+        elif ct_de is None:
+            st.error("도급기간 종료일(만료일)을 입력해 주세요 — 만료 알람의 "
+                     "기준일입니다.")
+        elif ct_doc is not None and ct_doc.size > 10 * 1024 * 1024:
+            st.error("수리공문 파일이 10MB를 넘습니다 — 더 작은 파일로 "
+                     "첨부해 주세요.")
+        else:
+            import base64 as _b64
+            ct_db.append({
+                "id": max([r.get("id", 0) for r in ct_db] or [0]) + 1,
+                "company": ct_company.strip(), "ctype": ct_type,
+                "facility": ct_fac.strip(), "substance": ct_sub.strip(),
+                "cont_start": str(ct_cs) if ct_cs else "",
+                "cont_end": str(ct_ce) if ct_ce else "",
+                "dogub_start": str(ct_ds) if ct_ds else "",
+                "dogub_end": str(ct_de),
+                "doc_name": ct_doc.name if ct_doc else "",
+                "doc_b64": (_b64.b64encode(ct_doc.getvalue()).decode()
+                            if ct_doc else ""),
+                "saved_at": str(datetime.date.today())})
+            _save_contract_db(ct_db)
+            st.session_state.ct_nonce = ctn + 1
+            st.session_state.ct_msg = (f"「{ct_company.strip()}」 도급신고를 "
+                                       f"등록했습니다. (누적 {len(ct_db)}건)")
+            st.rerun()
+    if st.session_state.get("ct_msg"):
+        st.success(st.session_state.pop("ct_msg"))
+
+    # ── 업체 내역 조회 ──
+    st.divider()
+    st.markdown(f"###### 📑 도급신고 업체 내역 ({len(ct_db)}건)")
+    q1, q2 = st.columns([2.4, 1.6])
+    ct_q = q1.text_input("업체명·취급시설·취급물질로 검색", key="ct_q")
+    q2.markdown("<div style='height:1.75em'></div>", unsafe_allow_html=True)
+    ct_imm_only = q2.checkbox("도급기간 만료 1개월 이내 업체만 보기",
+                              key="ct_imm_only")
+    _q = ct_q.strip().lower()
+
+    def _ct_hit(r):
+        d = _ct_days_left(r)
+        if ct_imm_only and _ct_status(d) != "만료임박":
+            return False
+        if not _q:
+            return True
+        blob = " ".join([r.get("company", ""), r.get("facility", ""),
+                         r.get("substance", ""),
+                         r.get("ctype", "")]).lower()
+        return _q in blob
+
+    ct_shown = [r for r in ct_db if _ct_hit(r)]
+    if ct_shown:
+        st.dataframe(
+            [{"No.": r.get("id"), "업체명": r.get("company", ""),
+              "계약종류": r.get("ctype", ""),
+              "계약기간": _ct_period(r.get("cont_start"), r.get("cont_end")),
+              "도급기간": _ct_period(r.get("dogub_start"),
+                                     r.get("dogub_end")),
+              "도급 만료까지": ("" if (d := _ct_days_left(r)) is None else
+                               (f"D-{d}" if d >= 0 else f"{-d}일 경과")),
+              "상태": _ct_status(_ct_days_left(r)),
+              "취급시설": r.get("facility", ""),
+              "취급물질": r.get("substance", ""),
+              "수리공문": r.get("doc_name", "") or "(없음)",
+              "등록일": r.get("saved_at", "")} for r in ct_shown],
+            hide_index=True, use_container_width=True)
+        st.caption("상태: 정상 = 만료까지 1개월 초과 · **만료임박** = "
+                   "1개월(30일) 이내 · 만료 = 도급기간 경과")
+        s1, s2, s3 = st.columns([1.2, 1.6, 1.2])
+        ct_sel = s1.selectbox(
+            "업체 선택 (No.)", [r.get("id") for r in ct_shown],
+            format_func=lambda i: next(
+                (f"{i} — {r.get('company', '')}" for r in ct_shown
+                 if r.get("id") == i), str(i)), key="ct_sel")
+        _crec = next((r for r in ct_shown if r.get("id") == ct_sel), None)
+        if _crec is not None and _crec.get("doc_b64"):
+            import base64 as _b64
+            s2.download_button(
+                f"📎 수리공문 내려받기 — {_crec.get('doc_name', '')}",
+                _b64.b64decode(_crec["doc_b64"]),
+                file_name=_crec.get("doc_name") or "수리공문",
+                key="ct_doc_dl")
+        else:
+            s2.caption("선택한 업체에 첨부된 수리공문이 없습니다.")
+        if s3.button("🗑 선택한 등록 삭제", key="ct_del"):
+            _save_contract_db([r for r in ct_db if r.get("id") != ct_sel])
+            st.rerun()
+    else:
+        st.caption("등록된 도급신고 업체가 없습니다."
+                   if not (_q or ct_imm_only) else "검색 결과가 없습니다.")
+    if ct_db:
+        st.download_button(
+            "⬇️ 엑셀로 내려받기 (도급신고 업체 내역)",
+            _contract_xlsx(ct_db),
+            file_name="도급신고_업체내역.xlsx",
+            mime="application/vnd.openxmlformats-officedocument."
+                 "spreadsheetml.sheet", key="ct_xlsx")

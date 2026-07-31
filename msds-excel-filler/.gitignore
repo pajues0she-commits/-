@@ -6,4 +6,5 @@ dist/
 launcher/app.html
 review_db_*.json
 risk_db_*.json
+contract_db_*.json
 users.json

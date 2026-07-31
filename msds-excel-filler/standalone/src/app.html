@@ -225,7 +225,8 @@
      (유해성×가능성)를 작성해 평가 양식 엑셀로 내려받고,
      ④ <b>유해화학물질 규격표지</b> 메뉴에서는 화학물질명만 입력하면
      CAS 번호·국제연합번호·그림문자가 자동 입력된 표지판 시안(화학물질관리법 시행규칙
-     별표 2)을 만듭니다.
+     별표 2)을 만들고, ⑤ <b>도급신고</b> 메뉴에서는 도급 업체의 계약·도급기간과
+     수리공문을 등록해 만료 1개월 전 알람과 함께 누적 관리합니다.
      모든 처리는 이 브라우저 안에서만 이루어지며 파일이 외부로 전송되지 않습니다.</p>
 </div>
 <div id="loginOverlay" class="loginov" hidden>
@@ -252,6 +253,7 @@
     <button id="tabBtnReview">🔍 화학물질 도입검토</button>
     <button id="tabBtnRisk">🧪 화학물질 위험성평가</button>
     <button id="tabBtnSign">🚧 유해화학물질 규격표지</button>
+    <button id="tabBtnContract">📑 도급신고</button>
     <span class="loginwho"><span id="loginWho"></span><button id="logoutBtn"
       type="button" hidden>로그아웃</button></span>
   </div>
@@ -266,6 +268,11 @@
     <div class="prev-title">📅 연도별 현황 (작성일 기준)</div>
     <div style="overflow-x:auto"><table class="rvt" id="dashTable"></table></div>
     <p class="hint" id="dashHint" style="margin:14px 4px;"></p>
+    <div class="prev-title">📑 도급신고 현황판</div>
+    <div id="dashCtCards" class="dashcards"></div>
+    <div id="dashCtAlarm"></div>
+    <div style="overflow-x:auto"><table class="rvt" id="dashCtTable"></table></div>
+    <p class="hint" id="dashCtHint" style="margin:14px 4px;"></p>
   </div>
   <div id="tabManage" class="tabpanel" hidden>
     <label class="dropzone" id="dz" style="margin-top:14px;">
@@ -381,6 +388,58 @@
       <button id="sgPng">⬇️ PNG 다운로드 (150DPI)</button>
     </div>
     <div id="signPrev"></div>
+  </div>
+  <div id="tabContract" class="tabpanel" hidden>
+    <p class="signnote" style="margin-top:14px;">도급(하도급) 업체의
+      <b>업체명·계약기간·도급기간·취급시설·취급물질·계약종류·수리공문</b>을
+      등록해 도급신고 내역을 누적 관리합니다. <b>도급기간 만료일이 1개월
+      이내로 남으면</b> 이 메뉴와 대시보드에 알람이 표시됩니다. 수리공문은
+      환경청으로부터 받은 공문 파일을 첨부해 보관합니다.</p>
+    <div id="ctAlarm"></div>
+    <div class="prev-title">📝 도급신고 등록</div>
+    <div class="rkgrid4" style="margin-top:8px;">
+      <div><label class="f">업체명</label>
+        <input type="text" id="ctCompany"></div>
+      <div><label class="f">계약종류</label>
+        <select id="ctType">
+          <option>1회성계약</option><option>연간계약</option><option>기타</option>
+        </select></div>
+      <div><label class="f">취급시설</label>
+        <input type="text" id="ctFacility" placeholder="예: 폐수처리장, 보일러동"></div>
+      <div><label class="f">취급물질</label>
+        <input type="text" id="ctSubstance" placeholder="예: 차아염소산나트륨, 염산"></div>
+    </div>
+    <div class="rkgrid4">
+      <div><label class="f">계약기간 시작</label>
+        <input type="date" id="ctCStart"></div>
+      <div><label class="f">계약기간 종료</label>
+        <input type="date" id="ctCEnd"></div>
+      <div><label class="f">도급기간 시작</label>
+        <input type="date" id="ctDStart"></div>
+      <div><label class="f">도급기간 종료 (만료일 — 알람 기준)</label>
+        <input type="date" id="ctDEnd"
+               title="만료일이 1개월 이내로 남으면 알람이 표시됩니다."></div>
+    </div>
+    <label class="f">수리공문 첨부 — 환경청으로부터 받은 공문 파일
+      (PDF·한글·이미지 등, 최대 2MB)</label>
+    <input type="file" id="ctDoc">
+    <div class="hint">단일 HTML은 브라우저 저장공간에 보관하므로 첨부 파일은
+      2MB 이하를 권장합니다.</div>
+    <button class="rvsave" id="ctSaveBtn" type="button"
+            style="background:#1a5f9e;">💾 도급신고 등록</button>
+    <div class="hint" id="ctMsg"></div>
+    <hr style="border:none;border-top:1px solid #dde5ec;margin:18px 0;">
+    <div class="prev-title" style="margin-top:0;">📑 도급신고 업체 내역</div>
+    <div class="addrow" style="max-width:860px;flex-wrap:wrap;">
+      <input type="text" id="ctQ" style="min-width:280px;"
+             placeholder="업체명·취급시설·취급물질로 검색">
+      <label style="align-self:center;white-space:nowrap;">
+        <input type="checkbox" id="ctImmOnly"> 도급기간 만료 1개월 이내 업체만 보기</label>
+    </div>
+    <div style="overflow-x:auto;margin-top:10px;"><table class="rvt" id="ctTable"></table></div>
+    <div class="hint" id="ctHint"></div>
+    <button id="ctXlsx" class="rvsave" type="button" hidden>⬇️ 엑셀로 내려받기
+      (도급신고 업체 내역)</button>
   </div>
 </div>
 <div class="bar">
@@ -1045,8 +1104,11 @@ function vaporMmhg(sec9){
 }
 
 // 11·12항 — 주제어와 LD50/LC50 등이 같은 줄에 있는 값을 찾는다.
-// 범위("10 ~ 20 ㎎/ℓ")는 가장 낮은 값, '자료없음' 명기는 "없음" 처리
-function toxLine(sec, subjectRx, markerRx, unitRx, excludeRx){
+// 범위("10 ~ 20 ㎎/ℓ")는 가장 낮은 값, 혼합물처럼 성분별 값이 여러 줄이면
+// 그중 가장 작은 값(multiMin), '자료없음' 명기는 "없음" 처리
+function toxLine(sec, subjectRx, markerRx, unitRx, excludeRx, multiMin){
+  if (multiMin === undefined) multiMin = true;
+  const vals = [];
   let noData = false;
   for (const line of (sec || "").split("\n")){
     if (!new RegExp(subjectRx).test(line)) continue;
@@ -1057,10 +1119,11 @@ function toxLine(sec, subjectRx, markerRx, unitRx, excludeRx){
     if (m){
       let lo = parseFloat(m[1].replace(/,/g, ""));
       if (m[2]) lo = Math.min(lo, parseFloat(m[2].replace(/,/g, "")));
-      return String(lo);
-    }
-    if (NO_DATA_RX.test(line)) noData = true;
+      if (!multiMin) return String(lo);
+      vals.push(lo);
+    } else if (NO_DATA_RX.test(line)) noData = true;
   }
+  if (vals.length) return String(Math.min(...vals));
   return noData ? "없음" : "";
 }
 
@@ -1145,7 +1208,8 @@ function extractRiskData(sections){
   out.fish_lc50 = toxLine(sec12, "어류", "[LE]C\\s*50", "(?:㎎|mg)");
   out.daphnia_ec50 = toxLine(sec12, "물벼룩|갑각류", "[LE]C\\s*50",
                              "(?:㎎|mg)");
-  out.bcf = toxLine(sec12, "BCF|생물\\s*농축\\s*계수", "(?:BCF|계수)", "") ||
+  out.bcf = toxLine(sec12, "BCF|생물\\s*농축\\s*계수", "(?:BCF|계수)", "",
+                    "", false) ||
             lineField(sec12, "농축성\\s*[:：]");
   out.biodeg = "";
   if (/생분해[^\n]*\d[\d,.]*\s*%/.test(sec12)){
@@ -1155,9 +1219,10 @@ function extractRiskData(sections){
       ln => /생분해/.test(ln) && NO_DATA_RX.test(ln))){
     out.biodeg = "없음";
   }
-  out.koc = toxLine(sec12, "Koc", "Koc", "") ||
+  out.koc = toxLine(sec12, "Koc", "Koc", "", "", false) ||
             lineField(sec12, "토양\\s*이동성");
-  out.dt50 = toxLine(sec12, "DT\\s*50|반감기", "(?:DT\\s*50|반감기)", "");
+  out.dt50 = toxLine(sec12, "DT\\s*50|반감기", "(?:DT\\s*50|반감기)", "",
+                     "", false);
   out.pbt = /vPvB[^\n]{0,20}(해당(?!\s*없)|물질임)/.test(sec12) ? "vPvB 해당" : "";
   // 10항 헤더 미인식 문서는 내용이 9항 블록에 붙으므로 9·11항도 함께 살핀다
   out.taboo = tabooCount([sec10, sec9, sec11].filter(Boolean).join("\n"));
@@ -2089,6 +2154,7 @@ document.getElementById("loginBtn").addEventListener("click", () => {
   renderRvDb();
   renderDash();
   rkHistRender();
+  renderCt();
 });
 document.getElementById("loginPw").addEventListener("keydown", e => {
   if (e.key === "Enter") document.getElementById("loginBtn").click();
@@ -2947,7 +3013,8 @@ function renderRkForm(){
       h += `<div class="rkrow">
         <div><b>${i + 1}. [${esc(it[0])}]</b> ${esc(it[1])}${storeNote}</div>
         <div class="rkref">참고값(자동) <b data-rkref="${sk}_${i}">—</b></div>
-        <div><select data-rks="${sk}" data-rki="${i}">${[1, 2, 3, 4, 5].map(
+        <div><select data-rks="${sk}" data-rki="${i}"${sk === "2" && i === 5 ?
+          ' data-rkforce="1"' : ""}>${[1, 2, 3, 4, 5].map(
           x => `<option value="${x}"${x === sh.scores[i] ? " selected" : ""}>${x}</option>`).join("")}</select></div>
         <div><input type="text" data-rkn="${sk}" data-rki="${i}"
           placeholder="비고 — 참고값과 다르게 평가한 사유"
@@ -3033,7 +3100,9 @@ const RK_RED_SEL = "input[data-rkb],textarea[data-rkb],input[data-rkv]," +
                    "select[data-rks],select[data-rkpc],select[data-rkp]";
 function rkFlagEmpty(el){
   if (el.matches && el.matches(RK_RED_SEL))
-    el.classList.toggle("rkempty", !String(el.value || "").trim());
+    el.classList.toggle("rkempty",
+      el.hasAttribute("data-rkforce") ||   // ②-6 저장 불안정성 — 상시 빨간 칸
+      !String(el.value || "").trim());
 }
 function rkFlagAll(){
   $rkBody.querySelectorAll(RK_RED_SEL).forEach(rkFlagEmpty);
@@ -3494,7 +3563,255 @@ function renderDash(){
     ? "등록된 화학물질(도입검토 메뉴)의 작성일 기준 집계입니다."
     : "아직 등록된 화학물질이 없습니다 — 「화학물질 도입검토」 메뉴에서 " +
       "MSDS를 등록하면 여기에 집계됩니다.";
+
+  // 📑 도급신고 현황판 — 만료 1개월 이내 업체 알람·조회
+  const ctDb = loadCtDb();
+  const ctD = ctDb.map(r => [r, ctDaysLeft(r)]);
+  const imm = ctD.filter(([, d]) => ctStatus(d) === "만료임박");
+  document.getElementById("dashCtCards").innerHTML = [
+    ["등록 업체", ctDb.length],
+    ["도급기간 정상", ctD.filter(([, d]) => ctStatus(d) === "정상").length],
+    ["만료 1개월 이내", imm.length],
+    ["만료", ctD.filter(([, d]) => ctStatus(d) === "만료").length],
+  ].map(([t, v]) =>
+    `<div class="dashcard"><div class="t">${esc(String(t))}</div><b>${v}</b></div>`).join("");
+  document.getElementById("dashCtAlarm").innerHTML =
+    ctAlarmHtml(ctDb, true);
+  document.getElementById("dashCtTable").innerHTML = !imm.length ? "" :
+    "<tr><th>업체명</th><th>계약종류</th><th>도급기간</th>" +
+    "<th>남은 일수</th><th>취급시설</th><th>취급물질</th></tr>" +
+    imm.map(([r, d]) => `<tr><td>${esc(r.company || "")}</td>` +
+      `<td>${esc(r.ctype || "")}</td>` +
+      `<td>${esc(ctPeriod(r.dogub_start, r.dogub_end))}</td>` +
+      `<td>D-${d}</td><td>${esc(r.facility || "")}</td>` +
+      `<td>${esc(r.substance || "")}</td></tr>`).join("");
+  document.getElementById("dashCtHint").textContent = ctDb.length
+    ? (imm.length ? "" : "도급기간 만료 1개월 이내 업체가 없습니다.")
+    : "등록된 도급신고 업체가 없습니다 — 「도급신고」 메뉴에서 등록하면 " +
+      "여기에 집계되고, 도급기간 만료 1개월 이내 업체가 알람으로 표시됩니다.";
 }
+
+/* ══════════════ 📑 도급신고 ══════════════ */
+const ctKey = () => "csContractDb::" + csUser;
+function loadCtDb(){
+  try {
+    const db = JSON.parse(localStorage.getItem(ctKey()) || "[]");
+    return Array.isArray(db) ? db : [];
+  } catch (e){ return []; }
+}
+function saveCtDb(db){ localStorage.setItem(ctKey(), JSON.stringify(db)); }
+
+function ctDaysLeft(r){                    // 도급기간 만료일까지 남은 일수
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(r.dogub_end || "");
+  if (!m) return null;
+  const end = new Date(+m[1], +m[2] - 1, +m[3]);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((end - today) / 86400000);
+}
+function ctStatus(d){
+  if (d === null) return "";
+  if (d < 0) return "만료";
+  return d <= 30 ? "만료임박" : "정상";
+}
+const ctPeriod = (a, b) =>
+  a && b ? `${a} ~ ${b}` : (a || b || "");
+const ctLeftText = d =>
+  d === null ? "" : (d >= 0 ? `D-${d}` : `${-d}일 경과`);
+function ctAlarmHtml(db, forDash){
+  const imm = db.filter(r => ctStatus(ctDaysLeft(r)) === "만료임박");
+  const exp = db.filter(r => ctStatus(ctDaysLeft(r)) === "만료");
+  let h = "";
+  if (imm.length)
+    h += `<div style="background:#fdecea;border:1px solid #e05555;
+      color:#a33;padding:10px 12px;border-radius:8px;margin:10px 0;">
+      🔔 <b>도급기간 만료 1개월 이내 업체 ${imm.length}곳</b> — ` +
+      imm.map(r => `${esc(r.company || "")}(만료 ${esc(r.dogub_end || "")}, ` +
+        `D-${ctDaysLeft(r)})`).join(", ") +
+      ` · 재계약 또는 도급신고 갱신이 필요합니다.</div>`;
+  if (exp.length && !forDash)
+    h += `<div style="background:#fff8e1;border:1px solid #d9a842;
+      color:#8a6d1a;padding:10px 12px;border-radius:8px;margin:10px 0;">
+      ⏰ 도급기간이 만료된 업체 — ` +
+      exp.map(r => `${esc(r.company || "")}(만료 ${esc(r.dogub_end || "")})`)
+        .join(", ") + `</div>`;
+  return h;
+}
+
+function ctDocBlob(r){
+  const m = /^data:([^;]*);base64,(.*)$/.exec(r.doc_data || "");
+  if (!m) return null;
+  return new Blob([b64ToU8(m[2])],
+                  { type: m[1] || "application/octet-stream" });
+}
+
+const CT_STATUS_STYLE = {
+  "만료임박": "background:#fdecea;color:#a33;font-weight:600;",
+  "만료": "background:#eceff1;color:#666;",
+};
+function renderCt(){
+  const db = loadCtDb();
+  document.getElementById("ctAlarm").innerHTML = ctAlarmHtml(db);
+  const q = (document.getElementById("ctQ").value || "")
+    .trim().toLowerCase();
+  const immOnly = document.getElementById("ctImmOnly").checked;
+  const shown = db.filter(r => {
+    if (immOnly && ctStatus(ctDaysLeft(r)) !== "만료임박") return false;
+    if (!q) return true;
+    return [r.company, r.facility, r.substance, r.ctype]
+      .map(s => String(s || "").toLowerCase()).join(" ").includes(q);
+  });
+  const $t = document.getElementById("ctTable");
+  if (!shown.length){
+    $t.innerHTML = "";
+    document.getElementById("ctHint").textContent =
+      db.length ? "검색 결과가 없습니다."
+                : "등록된 도급신고 업체가 없습니다 — 위에서 등록하면 여기에 " +
+                  "누적 표시됩니다.";
+  } else {
+    $t.innerHTML =
+      "<tr><th>No.</th><th>업체명</th><th>계약종류</th><th>계약기간</th>" +
+      "<th>도급기간</th><th>만료까지</th><th>상태</th><th>취급시설</th>" +
+      "<th>취급물질</th><th>수리공문</th><th>등록일</th><th>관리</th></tr>" +
+      shown.map(r => {
+        const d = ctDaysLeft(r);
+        const stt = ctStatus(d);
+        return `<tr><td>${r.id}</td><td>${esc(r.company || "")}</td>` +
+          `<td>${esc(r.ctype || "")}</td>` +
+          `<td>${esc(ctPeriod(r.cont_start, r.cont_end))}</td>` +
+          `<td>${esc(ctPeriod(r.dogub_start, r.dogub_end))}</td>` +
+          `<td>${esc(ctLeftText(d))}</td>` +
+          `<td style="${CT_STATUS_STYLE[stt] || ""}">${esc(stt)}</td>` +
+          `<td>${esc(r.facility || "")}</td>` +
+          `<td>${esc(r.substance || "")}</td>` +
+          `<td>${r.doc_data
+            ? `<button type="button" data-ctdoc="${r.id}">📎 ${esc(r.doc_name || "공문")}</button>`
+            : "(없음)"}</td>` +
+          `<td>${esc(r.saved_at || "")}</td>` +
+          `<td><button type="button" data-ctdel="${r.id}">🗑 삭제</button></td></tr>`;
+      }).join("");
+    document.getElementById("ctHint").textContent =
+      "상태: 정상 = 만료까지 1개월 초과 · 만료임박 = 1개월(30일) 이내 · " +
+      "만료 = 도급기간 경과";
+  }
+  document.getElementById("ctXlsx").hidden = !db.length;
+}
+
+document.getElementById("ctSaveBtn").addEventListener("click", async () => {
+  const $msg = document.getElementById("ctMsg");
+  $msg.style.color = "";
+  const company = document.getElementById("ctCompany").value.trim();
+  const dogubEnd = document.getElementById("ctDEnd").value;
+  const err = t => { $msg.style.color = "#c0392b"; $msg.textContent = t; };
+  if (!company) return err("업체명을 입력해 주세요.");
+  if (!dogubEnd) return err("도급기간 종료일(만료일)을 입력해 주세요 — " +
+                            "만료 알람의 기준일입니다.");
+  const f = document.getElementById("ctDoc").files[0] || null;
+  if (f && f.size > 2 * 1024 * 1024)
+    return err("수리공문 파일이 2MB를 넘습니다 — 단일 HTML은 브라우저 " +
+               "저장공간에 보관하므로 더 작은 파일로 첨부해 주세요.");
+  let docData = "", docName = "";
+  if (f){
+    docName = f.name;
+    docData = await new Promise((res, rej) => {
+      const rd = new FileReader();
+      rd.onload = () => res(rd.result);
+      rd.onerror = rej;
+      rd.readAsDataURL(f);
+    });
+  }
+  const db = loadCtDb();
+  const now = new Date();
+  const pad = x => String(x).padStart(2, "0");
+  db.push({
+    id: Math.max(0, ...db.map(r => r.id || 0)) + 1,
+    company, ctype: document.getElementById("ctType").value,
+    facility: document.getElementById("ctFacility").value.trim(),
+    substance: document.getElementById("ctSubstance").value.trim(),
+    cont_start: document.getElementById("ctCStart").value,
+    cont_end: document.getElementById("ctCEnd").value,
+    dogub_start: document.getElementById("ctDStart").value,
+    dogub_end: dogubEnd,
+    doc_name: docName, doc_data: docData,
+    saved_at: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
+  });
+  try {
+    saveCtDb(db);
+  } catch (e){
+    return err("저장 공간이 부족합니다 — 첨부 파일 크기를 줄이거나 오래된 " +
+               "등록을 삭제해 주세요.");
+  }
+  ["ctCompany", "ctFacility", "ctSubstance", "ctCStart", "ctCEnd",
+   "ctDStart", "ctDEnd", "ctDoc"].forEach(id => {
+    document.getElementById(id).value = "";
+  });
+  $msg.textContent = `「${company}」 도급신고를 등록했습니다. ` +
+    `(누적 ${db.length}건)`;
+  renderCt();
+  renderDash();
+});
+document.getElementById("ctQ").addEventListener("input", renderCt);
+document.getElementById("ctImmOnly").addEventListener("change", renderCt);
+document.getElementById("ctTable").addEventListener("click", e => {
+  const t = e.target.closest("button");
+  if (!t) return;
+  const db = loadCtDb();
+  if (t.dataset.ctdoc){
+    const r = db.find(x => String(x.id) === t.dataset.ctdoc);
+    const blob = r && ctDocBlob(r);
+    if (blob) downloadBlob(blob, r.doc_name || "수리공문");
+  } else if (t.dataset.ctdel){
+    saveCtDb(db.filter(x => String(x.id) !== t.dataset.ctdel));
+    renderCt();
+    renderDash();
+  }
+});
+document.getElementById("ctXlsx").addEventListener("click", async e => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  try {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("도급신고 업체 내역");
+    ws.addRow(["No.", "업체명", "계약종류", "계약기간", "도급기간",
+               "도급 만료까지", "상태", "취급시설", "취급물질",
+               "수리공문(환경청)", "등록일"]);
+    ws.getRow(1).eachCell(c => {
+      c.font = { bold: true };
+      c.fill = { type: "pattern", pattern: "solid",
+                 fgColor: { argb: "FFDDEBF7" } };
+      c.alignment = { horizontal: "center", vertical: "middle" };
+    });
+    const MARK = { "만료임박": "FFFFC7CE", "만료": "FFD9D9D9" };
+    loadCtDb().forEach(r => {
+      const d = ctDaysLeft(r);
+      ws.addRow([r.id, r.company || "", r.ctype || "",
+                 ctPeriod(r.cont_start, r.cont_end),
+                 ctPeriod(r.dogub_start, r.dogub_end),
+                 ctLeftText(d), ctStatus(d), r.facility || "",
+                 r.substance || "", r.doc_name || "", r.saved_at || ""]);
+    });
+    const border = { style: "thin" };
+    ws.eachRow(row => row.eachCell(c => {
+      c.border = { top: border, left: border, bottom: border, right: border };
+      if (row.number > 1){
+        c.alignment = { vertical: "middle", wrapText: true };
+        if (MARK[c.value]){
+          c.fill = { type: "pattern", pattern: "solid",
+                     fgColor: { argb: MARK[c.value] } };
+          c.font = { bold: true };
+        }
+      }
+    }));
+    [6, 22, 12, 24, 24, 12, 10, 24, 24, 26, 12]
+      .forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+    const buf = await wb.xlsx.writeBuffer();
+    downloadBlob(new Blob([buf], { type:
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+      "도급신고_업체내역.xlsx");
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 /* ── 메뉴 전환 ── */
 const $btnDash = document.getElementById("tabBtnDash");
@@ -3502,9 +3819,10 @@ const $btnManage = document.getElementById("tabBtnManage");
 const $btnReview = document.getElementById("tabBtnReview");
 const $btnRisk = document.getElementById("tabBtnRisk");
 const $btnSign = document.getElementById("tabBtnSign");
+const $btnContract = document.getElementById("tabBtnContract");
 function showTab(which){
   const map = { dash: "tabDash", manage: "tabManage", review: "tabReview",
-                risk: "tabRisk", sign: "tabSign" };
+                risk: "tabRisk", sign: "tabSign", contract: "tabContract" };
   for (const [k, pid] of Object.entries(map))
     document.getElementById(pid).hidden = k !== which;
   $btnDash.classList.toggle("on", which === "dash");
@@ -3512,21 +3830,25 @@ function showTab(which){
   $btnReview.classList.toggle("on", which === "review");
   $btnRisk.classList.toggle("on", which === "risk");
   $btnSign.classList.toggle("on", which === "sign");
+  $btnContract.classList.toggle("on", which === "contract");
   // 하단 엑셀 다운로드 바는 관리요령 메뉴에서만 보인다
   document.body.classList.toggle("signview", which !== "manage");
   if (which === "sign") renderSign();
   if (which === "dash") renderDash();
+  if (which === "contract") renderCt();
 }
 $btnDash.addEventListener("click", () => showTab("dash"));
 $btnManage.addEventListener("click", () => showTab("manage"));
 $btnReview.addEventListener("click", () => showTab("review"));
 $btnRisk.addEventListener("click", () => showTab("risk"));
 $btnSign.addEventListener("click", () => showTab("sign"));
+$btnContract.addEventListener("click", () => showTab("contract"));
 csMigrateLegacy();
 csApplyLogin();
 renderSign();
 renderDash();
 rkHistRender();
+renderCt();
 document.body.classList.add("signview");   // 시작 화면은 대시보드
 
 /* ── 표지판 다운로드 (SVG 실측 / PNG 150DPI) ── */
