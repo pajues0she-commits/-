@@ -123,15 +123,19 @@
     border-radius:8px;padding:8px 14px;font-size:13.5px;font-weight:600;
   }
   .drop .mini:hover{background:#eef4fb;}
-  .thumb-wrap{position:relative;display:inline-block;}
+  .thumb-wrap{display:block;text-align:center;}
   .thumb-wrap img{
     max-width:100%;max-height:260px;border-radius:8px;border:1px solid var(--line-strong);
     display:block;margin:0 auto;
   }
-  .thumb-wrap .rm{
-    position:absolute;top:8px;right:8px;background:rgba(0,0,0,.6);color:#fff;
-    border:0;border-radius:50%;width:30px;height:30px;font-size:16px;line-height:1;
+  .photo-tools{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-top:10px;}
+  .photo-tools .ptool{
+    border:1px solid var(--brand-2);color:var(--brand-2);background:#fff;
+    border-radius:8px;padding:8px 14px;font-size:13.5px;font-weight:600;
   }
+  .photo-tools .ptool:hover{background:#eef4fb;}
+  .photo-tools .ptool.danger{border-color:var(--ng);color:var(--ng);}
+  .photo-tools .ptool.danger:hover{background:var(--ng-bg);}
   .verdict{
     display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:700;
     padding:5px 12px;border-radius:20px;margin-top:4px;
@@ -457,6 +461,42 @@ const LOC_OPTIONS = Array.from({length:10},(_,i)=>`NO.${i+1}`).concat("G/S1","G/
 let points = [];   // {id, name, value, note, photo(dataURL)}
 let uid = 1;
 
+/* ---------- 저장소 (IndexedDB) ----------
+   사진(base64)은 용량이 커서 localStorage(iOS Safari ≈5MB 제한)로는
+   초안 + 이력을 함께 담기 어렵다. 용량 제한이 훨씬 큰 IndexedDB에 저장하고,
+   구형 브라우저/불가 환경에서는 localStorage로 자동 대체한다. */
+const DB_NAME = "cp_report_db", DB_STORE = "kv", DB_VER = 1;
+const HAS_IDB = (()=>{ try{ return !!window.indexedDB; }catch(e){ return false; } })();
+let _dbP = null;
+function idb(){
+  if(_dbP) return _dbP;
+  _dbP = new Promise((resolve,reject)=>{
+    const req = indexedDB.open(DB_NAME, DB_VER);
+    req.onupgradeneeded = ()=>{ const db=req.result; if(!db.objectStoreNames.contains(DB_STORE)) db.createObjectStore(DB_STORE); };
+    req.onsuccess = ()=>resolve(req.result);
+    req.onerror = ()=>reject(req.error);
+  });
+  return _dbP;
+}
+function idbReq(mode, fn){
+  return idb().then(db=>new Promise((resolve,reject)=>{
+    const tx = db.transaction(DB_STORE, mode);
+    const store = tx.objectStore(DB_STORE);
+    let out; const r = fn(store); if(r) r.onsuccess = ()=>{ out = r.result; };
+    tx.oncomplete = ()=>resolve(out);
+    tx.onerror = ()=>reject(tx.error);
+    tx.onabort = ()=>reject(tx.error);
+  }));
+}
+// localStorage 대체 (IDB 불가 환경)
+function lsGet(k){ try{ return JSON.parse(localStorage.getItem(k)); }catch(e){ return null; } }
+function lsSet(k,v){ localStorage.setItem(k, JSON.stringify(v)); }   // 용량 초과 시 throw
+function lsDel(k){ try{ localStorage.removeItem(k); }catch(e){} }
+
+function kvGet(key){ return HAS_IDB ? idbReq("readonly", s=>s.get(key)).catch(()=>lsGet(key)) : Promise.resolve(lsGet(key)); }
+function kvSet(key,val){ return HAS_IDB ? idbReq("readwrite", s=>s.put(val,key)) : new Promise((res,rej)=>{ try{ lsSet(key,val); res(); }catch(e){ rej(e); } }); }
+function kvDel(key){ return HAS_IDB ? idbReq("readwrite", s=>s.delete(key)).catch(()=>lsDel(key)) : Promise.resolve(lsDel(key)); }
+
 /* ---------- Image compression ---------- */
 function compressImage(file, maxDim=1400, quality=0.72){
   return new Promise((resolve,reject)=>{
@@ -477,6 +517,26 @@ function compressImage(file, maxDim=1400, quality=0.72){
     };
     reader.onerror = reject;
     reader.readAsDataURL(file);
+  });
+}
+
+/* ---------- 사진 회전 (90° 단위, 시계방향) ---------- */
+function rotateDataURL(dataURL, deg=90){
+  return new Promise((resolve,reject)=>{
+    const img = new Image();
+    img.onload = ()=>{
+      const c = document.createElement("canvas");
+      const swap = (deg===90 || deg===270);
+      c.width  = swap ? img.height : img.width;
+      c.height = swap ? img.width  : img.height;
+      const ctx = c.getContext("2d");
+      ctx.translate(c.width/2, c.height/2);
+      ctx.rotate(deg*Math.PI/180);
+      ctx.drawImage(img, -img.width/2, -img.height/2);
+      resolve(c.toDataURL("image/jpeg", 0.82));
+    };
+    img.onerror = reject;
+    img.src = dataURL;
   });
 }
 
@@ -546,7 +606,13 @@ function renderPoints(){
   save(true);
 }
 function photoHtml(src){
-  return `<div class="thumb-wrap"><img src="${src}" alt="측정지 사진"><button class="rm" data-act="rmphoto" title="사진 삭제">✕</button></div>`;
+  return `<div class="thumb-wrap">
+    <img src="${src}" alt="측정지 사진">
+    <div class="photo-tools">
+      <button type="button" class="ptool" data-act="rot" title="90° 회전 (누를 때마다 90°→180°→270°)">↻ 90° 회전</button>
+      <button type="button" class="ptool danger" data-act="rmphoto" title="사진 삭제">✕ 사진 삭제</button>
+    </div>
+  </div>`;
 }
 function esc(s){return String(s??"").replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 
@@ -603,6 +669,13 @@ $("#points").addEventListener("click", async e=>{
     $('[data-role="cam-input"]', pt).click();
   }else if(act==="pick"){
     $('[data-role="pick-input"]', pt).click();
+  }else if(act==="rot"){
+    if(!p.photo) return;
+    const drop = $('[data-role="drop"]', pt);
+    drop.style.opacity = ".5";
+    try{ p.photo = await rotateDataURL(p.photo, 90); }
+    catch(err){ alert("사진 회전에 실패했습니다."); }
+    renderPoints();
   }else if(act==="rmphoto"){
     p.photo = null; renderPoints();
   }
@@ -628,9 +701,11 @@ function addPoint(data){
 }
 $("#btnAdd").addEventListener("click", ()=>{ addPoint(); renderPoints(); });
 
-$("#btnReset").addEventListener("click", ()=>{
-  if(!confirm("입력한 모든 내용을 지우고 새로 시작할까요?")) return;
-  localStorage.removeItem(STORE_KEY);
+$("#btnReset").addEventListener("click", async ()=>{
+  if(!confirm("입력한 모든 내용을 지우고 새로 시작할까요? (점검 이력은 유지됩니다)")) return;
+  currentHistoryId = null;
+  try{ await kvDel(STORE_KEY); }catch(e){}
+  lsDel(STORE_KEY);
   location.reload();
 });
 
@@ -640,15 +715,24 @@ function collect(){
   HEADER_FIELDS.forEach(id=> h[id] = $("#"+id).value);
   return {header:h, points, uid};
 }
+let saveTimer;
 function save(silent){
-  try{
-    localStorage.setItem(STORE_KEY, JSON.stringify(collect()));
-    if(!silent) flash("저장되었습니다");
-  }catch(err){ if(!silent) alert("저장 실패: 사진 용량이 너무 큽니다."); }
+  clearTimeout(saveTimer);
+  const doWrite = ()=> kvSet(STORE_KEY, collect())
+    .then(()=>{ if(!silent) flash("저장되었습니다"); })
+    .catch(err=>{ if(!silent) alert("저장 실패: 저장 공간을 확인해 주세요."); });
+  if(silent){ saveTimer = setTimeout(doWrite, 300); }   // 입력마다 잦은 쓰기를 방지(디바운스)
+  else { doWrite(); }
 }
 
-function load(){
-  let raw; try{ raw = JSON.parse(localStorage.getItem(STORE_KEY)); }catch(e){}
+async function load(){
+  let raw = null;
+  try{ raw = await kvGet(STORE_KEY); }catch(e){}
+  // 구버전(localStorage) 초안 자동 이전
+  if(!raw && HAS_IDB){
+    const ls = lsGet(STORE_KEY);
+    if(ls && ls.header){ raw = ls; try{ await kvSet(STORE_KEY, ls); lsDel(STORE_KEY); }catch(e){} }
+  }
   if(raw && raw.header){
     HEADER_FIELDS.forEach(id=>{ if(raw.header[id]!=null) $("#"+id).value = raw.header[id]; });
     points = raw.points || [];
@@ -658,6 +742,7 @@ function load(){
   if(!$("#date").value) $("#date").value = new Date().toISOString().slice(0,10);
   if(points.length===0){ addPoint(); }
   renderPoints();
+  await migrateHistoryFromLS();              // 구버전 이력 자동 이전
 }
 
 // re-evaluate verdicts if criterion changes
@@ -906,8 +991,18 @@ $("#mailSend").addEventListener("click", async ()=>{
 const HIST_KEY = "cp_report_history";
 let currentHistoryId = null;   // 이력에서 불러온 기록이면 그 id (저장 시 갱신)
 
-function loadHistory(){ try{ return JSON.parse(localStorage.getItem(HIST_KEY)) || []; }catch(e){ return []; } }
-function saveHistoryArr(arr){ localStorage.setItem(HIST_KEY, JSON.stringify(arr)); }
+async function loadHistory(){ try{ return (await kvGet(HIST_KEY)) || []; }catch(e){ return []; } }
+function saveHistoryArr(arr){ return kvSet(HIST_KEY, arr); }
+// 구버전(localStorage) 이력 자동 이전
+async function migrateHistoryFromLS(){
+  if(!HAS_IDB) return;
+  try{
+    const cur = await kvGet(HIST_KEY);
+    if(cur && cur.length) return;
+    const ls = lsGet(HIST_KEY);
+    if(Array.isArray(ls) && ls.length){ await kvSet(HIST_KEY, ls); lsDel(HIST_KEY); }
+  }catch(e){}
+}
 
 // 기록 요약(종합 판정·지점 수 등) — 기록별 판정 기준값 사용
 function recordSummary(rec){
@@ -920,7 +1015,7 @@ function recordSummary(rec){
   return {cls, txt, total: withVal.length, ng: ng.length, photos: pts.filter(p=>p.photo).length};
 }
 
-function saveCurrentToHistory(){
+async function saveCurrentToHistory(){
   const h = collect().header;
   const rec = {
     id: currentHistoryId || String(Date.now()),
@@ -928,23 +1023,25 @@ function saveCurrentToHistory(){
     date: h.date, crit: h.crit, opinion: h.opinion,
     points: JSON.parse(JSON.stringify(points))
   };
-  const arr = loadHistory();
+  const arr = await loadHistory();
   const idx = arr.findIndex(r=>r.id===rec.id);
   if(idx>=0) arr[idx] = rec; else arr.push(rec);
-  try{ saveHistoryArr(arr); }
+  try{ await saveHistoryArr(arr); }
   catch(e){ alert("저장 공간이 부족합니다. 이력에서 오래된 기록을 삭제한 뒤 다시 시도해 주세요."); return; }
   currentHistoryId = rec.id;
   flash(idx>=0 ? "이력을 업데이트했습니다." : "점검 이력에 저장했습니다.");
+  if($("#histModal").classList.contains("show")) renderHistory();
 }
 
-function renderHistory(){
-  const arr = loadHistory().slice().sort((a,b)=>{
+async function renderHistory(){
+  const host = $("#histBody");
+  const list = await loadHistory();
+  const arr = list.slice().sort((a,b)=>{
     // 측정일자 우선, 같으면 저장시각 최신순
     const da=(a.date||""), db=(b.date||"");
     if(da!==db) return db.localeCompare(da);
     return (b.savedAt||"").localeCompare(a.savedAt||"");
   });
-  const host = $("#histBody");
   if(!arr.length){
     host.innerHTML = `<div class="hist-empty">저장된 점검 이력이 없습니다.<br>측정 후 하단 <b>＋ 이력 저장</b>을 누르면 여기에 기록됩니다.</div>`;
     return;
@@ -970,7 +1067,11 @@ function renderHistory(){
   }).join("")+`</div>`;
 }
 
-function openHistory(){ renderHistory(); $("#histModal").classList.add("show"); }
+function openHistory(){
+  $("#histBody").innerHTML = `<div class="hist-empty">불러오는 중…</div>`;
+  $("#histModal").classList.add("show");
+  renderHistory();
+}
 function closeHistory(){ $("#histModal").classList.remove("show"); }
 
 $("#btnHistory").addEventListener("click", openHistory);
@@ -978,10 +1079,11 @@ $("#btnSaveHistory").addEventListener("click", saveCurrentToHistory);
 $("#histClose").addEventListener("click", closeHistory);
 $("#histModal").addEventListener("click", e=>{ if(e.target.id==="histModal") closeHistory(); });
 
-$("#histBody").addEventListener("click", e=>{
+$("#histBody").addEventListener("click", async e=>{
   const btn = e.target.closest("[data-hact]"); if(!btn) return;
   const item = e.target.closest(".hist-item"); const id = item.dataset.id;
-  const rec = loadHistory().find(r=>r.id===id); if(!rec) return;
+  const list = await loadHistory();
+  const rec = list.find(r=>r.id===id); if(!rec) return;
   const act = btn.dataset.hact;
   if(act==="view"){
     closeHistory();
@@ -1000,7 +1102,7 @@ $("#histBody").addEventListener("click", e=>{
     flash("이력을 불러왔습니다.");
   }else if(act==="del"){
     if(!confirm("이 점검 이력을 삭제할까요?")) return;
-    saveHistoryArr(loadHistory().filter(r=>r.id!==id));
+    try{ await saveHistoryArr(list.filter(r=>r.id!==id)); }catch(e){}
     if(currentHistoryId===id) currentHistoryId = null;
     renderHistory();
   }
